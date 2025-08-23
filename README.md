@@ -11,3 +11,23 @@ Phase 2:
 Move arb to WebSockets / connectors, add multi‑symbol rotation, inventory rebalancing, Prometheus.
 
 Add stablecoin auto‑allocator logic with thresholded moves.
+
+## Usage
+
+The `arbit.py` script now exposes a small curses based TUI for monitoring
+triangular arbitrage opportunities on a single exchange.  Install
+dependencies (`pip install ccxt`) and run:
+
+```bash
+python arbit.py --tui
+```
+
+To run a finite number of iterations without the UI for testing or
+scripting, use the `--cycles` flag:
+
+```bash
+python arbit.py --cycles 5
+```
+
+The script fetches order books for `ETH/USDT`, `BTC/ETH` and `BTC/USDT`
+and prints the estimated net return of the USDT→ETH→BTC→USDT cycle.
