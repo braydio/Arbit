@@ -13,8 +13,8 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
     )
 )
 
-from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit import try_triangle
+from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.models import Triangle
 
 
