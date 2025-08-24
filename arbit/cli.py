@@ -1,15 +1,22 @@
-"""Command line interface for running the arbitrage engine."""
+"""Command line interface utilities.
+
+This module exposes Typer-based commands for interacting with the
+arbitrage engine.  Helper functions for metrics and persistence are
+imported here so tests can easily monkeypatch them.
+"""
 
 import logging
 import time
 
 import typer
+
 from arbit.adapters.ccxt_adapter import CcxtAdapter
 from arbit.config import settings
-from arbit.engine.executor import try_triangle
 from arbit.metrics.exporter import arb_cycles, pnl_gross
-from arbit.metrics.exporter import start as prom_start
+from arbit.metrics.exporter import start as start_metrics_server
 from arbit.models import Triangle
+from arbit.persistence.db import init_db, insert_triangle
+from arbit import try_triangle
 
 app = typer.Typer()
 log = logging.getLogger("arbit")
@@ -21,7 +28,17 @@ TRIS = [
 ]
 
 
-def make(venue: str):
+def _build_adapter(venue: str, _settings=settings):
+    """Factory for constructing exchange adapters.
+
+    Parameters
+    ----------
+    venue:
+        Exchange identifier understood by the underlying adapter.
+    _settings:
+        Settings object used to configure the adapter (unused for now).
+    """
+
     return CcxtAdapter(venue)
 
 
@@ -29,7 +46,7 @@ def make(venue: str):
 def keys_check():
     for venue in settings.exchanges:
         try:
-            a = make(venue)
+            a = _build_adapter(venue, settings)
             ms = a.ex.load_markets()
             ob = a.fetch_orderbook("BTC/USDT", 1)
             log.info(
@@ -41,7 +58,7 @@ def keys_check():
 
 @app.command()
 def fitness(venue: str = "alpaca", secs: int = 20):
-    a = make(venue)
+    a = _build_adapter(venue, settings)
     t0 = time.time()
     syms = {s for t in TRIS for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
     while time.time() - t0 < secs:
@@ -58,8 +75,11 @@ def fitness(venue: str = "alpaca", secs: int = 20):
 @app.command()
 def live(venue: str = "alpaca"):
     """Continuously scan for profitable triangles and execute trades."""
-    a = make(venue)
-    prom_start(settings.prom_port)
+    a = _build_adapter(venue, settings)
+    start_metrics_server(settings.prom_port)
+    conn = init_db(settings.sqlite_path)
+    for tri in TRIS:
+        insert_triangle(conn, tri)
     log.info(f"live@{venue} dry_run={settings.dry_run}")
     while True:
         for tri in TRIS:

@@ -67,7 +67,7 @@ def test_fitness(monkeypatch):
     monkeypatch.setattr(cli, "time", _Time())
 
     adapter = DummyAdapter()
-    monkeypatch.setattr(cli, "make", lambda venue: adapter)
+    monkeypatch.setattr(cli, "_build_adapter", lambda venue, _settings: adapter)
 
     runner = CliRunner()
     result = runner.invoke(cli.app, ["fitness", "--secs", "1"])

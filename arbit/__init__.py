@@ -8,5 +8,6 @@ except Exception:  # pragma: no cover - pydantic may be missing
     Settings = None  # type: ignore
 
 from .models import Triangle, OrderSpec, Fill
+from .engine import try_triangle
 
-__all__ = ["Settings", "Triangle", "OrderSpec", "Fill"]
+__all__ = ["Settings", "Triangle", "OrderSpec", "Fill", "try_triangle"]
