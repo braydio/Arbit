@@ -14,20 +14,32 @@ Add stablecoin auto‑allocator logic with thresholded moves.
 
 ## Usage
 
-The `arbit.py` script now exposes a small curses based TUI for monitoring
+The `legacy_arbit.py` script now exposes a small curses based TUI for monitoring
 triangular arbitrage opportunities on a single exchange.  Install
 dependencies (`pip install ccxt`) and run:
 
 ```bash
-python arbit.py --tui
+python legacy_arbit.py --tui
 ```
 
 To run a finite number of iterations without the UI for testing or
 scripting, use the `--cycles` flag:
 
 ```bash
-python arbit.py --cycles 5
+python legacy_arbit.py --cycles 5
 ```
 
 The script fetches order books for `ETH/USDT`, `BTC/ETH` and `BTC/USDT`
 and prints the estimated net return of the USDT→ETH→BTC→USDT cycle.
+
+### Typer CLI
+
+A Typer-based interface exposes `fitness` and `live` commands:
+
+```bash
+python -m arbit.cli fitness --venue alpaca --secs 5
+python -m arbit.cli live --venue alpaca --cycles 1
+```
+
+Both commands load credentials from environment variables (`ARBIT_API_KEY`,
+`ARBIT_API_SECRET`) and use them to connect via `ccxt`.
