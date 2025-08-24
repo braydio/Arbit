@@ -1,17 +1,6 @@
 """Utility helpers for computing profitability and sizing in triangular markets."""
 
-from dataclasses import dataclass
 from typing import Iterable, List, Tuple
-
-
-@dataclass(frozen=True)
-class Triangle:
-    """Trading triangle consisting of three currency pairs."""
-
-    AB: str  # e.g., ETH/USDT
-    BC: str  # e.g., BTC/ETH
-    AC: str  # e.g., BTC/USDT
-
 
 def top(levels: List[Tuple[float, float]]) -> Tuple[float | None, float | None]:
     """Return best bid and ask from a list of ``(bid, ask)`` tuples.

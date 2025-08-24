@@ -2,7 +2,8 @@
 """Utilities for executing triangular arbitrage cycles."""
 
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
-from arbit.engine.triangle import Triangle, top, net_edge, size_from_depth
+from arbit.engine.triangle import top, net_edge, size_from_depth
+from arbit.models import Triangle
 from arbit.config import settings
 
 def try_triangle(
@@ -25,9 +26,9 @@ def try_triangle(
         Minimum net profit fraction required to execute.
     """
 
-    obAB = books.get(tri.AB, {"bids": [], "asks": []})
-    obBC = books.get(tri.BC, {"bids": [], "asks": []})
-    obAC = books.get(tri.AC, {"bids": [], "asks": []})
+    obAB = books.get(tri.leg_ab, {"bids": [], "asks": []})
+    obBC = books.get(tri.leg_bc, {"bids": [], "asks": []})
+    obAC = books.get(tri.leg_ac, {"bids": [], "asks": []})
 
     levelsAB = [(b[0], a[0]) for b, a in zip(obAB.get("bids", []), obAB.get("asks", []))]
     levelsBC = [(b[0], a[0]) for b, a in zip(obBC.get("bids", []), obBC.get("asks", []))]
@@ -39,7 +40,7 @@ def try_triangle(
     if None in (bidAB, askAB, bidBC, askBC, bidAC, askAC):
         return None
 
-    taker = adapter.fetch_fees(tri.AB)[1]
+    taker = adapter.fetch_fees(tri.leg_ab)[1]
     net = net_edge(askAB, bidBC, bidAC, taker)
     if net < threshold:
         return None
@@ -47,14 +48,14 @@ def try_triangle(
     ask_price, ask_qty = obAB["asks"][0]
     qtyB = size_from_depth([obAB["asks"][0], obBC["bids"][0], obAC["bids"][0]])
     qtyB = min(qtyB, settings.notional_per_trade_usd / ask_price)
-    if (qtyB * ask_price) < adapter.min_notional(tri.AB):
+    if (qtyB * ask_price) < adapter.min_notional(tri.leg_ab):
         return None
 
     # Three IOC market legs
-    f1 = adapter.create_order(OrderSpec(tri.AB, "buy", qtyB, "IOC", "market"))
-    f2 = adapter.create_order(OrderSpec(tri.BC, "sell", qtyB, "IOC", "market"))
+    f1 = adapter.create_order(OrderSpec(tri.leg_ab, "buy", qtyB, "IOC", "market"))
+    f2 = adapter.create_order(OrderSpec(tri.leg_bc, "sell", qtyB, "IOC", "market"))
     qtyC_est = qtyB * bidBC
-    f3 = adapter.create_order(OrderSpec(tri.AC, "sell", qtyC_est, "IOC", "market"))
+    f3 = adapter.create_order(OrderSpec(tri.leg_ac, "sell", qtyC_est, "IOC", "market"))
 
     usdt_out = f1["price"] * f1["qty"] + f1["fee"]
     usdt_in = f3["price"] * f3["qty"] - f3["fee"]

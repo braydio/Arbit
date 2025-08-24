@@ -14,7 +14,7 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
 )
 
 from arbit.engine.executor import try_triangle
-from arbit.engine.triangle import Triangle
+from arbit.models import Triangle
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
 
 
