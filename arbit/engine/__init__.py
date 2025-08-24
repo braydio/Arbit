@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .triangle import top, net_edge_cycle, size_from_depth
-from .executor import try_triangle
+from .triangle import top, net_edge, size_from_depth
+from .executor import try_tri
 
-__all__ = ["top", "net_edge_cycle", "size_from_depth", "try_triangle"]
+__all__ = ["top", "net_edge", "size_from_depth", "try_tri"]
