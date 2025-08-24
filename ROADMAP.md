@@ -149,7 +149,7 @@ class CcxtAdapter(ExchangeAdapter):
             "method": "subscribe",                                                         []
                     asks = data.get("asks") or []                                                      one)
 ```                                                                                                                                                              Tuple[float, float]) -> float:
-    """Crude sizing: cap by top ask depth on first leg."""                                    try_triangle(adapter: ExchangeAdapter, tri: Triangle) -> dict | None:
+    """Crude sizing: cap by top ask depth on first leg."""                                    try_tri(adapter: ExchangeAdapter, tri: Triangle) -> dict | None:
     obAB = adapter.fetch_orderbook(tri.AB, 10)                           _bps / 10000.0
     if net < thresh:              buy ETH with USDT
         f2 = adapter.create_order(o2)  # sell ETH for BTC         i,
@@ -199,8 +199,8 @@ arbit/
 
 Keep it simple: **supply USDC** to Aave v3 on your preferred chain. Add a tiny rule: “Move only if projected 30-day APY gain – gas ≥ threshold.” (We can wire this in later; the arb bot doesn’t depend on      et edges across venues and sends the cycle where **net\_est – fees – slippage** is highest.
 * P
-    a = net_edge_cycle(ask_AB=2000, bid_BC=0.05, bid_AC=60000, fee_rate=0.001)
-    b = net_                                        edge_cycle(1995, 0.0502, 60020, 0.001)
+    a = net_edge(ask_AB=2000, bid_BC=0.05, bid_AC=60000, fee_rate=0.001)
+    b = net_edge(1995, 0.0502, 60020, 0.001)
     assert b > a
 ```
 
@@ -241,7 +241,7 @@ Prometheus scrape                                 example:
 `tests/test_math.py`
 
 ```python
-from arbit.engine.triangle import net_edge_cycl
+from arbit.engine.triangle import net_edge
     ports: ["9110:9109"]
     environment:
       - PROM_PORT                                  =9109
@@ -284,7 +284,7 @@ services:
     nd don’t re-fire a leg if you got a late success.
 * *                                                 *Discord alerts** for error bursts or negative PnL streaks.
 
-(You can add these as small checks ins                                                 ide `try_triangle` and the main `live` loop.)
+(You can add these as small checks ins                                                 ide `try_tri` and the main `live` loop.)
 
 ---
 
@@ -299,7 +299,7 @@ services:
     log.info(f"Starting live loop on {venue} (dry_run={settings.dry_run})")
     w                             hile True:
         for tri in DEFAULT_TRIANGL                             ES:
-            res = try_triangle(a, tri)
+            res = try_tri(a, tri)
             if not res: continue
             if "error"                              in res:
                 arb_cycles.labels(venue, "error").inc()
@@ -385,7 +385,7 @@ def start(port: int): start_http_server(port)
 import time, typer, logging
 from arbit.config import settings
 from arbit.adapters.ccxt_adapter import CcxtAdapter
-from arbit.engine.executor import try_triangle
+from arbit.engine.executor import try_tri
 from arbit.models import Triangle
 from arbit.metrics.exporter import start as prom_start, arb_cycles, pnl_gross
 from arbit.persistence.db import connect, insert_trade, insert_cycle
@@ -495,7 +495,7 @@ CREATE                                                                          
 
     # Use taker fee as wors                                                                                                    t-case
     fee = adapter.fetch_fees(tri.AB)[1]
-    net = net_edge_cycle(askAB, bidBC, bi                                                                                                    dAC, fee_rate=fee)
+    net = net_edge(askAB, bidBC, bi                                                                                                    dAC, fee_rate=fee)
 
     thresh = settings.net_threshold
     obBC = adapter.fetch_orderbook(tri.BC, 10)
@@ -514,7 +514,7 @@ CREATE                                                                          
 ```python
 from arbit.adapters.bas                                                                                                 e import ExchangeAdapter
 from arbit.models import Triangle, OrderSpec, Fill
-from arbit.eng                                                                                                 ine.triangle import top, net_edge_cycle, size_from_depth
+from arbit.eng                                                                                                 ine.triangle import top, net_edge, size_from_depth
 from arbit.config import settings
 
 def
@@ -548,7 +548,7 @@ def top(ob):
     ask = ob["asks"][0][0] if ob["asks"] else None
     return bid, ask
 
-def net_edge_cycle(ask_AB: float, bid_BC: float, bid_AC: float, fee_rate: float) -> float:
+def net_edge(ask_AB: float, bid_BC: float, bid_AC: float, fee_rate: float) -> float:
     """
     Cycle: A(USDT) -> B(ETH) -> C(BTC) -> A(USDT)
     gross multiple = (1/ask_AB) * bid                                                                           def top(self, symbol: str) -> Tuple[float | None, float | None]:
