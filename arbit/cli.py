@@ -1,8 +1,10 @@
+"""Command line interface for running the arbitrage engine."""
+
 import time, typer, logging
 from arbit.config import settings
 from arbit.adapters.ccxt_adapter import CcxtAdapter
 from arbit.engine.triangle import Triangle
-from arbit.engine.executor import try_tri
+from arbit.engine.executor import try_triangle
 from arbit.metrics.exporter import start as prom_start, arb_cycles, pnl_gross
 
 app = typer.Typer()
@@ -51,12 +53,23 @@ def fitness(venue: str = "alpaca", secs: int = 20):
 
 @app.command()
 def live(venue: str = "alpaca"):
+    """Continuously scan for profitable triangles and execute trades."""
     a = make(venue)
     prom_start(settings.prom_port)
     log.info(f"live@{venue} dry_run={settings.dry_run}")
     while True:
         for tri in TRIS:
-            res = try_tri(a, tri)
+            books = {
+                tri.AB: a.fetch_orderbook(tri.AB, 10),
+                tri.BC: a.fetch_orderbook(tri.BC, 10),
+                tri.AC: a.fetch_orderbook(tri.AC, 10),
+            }
+            res = try_triangle(
+                a,
+                tri,
+                books,
+                settings.net_threshold_bps / 10000.0,
+            )
             if not res:
                 continue
             pnl_gross.labels(venue).set(res["realized_usdt"])
