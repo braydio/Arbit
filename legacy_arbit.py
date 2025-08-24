@@ -19,7 +19,7 @@ if TYPE_CHECKING:  # pragma: no cover - for type checking only
     import ccxt  # type: ignore
 
 EX = "kraken"  # default exchange; configurable via --exchange
-SYM_AB, SYM_BC, SYM_AC = "ETH/USDT", "BTC/ETH", "BTC/USDT"
+SYM_AB, SYM_BC, SYM_AC = "ETH/USDT", "ETH/BTC", "BTC/USDT"
 FEE = 0.001  # 0.1% taker fee; fetch from exchange for real usage
 THRESH = 0.001  # 0.10% minimum net threshold
 QTY_USDT = 200  # per cycle notional cap

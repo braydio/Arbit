@@ -29,7 +29,7 @@ scripting, use the `--cycles` flag:
 python legacy_arbit.py --cycles 5
 ```
 
-The script fetches order books for `ETH/USDT`, `BTC/ETH` and `BTC/USDT`
+The script fetches order books for `ETH/USDT`, `ETH/BTC` and `BTC/USDT`
 and prints the estimated net return of the USDT→ETH→BTC→USDT cycle.
 
 ### Typer CLI
