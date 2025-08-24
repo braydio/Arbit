@@ -1,11 +1,15 @@
 """Command line interface for running the arbitrage engine."""
 
-import time, typer, logging
-from arbit.config import settings
+import logging
+import time
+
+import typer
 from arbit.adapters.ccxt_adapter import CcxtAdapter
-from arbit.engine.triangle import Triangle
+from arbit.config import settings
 from arbit.engine.executor import try_triangle
-from arbit.metrics.exporter import start as prom_start, arb_cycles, pnl_gross
+from arbit.metrics.exporter import arb_cycles, pnl_gross
+from arbit.metrics.exporter import start as prom_start
+from arbit.models import Triangle
 
 app = typer.Typer()
 log = logging.getLogger("arbit")
@@ -39,7 +43,7 @@ def keys_check():
 def fitness(venue: str = "alpaca", secs: int = 20):
     a = make(venue)
     t0 = time.time()
-    syms = {s for t in TRIS for s in (t.AB, t.BC, t.AC)}
+    syms = {s for t in TRIS for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
     while time.time() - t0 < secs:
         for s in syms:
             ob = a.fetch_orderbook(s, 5)
@@ -60,9 +64,9 @@ def live(venue: str = "alpaca"):
     while True:
         for tri in TRIS:
             books = {
-                tri.AB: a.fetch_orderbook(tri.AB, 10),
-                tri.BC: a.fetch_orderbook(tri.BC, 10),
-                tri.AC: a.fetch_orderbook(tri.AC, 10),
+                tri.leg_ab: a.fetch_orderbook(tri.leg_ab, 10),
+                tri.leg_bc: a.fetch_orderbook(tri.leg_bc, 10),
+                tri.leg_ac: a.fetch_orderbook(tri.leg_ac, 10),
             }
             res = try_triangle(
                 a,
