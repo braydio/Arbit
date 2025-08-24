@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  mf-alpaca:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ARBIT_API_KEY: ${ARBIT_ALPACA_API_KEY}
+      ARBIT_API_SECRET: ${ARBIT_ALPACA_API_SECRET}
+    volumes:
+      - ./data:/data
+    ports:
+      - "9109:9109"
+    command: ["--venue", "alpaca", "--metrics-port", "9109"]
+
+  mf-kraken:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ARBIT_API_KEY: ${ARBIT_KRAKEN_API_KEY}
+      ARBIT_API_SECRET: ${ARBIT_KRAKEN_API_SECRET}
+    volumes:
+      - ./data:/data
+    ports:
+      - "9110:9110"
+    command: ["--venue", "kraken", "--metrics-port", "9110"]
