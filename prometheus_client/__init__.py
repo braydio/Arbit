@@ -9,8 +9,8 @@ server that responds to ``GET`` requests with an empty body.
 
 from __future__ import annotations
 
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 class _Value:
