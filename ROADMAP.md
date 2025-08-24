@@ -302,10 +302,10 @@ services:
             res = try_tri(a, tri)
             if not res: continue
             if "error"                              in res:
-                arb_cycles.labels(venue, "error").inc()
+                ORDERS_TOTAL.labels(venue, "error").inc()
                 log.error(res["error"])                             ; continue
-            arb_cycles.labels(venue, "ok").inc()
-            pnl_gross.labels(venue).set(res["realized_usdt"])
+            ORDERS_TOTAL.labels(venue, "ok").inc()
+            PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
             for f in res                             ["fills"]: insert_trade(cx, venue, f)
             insert_cycle(cx, venue, tri, res["net_est"], res[                             "realized_usdt"])
             log.info(f"{venue} {tri} net_est={res['net_est']:.3%} realized={                             res['realized_usdt']:.2f} USDT")
@@ -367,11 +367,11 @@ Triangle(AB="ETH/USDT", BC="BTC/ETH", AC="BTC/USDT"),
 Triangle(AB="ETH/USDC", BC="BTC/ETH", AC="BTC/USDC"),
 ]
 
-def make_adapter(venue: cycles = Counter("mf_arb_cycles", "Arb cycles attempted", ["venue","result"])
-pnl_gross = Gauge("mf_pnl_gross_usdt", "Gross realized PnL in USDT", ["venue"])
+ORDERS_TOTAL = Counter("mf_orders_total", "Orders attempted", ["venue","result"])
+PROFIT_TOTAL = Gauge("mf_profit_total_usdt", "Gross realized PnL in USDT", ["venue"])
 latency_ms = Gauge("mf_loop_latency_ms", "Main loop latency")
 
-def start(port: int): start_http_server(port)
+def start_metrics_server(port: int): start_http_server(port)
 
 ````
 
@@ -387,7 +387,7 @@ from arbit.config import settings
 from arbit.adapters.ccxt_adapter import CcxtAdapter
 from arbit.engine.executor import try_tri
 from arbit.models import Triangle
-from arbit.metrics.exporter import start as prom_start, arb_cycles, pnl_gross
+from arbit.metrics.exporter import start_metrics_server, ORDERS_TOTAL, PROFIT_TOTAL
 from arbit.persistence.db import connect, insert_trade, insert_cycle
 
 app = typer.Typer()
