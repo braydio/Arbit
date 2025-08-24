@@ -1,11 +1,15 @@
 """Command line interface for running the arbitrage engine."""
 
-import time, typer, logging
-from arbit.config import settings
+import logging
+import time
+
+import typer
 from arbit.adapters.ccxt_adapter import CcxtAdapter
-from arbit.engine.triangle import Triangle
+from arbit.config import settings
 from arbit.engine.executor import try_triangle
-from arbit.metrics.exporter import start as prom_start, arb_cycles, pnl_gross
+from arbit.engine.triangle import Triangle
+from arbit.metrics.exporter import arb_cycles, pnl_gross
+from arbit.metrics.exporter import start as prom_start
 
 app = typer.Typer()
 log = logging.getLogger("arbit")

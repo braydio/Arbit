@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+
 import click
 
 
@@ -15,14 +16,23 @@ class Typer(click.Group):
             params = []
             for name, param in sig.parameters.items():
                 opt = click.Option(
-                    [f"--{name.replace('_','-')}"],
+                    [f"--{name.replace('_', '-')}"],
                     default=param.default,
-                    type=(eval(param.annotation, func.__globals__) if isinstance(param.annotation, str) else param.annotation) if param.annotation is not inspect._empty else str,
+                    type=(
+                        (
+                            eval(param.annotation, func.__globals__)
+                            if isinstance(param.annotation, str)
+                            else param.annotation
+                        )
+                        if param.annotation is not inspect._empty
+                        else str
+                    ),
                 )
                 params.append(opt)
             cmd = click.Command(func.__name__, params=params, callback=func)
             self.add_command(cmd)
             return cmd
+
         return decorator
 
     def __call__(self, *args, **kwargs):  # pragma: no cover - passthrough

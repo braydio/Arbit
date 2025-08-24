@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typer.testing import CliRunner
-
 import sys
 import types
+
 import pytest
+
+from typer.testing import CliRunner
 
 sys.modules["arbit.config"] = types.SimpleNamespace(
     settings=types.SimpleNamespace(

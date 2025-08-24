@@ -1,2 +1,1 @@
 """Prometheus metrics helpers."""
-

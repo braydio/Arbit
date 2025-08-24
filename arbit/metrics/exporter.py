@@ -1,4 +1,4 @@
-from prometheus_client import start_http_server, Counter, Gauge
+from prometheus_client import Counter, Gauge, start_http_server
 
 arb_cycles = Counter("arbit_cycles", "Arb cycles", ["venue", "result"])
 pnl_gross = Gauge("arbit_pnl_usdt", "Realized PnL (USDT)", ["venue"])

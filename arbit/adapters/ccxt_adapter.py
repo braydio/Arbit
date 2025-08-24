@@ -1,6 +1,9 @@
-import ccxt, os
+import os
+
+import ccxt
+
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
-from arbit.config import settings, creds_for
+from arbit.config import creds_for, settings
 
 
 class CcxtAdapter(ExchangeAdapter):

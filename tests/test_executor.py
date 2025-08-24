@@ -13,9 +13,9 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
     )
 )
 
+from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.engine.executor import try_triangle
 from arbit.engine.triangle import Triangle
-from arbit.adapters.base import ExchangeAdapter, OrderSpec
 
 
 class DummyAdapter(ExchangeAdapter):
@@ -77,4 +77,3 @@ def test_try_triangle_skips_when_unprofitable() -> None:
     res = try_triangle(adapter, tri, books, thresh)
     assert res is None
     assert len(adapter.orders) == 0
-

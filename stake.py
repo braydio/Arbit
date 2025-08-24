@@ -44,9 +44,7 @@ def stake_usdc(amount: int) -> None:
 
     tx2 = pool.functions.supply(
         usdc.address, amount, acct.address, 0
-    ).build_transaction({
-        ...
-    })
+    ).build_transaction({...})
     signed2 = acct.sign_transaction(tx2)
     w3.eth.send_raw_transaction(signed2.rawTransaction)
 
@@ -54,4 +52,3 @@ def stake_usdc(amount: int) -> None:
 if __name__ == "__main__":
     AMOUNT = 1_000 * 10**6  # 1000 USDC (6 decimals)
     stake_usdc(AMOUNT)
-
