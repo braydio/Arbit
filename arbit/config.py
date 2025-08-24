@@ -1,38 +1,52 @@
-"""Application configuration using Pydantic settings."""
-
-from __future__ import annotations
-
-from pathlib import Path
-
 from pydantic import BaseSettings, Field
+from typing import List
+import os
 
 
 class Settings(BaseSettings):
-    """Runtime configuration loaded from environment variables.
+    env: str = "dev"
+    log_level: str = "INFO"
+    exchanges: List[str] = Field(default_factory=lambda: ["alpaca", "kraken"])
 
-    Attributes:
-        api_key: API key for exchange authentication.
-        api_secret: API secret for exchange authentication.
-        net_threshold: Minimum acceptable net profit threshold.
-        data_dir: Directory for storing runtime data.
-        log_path: File path for log output.
-        usdc_address: Address of the USDC contract.
-        pool_address: Address of the Aave v3 Pool contract.
-        usdc_abi_path: Filesystem path to the USDC contract ABI.
-        pool_abi_path: Filesystem path to the Aave v3 Pool ABI.
-    """
+    # Per-venue keys (preferred)
+    alpaca_api_key: str | None = None
+    alpaca_api_secret: str | None = None
+    alpaca_base_url: str = "https://api.alpaca.markets"
 
-    api_key: str = Field(..., description="Exchange API key")
-    api_secret: str = Field(..., description="Exchange API secret")
-    net_threshold: float = Field(0.001, description="Minimum net return threshold")
-    data_dir: Path = Field(Path("./data"), description="Directory for storing data")
-    log_path: Path = Field(Path("./arbit.log"), description="Path for log file")
-    usdc_address: str = Field(..., description="USDC contract address")
-    pool_address: str = Field(..., description="Aave v3 Pool contract address")
-    usdc_abi_path: str = Field("erc20.json", description="Path to USDC ABI file")
-    pool_abi_path: str = Field("aave_pool.json", description="Path to Aave v3 Pool ABI file")
+    kraken_api_key: str | None = None
+    kraken_api_secret: str | None = None
+
+    # Legacy fallback (ARBIT_* → use for both if set)
+    arbit_api_key: str | None = None
+    arbit_api_secret: str | None = None
+
+    notional_per_trade_usd: float = 200.0
+    net_threshold_bps: float = 10.0
+    max_slippage_bps: float = 8.0
+    max_open_orders: int = 3
+    dry_run: bool = True
+
+    prom_port: int = 9109
+    sqlite_path: str = "arbit.db"
+    discord_webhook_url: str | None = None
 
     class Config:
-        env_prefix = "ARBIT_"
         env_file = ".env"
-        case_sensitive = False
+
+
+settings = Settings()
+
+
+def creds_for(ex_id: str) -> tuple[str | None, str | None]:
+    # Prefer per-venue; fall back to legacy ARBIT_* if present
+    if ex_id == "alpaca":
+        return (
+            settings.alpaca_api_key or settings.arbit_api_key,
+            settings.alpaca_api_secret or settings.arbit_api_secret,
+        )
+    if ex_id == "kraken":
+        return (
+            settings.kraken_api_key or settings.arbit_api_key,
+            settings.kraken_api_secret or settings.arbit_api_secret,
+        )
+    return (settings.arbit_api_key, settings.arbit_api_secret)

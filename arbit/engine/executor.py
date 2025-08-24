@@ -1,62 +1,42 @@
-"""Order execution orchestration for triangular arbitrage."""
-
-from __future__ import annotations
-
-from typing import Dict
-
-from .triangle import top, net_edge_cycle, size_from_depth
-from ..adapters.base import ExchangeAdapter
-from ..models import Triangle, OrderSpec
+from arbit.adapters.base import ExchangeAdapter, OrderSpec
+from arbit.engine.triangle import Triangle, top, net_edge, size_from_depth
+from arbit.config import settings
 
 
-def try_triangle(
-    adapter: ExchangeAdapter,
-    triangle: Triangle,
-    order_books: Dict[str, dict],
-    threshold: float,
-) -> bool:
-    """Attempt to execute a triangular arbitrage cycle.
+def try_tri(adapter: ExchangeAdapter, tri: Triangle):
+    obAB = adapter.fetch_orderbook(tri.AB, 10)
+    obBC = adapter.fetch_orderbook(tri.BC, 10)
+    obAC = adapter.fetch_orderbook(tri.AC, 10)
 
-    The function inspects the provided *order_books* and, if the implied net
-    return exceeds *threshold*, submits three linked orders using *adapter*.
+    bidAB, askAB = top(obAB)
+    bidBC, askBC = top(obBC)
+    bidAC, askAC = top(obAC)
+    if None in (bidAB, askAB, bidBC, askBC, bidAC, askAC):
+        return None
 
-    Args:
-        adapter: Exchange adapter used for order placement.
-        triangle: Trading symbols forming the arbitrage path.
-        order_books: Mapping of symbol to order book data containing ``bids`` and
-            ``asks``.
-        threshold: Minimum acceptable net return. Values at or below this level
-            cause the trade to be skipped.
+    taker = adapter.fetch_fees(tri.AB)[1]
+    net = net_edge(askAB, bidBC, bidAC, taker)
+    if net < (settings.net_threshold_bps / 10000.0):
+        return None
 
-    Returns:
-        ``True`` if the three orders were submitted, otherwise ``False``.
-    """
-    try:
-        ab = order_books[triangle.leg_ab]
-        bc = order_books[triangle.leg_bc]
-        ac = order_books[triangle.leg_ac]
-    except KeyError:
-        return False
+    ask_price, ask_qty = obAB["asks"][0]
+    qtyB = size_from_depth(settings.notional_per_trade_usd, ask_price, ask_qty)
+    if (qtyB * ask_price) < adapter.min_notional(tri.AB):
+        return None
 
-    ab_price, ab_qty = top(ab.get("asks", []))
-    bc_price, bc_qty = top(bc.get("bids", []))
-    ac_price, ac_qty = top(ac.get("bids", []))
+    # Three IOC market legs
+    f1 = adapter.create_order(OrderSpec(tri.AB, "buy", qtyB, "IOC", "market"))
+    f2 = adapter.create_order(OrderSpec(tri.BC, "sell", qtyB, "IOC", "market"))
+    qtyC_est = qtyB * bidBC
+    f3 = adapter.create_order(OrderSpec(tri.AC, "sell", qtyC_est, "IOC", "market"))
 
-    net = net_edge_cycle([1 / ab_price if ab_price else 0.0, bc_price, ac_price])
-    if net <= threshold:
-        return False
+    usdt_out = f1["price"] * f1["qty"] + f1["fee"]
+    usdt_in = f3["price"] * f3["qty"] - f3["fee"]
+    realized = usdt_in - usdt_out
 
-    size = size_from_depth([(ab_price, ab_qty), (bc_price, bc_qty), (ac_price, ac_qty)])
-    if size <= 0.0:
-        return False
-
-    orders = [
-        OrderSpec(symbol=triangle.leg_ab, side="buy", quantity=size, price=ab_price),
-        OrderSpec(symbol=triangle.leg_bc, side="sell", quantity=size, price=bc_price),
-        OrderSpec(symbol=triangle.leg_ac, side="sell", quantity=size, price=ac_price),
-    ]
-
-    for order in orders:
-        adapter.create_order(order)
-
-    return True
+    return {
+        "tri": tri,
+        "net_est": net,
+        "fills": [f1, f2, f3],
+        "realized_usdt": realized,
+    }

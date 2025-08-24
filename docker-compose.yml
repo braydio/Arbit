@@ -1,28 +1,18 @@
-version: '3.8'
-
 services:
-  mf-alpaca:
+  arbit-alpaca:
     build: .
-    restart: unless-stopped
     env_file: .env
-    environment:
-      ARBIT_API_KEY: ${ARBIT_ALPACA_API_KEY}
-      ARBIT_API_SECRET: ${ARBIT_ALPACA_API_SECRET}
-    volumes:
-      - ./data:/data
-    ports:
-      - "9109:9109"
-    command: ["--venue", "alpaca", "--metrics-port", "9109"]
+    restart: unless-stopped
+    volumes: ["./data:/data"]
+    ports: ["9109:9109"]
+    command: ["python", "-m", "arbit.cli", "live", "--venue", "alpaca"]
 
-  mf-kraken:
+  arbit-kraken:
     build: .
-    restart: unless-stopped
     env_file: .env
+    restart: unless-stopped
+    volumes: ["./data:/data"]
+    ports: ["9110:9109"]
     environment:
-      ARBIT_API_KEY: ${ARBIT_KRAKEN_API_KEY}
-      ARBIT_API_SECRET: ${ARBIT_KRAKEN_API_SECRET}
-    volumes:
-      - ./data:/data
-    ports:
-      - "9110:9110"
-    command: ["--venue", "kraken", "--metrics-port", "9110"]
+      - PROM_PORT=9109
+    command: ["python", "-m", "arbit.cli", "live", "--venue", "kraken"]

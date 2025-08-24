@@ -1,93 +1,71 @@
-"""Typer-based command-line interface for Arbit.
-
-Provides ``fitness`` and ``live`` subcommands to exercise the trading
-components in isolation or in a simplified live loop.
-"""
-
-from __future__ import annotations
-
-import time
-
-import typer
-
-from .config import Settings
-from .engine.executor import try_triangle
-from .engine.triangle import net_edge_cycle, top
-from .metrics.exporter import ORDERS_TOTAL, start_metrics_server
-from .models import Triangle
-from .persistence.db import init_db, insert_triangle
+import time, typer, logging
+from arbit.config import settings
+from arbit.adapters.ccxt_adapter import CcxtAdapter
+from arbit.engine.triangle import Triangle
+from arbit.engine.executor import try_tri
+from arbit.metrics.exporter import start as prom_start, arb_cycles, pnl_gross
 
 app = typer.Typer()
+log = logging.getLogger("arbit")
+logging.basicConfig(level=settings.log_level)
 
-# Default trading triangle for USDT→ETH→BTC→USDT
-DEFAULT_TRIANGLE = Triangle("ETH/USDT", "BTC/ETH", "BTC/USDT")
-
-
-def _build_adapter(venue: str, settings: Settings):
-    """Return a CCXT adapter configured for *venue*."""
-    from .adapters.ccxt_adapter import CCXTAdapter
-    return CCXTAdapter(venue, settings.api_key, settings.api_secret)
+TRIS = [
+    Triangle("ETH/USDT", "BTC/ETH", "BTC/USDT"),
+    Triangle("ETH/USDC", "BTC/ETH", "BTC/USDC"),
+]
 
 
-@app.command()
-def fitness(venue: str = "alpaca", secs: int = 20) -> None:
-    """Run a short connectivity test against *venue*.
+def make(venue: str):
+    return CcxtAdapter(venue)
 
-    The command fetches order books for a predefined triangle once per
-    second and prints the estimated net return.  It repeats for *secs*
-    iterations.
-    """
 
-    settings = Settings()
-    adapter = _build_adapter(venue, settings)
-    triangle = DEFAULT_TRIANGLE
-
-    for _ in range(secs):
-        ob_ab = adapter.fetch_order_book(triangle.leg_ab)
-        ob_bc = adapter.fetch_order_book(triangle.leg_bc)
-        ob_ac = adapter.fetch_order_book(triangle.leg_ac)
-
-        ab = top(ob_ab.get("asks", []))
-        bc = top(ob_bc.get("bids", []))
-        ac = top(ob_ac.get("bids", []))
-
-        net = net_edge_cycle([1 / ab[0] if ab[0] else 0.0, bc[0], ac[0]])
-        typer.echo(f"net={net:.4%}")
-        time.sleep(1)
+@app.command("keys:check")
+def keys_check():
+    for venue in settings.exchanges:
+        try:
+            a = make(venue)
+            ms = a.ex.load_markets()
+            ob = a.fetch_orderbook("BTC/USDT", 1)
+            log.info(
+                f"[{venue}] markets={len(ms)} BTC/USDT {ob['bids'][0][0]}/{ob['asks'][0][0]}"
+            )
+        except Exception as e:
+            log.error(f"[{venue}] ERROR: {e}")
 
 
 @app.command()
-def live(venue: str = "alpaca", cycles: int = 1, metrics_port: int = 8000) -> None:
-    """Execute a simplified live trading loop.
-
-    The command initialises the database and metrics exporter before
-    fetching order books and attempting to trade using
-    :func:`~arbit.engine.executor.try_triangle`.
-    """
-
-    settings = Settings()
-    adapter = _build_adapter(venue, settings)
-    conn = init_db(str(settings.data_dir / "arbit.db"))
-    start_metrics_server(metrics_port)
-
-    triangle = DEFAULT_TRIANGLE
-    insert_triangle(conn, triangle)
-
-    for _ in range(cycles):
-        order_books = {
-            triangle.leg_ab: adapter.fetch_order_book(triangle.leg_ab),
-            triangle.leg_bc: adapter.fetch_order_book(triangle.leg_bc),
-            triangle.leg_ac: adapter.fetch_order_book(triangle.leg_ac),
-        }
-        if try_triangle(adapter, triangle, order_books, settings.net_threshold):
-            ORDERS_TOTAL.inc(3)
-        time.sleep(1)
+def fitness(venue: str = "alpaca", secs: int = 20):
+    a = make(venue)
+    t0 = time.time()
+    syms = {s for t in TRIS for s in (t.AB, t.BC, t.AC)}
+    while time.time() - t0 < secs:
+        for s in syms:
+            ob = a.fetch_orderbook(s, 5)
+            if ob["bids"] and ob["asks"]:
+                spread = (
+                    (ob["asks"][0][0] - ob["bids"][0][0]) / ob["asks"][0][0]
+                ) * 1e4
+                log.info(f"{venue} {s} spread={spread:.1f} bps")
+        time.sleep(0.25)
 
 
-def main() -> None:
-    """Entry point for ``python -m arbit.cli``."""
+@app.command()
+def live(venue: str = "alpaca"):
+    a = make(venue)
+    prom_start(settings.prom_port)
+    log.info(f"live@{venue} dry_run={settings.dry_run}")
+    while True:
+        for tri in TRIS:
+            res = try_tri(a, tri)
+            if not res:
+                continue
+            pnl_gross.labels(venue).set(res["realized_usdt"])
+            arb_cycles.labels(venue, "ok").inc()
+            log.info(
+                f"{venue} {tri} net={res['net_est']:.3%} PnL={res['realized_usdt']:.2f} USDT"
+            )
+        time.sleep(0.05)
+
+
+if __name__ == "__main__":
     app()
-
-
-if __name__ == "__main__":  # pragma: no cover - manual invocation
-    main()

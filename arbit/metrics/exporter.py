@@ -1,18 +1,8 @@
-"""Prometheus metrics exporter and helpers."""
+from prometheus_client import start_http_server, Counter, Gauge
 
-from __future__ import annotations
-
-from prometheus_client import Counter, Gauge, start_http_server
-
-# Counters
-ORDERS_TOTAL = Counter("orders_total", "Total number of orders placed")
-FILLS_TOTAL = Counter("fills_total", "Total number of fills recorded")
-
-# Gauges
-PROFIT_TOTAL = Gauge("profit_total", "Accumulated profit in quote currency")
+arb_cycles = Counter("arbit_cycles", "Arb cycles", ["venue", "result"])
+pnl_gross = Gauge("arbit_pnl_usdt", "Realized PnL (USDT)", ["venue"])
 
 
-def start_metrics_server(port: int = 8000) -> None:
-    """Start an HTTP server exposing Prometheus metrics."""
+def start(port: int):
     start_http_server(port)
-

@@ -1,28 +1,30 @@
-"""Abstract base classes for exchange connectivity."""
-
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Dict, Tuple
+from dataclasses import dataclass
+from typing import Literal
 
-from ..models import Fill, OrderSpec
+Side = Literal["buy", "sell"]
+
+
+@dataclass
+class OrderSpec:
+    symbol: str
+    side: Side
+    qty: float
+    tif: str = "IOC"  # time in force
+    type: str = "market"  # market for speed; upgrade later
 
 
 class ExchangeAdapter(ABC):
-    """Abstract base class defining a minimal exchange interface."""
-
     @abstractmethod
-    def fetch_order_book(self, symbol: str) -> dict[str, Any]:
-        """Return the current order book for *symbol*."""
-
+    def name(self) -> str: ...
     @abstractmethod
-    def create_order(self, order: OrderSpec) -> Fill:
-        """Place an *order* on the exchange and return a :class:`~arbit.models.Fill`."""
-
+    def fetch_orderbook(self, symbol: str, depth: int = 10) -> Dict[str, Any]: ...
     @abstractmethod
-    def cancel_order(self, order_id: str, symbol: str) -> None:
-        """Cancel an open order identified by *order_id* on *symbol*."""
-
+    def fetch_fees(self, symbol: str) -> Tuple[float, float]: ...
     @abstractmethod
-    def fetch_balance(self, asset: str) -> float:
-        """Return available balance for the given *asset*."""
+    def min_notional(self, symbol: str) -> float: ...
+    @abstractmethod
+    def create_order(self, spec: OrderSpec): ...
+    @abstractmethod
+    def balances(self) -> Dict[str, float]: ...

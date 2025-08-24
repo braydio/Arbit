@@ -1,72 +1,67 @@
-"""CCXT based implementation of :class:`ExchangeAdapter`."""
-
-from __future__ import annotations
-
-from datetime import datetime
-from typing import Any
-
-import ccxt  # type: ignore
-
-from ..models import Fill, OrderSpec
-from .base import ExchangeAdapter
+import ccxt, os
+from arbit.adapters.base import ExchangeAdapter, OrderSpec
+from arbit.config import settings, creds_for
 
 
-class CCXTAdapter(ExchangeAdapter):
-    """Adapter providing access to exchanges supported by `ccxt`.
+class CcxtAdapter(ExchangeAdapter):
+    def __init__(self, ex_id: str):
+        key, sec = creds_for(ex_id)
+        cls = getattr(ccxt, ex_id)
+        self.ex = cls({"apiKey": key, "secret": sec, "enableRateLimit": True})
+        if ex_id == "alpaca" and settings.alpaca_base_url:
+            self.ex.urls["api"] = settings.alpaca_base_url
+        self._fee = {}
 
-    Currently limited to the ``alpaca`` and ``kraken`` exchanges.
-    """
+    def name(self):
+        return self.ex.id
 
-    def __init__(self, exchange_id: str, api_key: str, api_secret: str) -> None:
-        """Instantiate adapter for the given *exchange_id*.
+    def fetch_orderbook(self, symbol, depth=10):
+        return self.ex.fetch_order_book(symbol, depth)
 
-        Args:
-            exchange_id: Identifier of the exchange (``alpaca`` or ``kraken``).
-            api_key: API key for authentication.
-            api_secret: API secret for authentication.
-        """
-        if exchange_id not in {"alpaca", "kraken"}:
-            raise ValueError(f"Unsupported exchange: {exchange_id}")
+    def fetch_fees(self, symbol):
+        if symbol in self._fee:
+            return self._fee[symbol]
+        m = self.ex.market(symbol)
+        maker = m.get("maker", self.ex.fees.get("trading", {}).get("maker", 0.001))
+        taker = m.get("taker", self.ex.fees.get("trading", {}).get("taker", 0.001))
+        self._fee[symbol] = (maker, taker)
+        return maker, taker
 
-        exchange_cls = getattr(ccxt, exchange_id)
-        self.client = exchange_cls(
-            {
-                "apiKey": api_key,
-                "secret": api_secret,
-                "enableRateLimit": True,
+    def min_notional(self, symbol):
+        m = self.ex.market(symbol)
+        return float(m.get("limits", {}).get("cost", {}).get("min", 1.0))
+
+    def create_order(self, spec: OrderSpec):
+        # Dry-run → synthesize taker fill at top-of-book
+        if settings.dry_run:
+            ob = self.fetch_orderbook(spec.symbol, 1)
+            price = ob["asks"][0][0] if spec.side == "buy" else ob["bids"][0][0]
+            fee = self.fetch_fees(spec.symbol)[1] * price * spec.qty
+            return {
+                "id": "dryrun",
+                "symbol": spec.symbol,
+                "side": spec.side,
+                "qty": spec.qty,
+                "price": price,
+                "fee": fee,
             }
+
+        params = {"timeInForce": spec.tif}
+        o = self.ex.create_order(
+            spec.symbol, spec.type, spec.side, spec.qty, None, params
         )
+        filled = float(o.get("filled", spec.qty))
+        price = float(o.get("average") or o.get("price") or 0.0)
+        fee_cost = sum(float(f.get("cost") or 0) for f in o.get("fees", []))
+        return {
+            "id": o["id"],
+            "symbol": spec.symbol,
+            "side": spec.side,
+            "qty": filled,
+            "price": price,
+            "fee": fee_cost,
+        }
 
-    def fetch_order_book(self, symbol: str) -> dict[str, Any]:
-        """Return the current order book for *symbol*."""
-        return self.client.fetch_order_book(symbol)
-
-    def create_order(self, order: OrderSpec) -> Fill:
-        """Place *order* on the exchange and return fill details."""
-        result = self.client.create_order(
-            order.symbol, order.order_type, order.side, order.quantity, order.price
-        )
-        timestamp = result.get("timestamp")
-        ts = datetime.fromtimestamp(timestamp / 1000) if timestamp else None
-        fee_cost = 0.0
-        fee = result.get("fee")
-        if isinstance(fee, dict):
-            fee_cost = float(fee.get("cost", 0))
-        return Fill(
-            order_id=str(result.get("id")),
-            symbol=order.symbol,
-            side=order.side,
-            price=float(result.get("price") or 0),
-            quantity=float(result.get("amount") or order.quantity),
-            fee=fee_cost,
-            timestamp=ts,
-        )
-
-    def cancel_order(self, order_id: str, symbol: str) -> None:
-        """Cancel an open order on the exchange."""
-        self.client.cancel_order(order_id, symbol)
-
-    def fetch_balance(self, asset: str) -> float:
-        """Return available balance for *asset*."""
-        balance = self.client.fetch_balance()
-        return float(balance.get("free", {}).get(asset, 0))
+    def balances(self):
+        b = self.ex.fetch_balance()
+        return {k: float(v) for k, v in b.get("total", {}).items() if float(v or 0) > 0}
