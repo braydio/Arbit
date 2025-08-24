@@ -79,6 +79,8 @@ def live(venue: str = "alpaca"):
     conn = init_db(settings.sqlite_path)
     for tri in TRIS:
         insert_triangle(conn, tri)
+    a = make(venue)
+    start_metrics_server(settings.prom_port)
     log.info(f"live@{venue} dry_run={settings.dry_run}")
     while True:
         for tri in TRIS:
@@ -95,8 +97,8 @@ def live(venue: str = "alpaca"):
             )
             if not res:
                 continue
-            pnl_gross.labels(venue).set(res["realized_usdt"])
-            arb_cycles.labels(venue, "ok").inc()
+            PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
+            ORDERS_TOTAL.labels(venue, "ok").inc()
             log.info(
                 f"{venue} {tri} net={res['net_est']:.3%} PnL={res['realized_usdt']:.2f} USDT"
             )
