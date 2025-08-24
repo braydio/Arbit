@@ -2,8 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
-from typing import Literal
+from typing import Any, Dict, Literal, Tuple
 
 Side = Literal["buy", "sell"]
 
