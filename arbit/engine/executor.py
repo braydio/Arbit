@@ -1,9 +1,9 @@
+
 """Utilities for executing triangular arbitrage cycles."""
 
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.engine.triangle import Triangle, top, net_edge, size_from_depth
 from arbit.config import settings
-
 
 def try_triangle(
     adapter: ExchangeAdapter,
@@ -29,9 +29,13 @@ def try_triangle(
     obBC = books.get(tri.BC, {"bids": [], "asks": []})
     obAC = books.get(tri.AC, {"bids": [], "asks": []})
 
-    bidAB, askAB = top(obAB)
-    bidBC, askBC = top(obBC)
-    bidAC, askAC = top(obAC)
+    levelsAB = [(b[0], a[0]) for b, a in zip(obAB.get("bids", []), obAB.get("asks", []))]
+    levelsBC = [(b[0], a[0]) for b, a in zip(obBC.get("bids", []), obBC.get("asks", []))]
+    levelsAC = [(b[0], a[0]) for b, a in zip(obAC.get("bids", []), obAC.get("asks", []))]
+
+    bidAB, askAB = top(levelsAB)
+    bidBC, askBC = top(levelsBC)
+    bidAC, askAC = top(levelsAC)
     if None in (bidAB, askAB, bidBC, askBC, bidAC, askAC):
         return None
 
@@ -41,7 +45,8 @@ def try_triangle(
         return None
 
     ask_price, ask_qty = obAB["asks"][0]
-    qtyB = size_from_depth(settings.notional_per_trade_usd, ask_price, ask_qty)
+    qtyB = size_from_depth([obAB["asks"][0], obBC["bids"][0], obAC["bids"][0]])
+    qtyB = min(qtyB, settings.notional_per_trade_usd / ask_price)
     if (qtyB * ask_price) < adapter.min_notional(tri.AB):
         return None
 
