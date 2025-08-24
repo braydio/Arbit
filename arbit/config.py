@@ -1,9 +1,13 @@
-from pydantic import BaseSettings, Field
+"""Configuration management and credential helpers."""
+
 from typing import List
-import os
+
+from pydantic import BaseSettings, Field
 
 
 class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
     env: str = "dev"
     log_level: str = "INFO"
     exchanges: List[str] = Field(default_factory=lambda: ["alpaca", "kraken"])
@@ -34,11 +38,13 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 
+# Singleton settings instance populated on import.
 settings = Settings()
 
 
 def creds_for(ex_id: str) -> tuple[str | None, str | None]:
-    # Prefer per-venue; fall back to legacy ARBIT_* if present
+    """Return API credentials for *ex_id*, falling back to legacy values."""
+    # Prefer per-venue; fall back to legacy ARBIT_* if present.
     if ex_id == "alpaca":
         return (
             settings.alpaca_api_key or settings.arbit_api_key,
