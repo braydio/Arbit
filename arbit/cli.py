@@ -7,8 +7,7 @@ import typer
 from arbit.adapters.ccxt_adapter import CcxtAdapter
 from arbit.config import settings
 from arbit.engine.executor import try_triangle
-from arbit.metrics.exporter import arb_cycles, pnl_gross
-from arbit.metrics.exporter import start as prom_start
+from arbit.metrics.exporter import ORDERS_TOTAL, PROFIT_TOTAL, start_metrics_server
 from arbit.models import Triangle
 
 app = typer.Typer()
@@ -59,7 +58,7 @@ def fitness(venue: str = "alpaca", secs: int = 20):
 def live(venue: str = "alpaca"):
     """Continuously scan for profitable triangles and execute trades."""
     a = make(venue)
-    prom_start(settings.prom_port)
+    start_metrics_server(settings.prom_port)
     log.info(f"live@{venue} dry_run={settings.dry_run}")
     while True:
         for tri in TRIS:
@@ -76,8 +75,8 @@ def live(venue: str = "alpaca"):
             )
             if not res:
                 continue
-            pnl_gross.labels(venue).set(res["realized_usdt"])
-            arb_cycles.labels(venue, "ok").inc()
+            PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
+            ORDERS_TOTAL.labels(venue, "ok").inc()
             log.info(
                 f"{venue} {tri} net={res['net_est']:.3%} PnL={res['realized_usdt']:.2f} USDT"
             )
