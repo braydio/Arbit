@@ -1,24 +1,33 @@
-"""Execution helpers for triangular arbitrage strategies."""
+
+"""Utilities for executing triangular arbitrage cycles."""
 
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.engine.triangle import Triangle, top, net_edge, size_from_depth
 from arbit.config import settings
 
-
-def try_tri(adapter: ExchangeAdapter, tri: Triangle):
+def try_triangle(
+    adapter: ExchangeAdapter,
+    tri: Triangle,
+    books: dict,
+    threshold: float,
+):
     """Attempt to execute a triangular arbitrage cycle.
 
-    Args:
-        adapter: Exchange interface used for market data and order placement.
-        tri:     The trading triangle to evaluate.
-
-    Returns:
-        A dictionary with fill information when profitable, otherwise ``None``.
+    Parameters
+    ----------
+    adapter:
+        Exchange adapter used for order and fee operations.
+    tri:
+        Triangle describing the market symbols to trade.
+    books:
+        Mapping of symbol to order book used for pricing.
+    threshold:
+        Minimum net profit fraction required to execute.
     """
 
-    obAB = adapter.fetch_orderbook(tri.AB, 10)
-    obBC = adapter.fetch_orderbook(tri.BC, 10)
-    obAC = adapter.fetch_orderbook(tri.AC, 10)
+    obAB = books.get(tri.AB, {"bids": [], "asks": []})
+    obBC = books.get(tri.BC, {"bids": [], "asks": []})
+    obAC = books.get(tri.AC, {"bids": [], "asks": []})
 
     levelsAB = [(b[0], a[0]) for b, a in zip(obAB.get("bids", []), obAB.get("asks", []))]
     levelsBC = [(b[0], a[0]) for b, a in zip(obBC.get("bids", []), obBC.get("asks", []))]
@@ -32,7 +41,7 @@ def try_tri(adapter: ExchangeAdapter, tri: Triangle):
 
     taker = adapter.fetch_fees(tri.AB)[1]
     net = net_edge(askAB, bidBC, bidAC, taker)
-    if net < (settings.net_threshold_bps / 10000.0):
+    if net < threshold:
         return None
 
     ask_price, ask_qty = obAB["asks"][0]

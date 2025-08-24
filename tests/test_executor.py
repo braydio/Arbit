@@ -13,7 +13,7 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
     )
 )
 
-from arbit.engine.executor import try_tri
+from arbit.engine.executor import try_triangle
 from arbit.engine.triangle import Triangle
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
 
@@ -59,18 +59,22 @@ def unprofitable_books() -> dict[str, dict[str, list[tuple[float, float]]]]:
     return data
 
 
-def test_try_tri_executes_on_profit() -> None:
+def test_try_triangle_executes_on_profit() -> None:
     tri = Triangle("ETH/USDT", "BTC/ETH", "BTC/USDT")
-    adapter = DummyAdapter(profitable_books())
-    res = try_tri(adapter, tri)
+    books = profitable_books()
+    adapter = DummyAdapter(books)
+    thresh = sys.modules["arbit.config"].settings.net_threshold_bps / 10000.0
+    res = try_triangle(adapter, tri, books, thresh)
     assert res is not None
     assert len(adapter.orders) == 3
 
 
-def test_try_tri_skips_when_unprofitable() -> None:
+def test_try_triangle_skips_when_unprofitable() -> None:
     tri = Triangle("ETH/USDT", "BTC/ETH", "BTC/USDT")
-    adapter = DummyAdapter(unprofitable_books())
-    res = try_tri(adapter, tri)
+    books = unprofitable_books()
+    adapter = DummyAdapter(books)
+    thresh = sys.modules["arbit.config"].settings.net_threshold_bps / 10000.0
+    res = try_triangle(adapter, tri, books, thresh)
     assert res is None
     assert len(adapter.orders) == 0
 
