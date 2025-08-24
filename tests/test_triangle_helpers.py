@@ -1,18 +1,21 @@
+"""Helper function tests for triangular arbitrage calculations."""
+
 import pytest
 
-from arbit.engine.triangle import net_edge, size_from_depth, top
+from arbit.engine.triangle import net_edge_cycle, size_from_depth, top
 
 
 def test_top() -> None:
-    ob = {"bids": [(1.0, 2.0), (0.9, 1.0)], "asks": [(2.0, 3.0), (2.1, 1.0)]}
-    assert top(ob) == (1.0, 2.0)
-    assert top({"bids": [], "asks": []}) == (None, None)
+    levels = [(1.0, 2.0), (0.9, 2.1)]
+    assert top(levels) == (1.0, 2.0)
+    assert top([]) == (None, None)
 
 
-def test_net_edge() -> None:
-    assert net_edge(1.0, 1.1, 1.2, 0.0) == pytest.approx(0.32)
+def test_net_edge_cycle() -> None:
+    assert net_edge_cycle([1.0, 1.1, 1.2]) == pytest.approx(0.32)
 
 
 def test_size_from_depth() -> None:
-    assert size_from_depth(100.0, 10.0, 20.0) == 10.0
-    assert size_from_depth(100.0, 0.0, 20.0) == 0.0
+    levels = [(10.0, 20.0), (11.0, 5.0)]
+    assert size_from_depth(levels) == 5.0
+    assert size_from_depth([]) == 0.0
