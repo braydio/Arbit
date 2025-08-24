@@ -1,10 +1,10 @@
-
 """Utilities for executing triangular arbitrage cycles."""
 
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
-from arbit.engine.triangle import top, net_edge, size_from_depth
-from arbit.models import Triangle
 from arbit.config import settings
+from arbit.engine.triangle import net_edge, size_from_depth, top
+from arbit.models import Triangle
+
 
 def try_triangle(
     adapter: ExchangeAdapter,
@@ -30,9 +30,15 @@ def try_triangle(
     obBC = books.get(tri.leg_bc, {"bids": [], "asks": []})
     obAC = books.get(tri.leg_ac, {"bids": [], "asks": []})
 
-    levelsAB = [(b[0], a[0]) for b, a in zip(obAB.get("bids", []), obAB.get("asks", []))]
-    levelsBC = [(b[0], a[0]) for b, a in zip(obBC.get("bids", []), obBC.get("asks", []))]
-    levelsAC = [(b[0], a[0]) for b, a in zip(obAC.get("bids", []), obAC.get("asks", []))]
+    levelsAB = [
+        (b[0], a[0]) for b, a in zip(obAB.get("bids", []), obAB.get("asks", []))
+    ]
+    levelsBC = [
+        (b[0], a[0]) for b, a in zip(obBC.get("bids", []), obBC.get("asks", []))
+    ]
+    levelsAC = [
+        (b[0], a[0]) for b, a in zip(obAC.get("bids", []), obAC.get("asks", []))
+    ]
 
     bidAB, askAB = top(levelsAB)
     bidBC, askBC = top(levelsBC)

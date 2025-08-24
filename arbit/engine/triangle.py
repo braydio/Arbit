@@ -2,6 +2,7 @@
 
 from typing import Iterable, List, Tuple
 
+
 def top(levels: List[Tuple[float, float]]) -> Tuple[float | None, float | None]:
     """Return best bid and ask from a list of ``(bid, ask)`` tuples.
 
