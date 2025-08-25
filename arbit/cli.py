@@ -50,7 +50,9 @@ def keys_check():
             symbol = (
                 "BTC/USDT"
                 if "BTC/USDT" in ms
-                else "BTC/USD" if "BTC/USD" in ms else next(iter(ms))
+                else "BTC/USD"
+                if "BTC/USD" in ms
+                else next(iter(ms))
             )
             ob = a.fetch_orderbook(symbol, 1)
             bid = ob.get("bids", [])
