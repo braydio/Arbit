@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     sqlite_path: str = "arbit.db"
     discord_webhook_url: str | None = None
 
-    class Config:
+    class Config(BaseSettings.Config):
+        """Pydantic settings configuration."""
+
         env_file = ".env"
 
 
