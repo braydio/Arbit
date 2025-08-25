@@ -2,7 +2,7 @@
 
 from typing import List
 
-from pydantic import BaseSettings, Field
+from pydantic import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     env: str = "dev"
     log_level: str = "INFO"
-    exchanges: List[str] = Field(default_factory=lambda: ["alpaca", "kraken"])
+    exchanges: List[str] = ["alpaca", "kraken"]  # default venues
 
     # Per-venue keys (preferred)
     alpaca_api_key: str | None = None
