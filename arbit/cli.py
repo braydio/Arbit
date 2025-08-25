@@ -78,8 +78,6 @@ def live(venue: str = "alpaca"):
     conn = init_db(settings.sqlite_path)
     for tri in TRIS:
         insert_triangle(conn, tri)
-    a = make(venue)
-    start_metrics_server(settings.prom_port)
     log.info(f"live@{venue} dry_run={settings.dry_run}")
     while True:
         for tri in TRIS:
