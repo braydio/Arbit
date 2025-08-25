@@ -42,14 +42,22 @@ def _build_adapter(venue: str, _settings=settings):
 
 @app.command("keys:check")
 def keys_check():
+    """Validate exchange credentials by fetching a sample order book."""
     for venue in settings.exchanges:
         try:
             a = _build_adapter(venue, settings)
             ms = a.ex.load_markets()
-            ob = a.fetch_orderbook("BTC/USDT", 1)
-            log.info(
-                f"[{venue}] markets={len(ms)} BTC/USDT {ob['bids'][0][0]}/{ob['asks'][0][0]}"
+            symbol = (
+                "BTC/USDT"
+                if "BTC/USDT" in ms
+                else "BTC/USD" if "BTC/USD" in ms else next(iter(ms))
             )
+            ob = a.fetch_orderbook(symbol, 1)
+            bid = ob.get("bids", [])
+            ask = ob.get("asks", [])
+            bid_price = bid[0][0] if bid else "n/a"
+            ask_price = ask[0][0] if ask else "n/a"
+            log.info(f"[{venue}] markets={len(ms)} {symbol} {bid_price}/{ask_price}")
         except Exception as e:
             log.error(f"[{venue}] ERROR: {e}")
 
