@@ -1,10 +1,13 @@
+"""Database helper tests for persistence layer."""
+
 from datetime import datetime
 
 from arbit.models import Fill, Triangle
 from arbit.persistence import db
 
 
-def test_insert_triangle_and_fill():
+def test_insert_triangle_and_fill() -> None:
+    """Records can be inserted and retrieved from the database."""
     conn = db.init_db(":memory:")
     triangle = Triangle("BTC/USDT", "USDT/ETH", "BTC/ETH")
     t_id = db.insert_triangle(conn, triangle)
