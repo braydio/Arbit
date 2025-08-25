@@ -27,3 +27,4 @@ jobs:
           coverage xml
       - name: Report coverage to DeepSource
         run: ./bin/deepsource report --analyzer test-coverage --key python --value-file "$(pwd)/coverage.xml"
+
