@@ -12,8 +12,7 @@ import typer
 from arbit import try_triangle
 from arbit.adapters.ccxt_adapter import CcxtAdapter
 from arbit.config import settings
-from arbit.metrics.exporter import arb_cycles, pnl_gross
-from arbit.metrics.exporter import start as start_metrics_server
+from arbit.metrics.exporter import ORDERS_TOTAL, PROFIT_TOTAL, start_metrics_server
 from arbit.models import Triangle
 from arbit.persistence.db import init_db, insert_triangle
 
