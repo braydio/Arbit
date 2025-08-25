@@ -1,3 +1,5 @@
+"""Tests for the CCXT exchange adapter implementation."""
+
 import pytest
 
 ccxt = pytest.importorskip("ccxt")
@@ -7,12 +9,14 @@ from arbit.models import OrderSpec
 
 
 def test_initialization() -> None:
+    """Adapter initialization returns a configured client."""
     adapter = CCXTAdapter("alpaca", "k", "s")
     assert isinstance(adapter, ExchangeAdapter)
     assert adapter.client.id == "alpaca"
 
 
 def test_fetch_order_book(monkeypatch) -> None:
+    """Order books are retrieved via the underlying ccxt client."""
     adapter = CCXTAdapter("kraken", "k", "s")
 
     def fake_fetch_order_book(symbol: str) -> dict:
@@ -25,6 +29,7 @@ def test_fetch_order_book(monkeypatch) -> None:
 
 
 def test_create_order(monkeypatch) -> None:
+    """Order creation passes through to the ccxt client."""
     adapter = CCXTAdapter("alpaca", "k", "s")
 
     def fake_create_order(symbol, order_type, side, amount, price):
@@ -44,6 +49,7 @@ def test_create_order(monkeypatch) -> None:
 
 
 def test_cancel_order(monkeypatch) -> None:
+    """Cancellation requests are forwarded to the client."""
     adapter = CCXTAdapter("alpaca", "k", "s")
     called: dict[str, str] = {}
 
@@ -57,6 +63,7 @@ def test_cancel_order(monkeypatch) -> None:
 
 
 def test_fetch_balance(monkeypatch) -> None:
+    """Balance retrieval uses the underlying client API."""
     adapter = CCXTAdapter("kraken", "k", "s")
 
     def fake_fetch_balance() -> dict:
