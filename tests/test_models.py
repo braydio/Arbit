@@ -1,6 +1,6 @@
 """Basic dataclass model tests."""
 
-from arbit.models import Triangle, OrderSpec, Fill
+from arbit.models import Fill, OrderSpec, Triangle
 
 
 def test_triangle() -> None:
