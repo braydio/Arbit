@@ -19,6 +19,8 @@ from arbit.models import Triangle
 
 
 class DummyAdapter(ExchangeAdapter):
+    """Lightweight adapter stub used for executor tests."""
+
     def __init__(self, books):
         self.books = books
         self.orders: list[OrderSpec] = []
@@ -46,6 +48,7 @@ class DummyAdapter(ExchangeAdapter):
 
 
 def profitable_books() -> dict[str, dict[str, list[tuple[float, float]]]]:
+    """Return a set of books that yields a profitable cycle."""
     return {
         "ETH/USDT": {"asks": [(100.0, 10.0)], "bids": [(99.0, 10.0)]},
         "BTC/ETH": {"bids": [(0.1, 10.0)], "asks": [(0.2, 10.0)]},
@@ -54,12 +57,14 @@ def profitable_books() -> dict[str, dict[str, list[tuple[float, float]]]]:
 
 
 def unprofitable_books() -> dict[str, dict[str, list[tuple[float, float]]]]:
+    """Return books adjusted to make the cycle unprofitable."""
     data = profitable_books()
     data["BTC/USDT"] = {"bids": [(900.0, 10.0)], "asks": [(901.0, 10.0)]}
     return data
 
 
 def test_try_triangle_executes_on_profit() -> None:
+    """Arbitrage cycle executes when net edge exceeds threshold."""
     tri = Triangle("ETH/USDT", "BTC/ETH", "BTC/USDT")
     books = profitable_books()
     adapter = DummyAdapter(books)
@@ -70,6 +75,7 @@ def test_try_triangle_executes_on_profit() -> None:
 
 
 def test_try_triangle_skips_when_unprofitable() -> None:
+    """Cycle is skipped when estimated net edge is below threshold."""
     tri = Triangle("ETH/USDT", "BTC/ETH", "BTC/USDT")
     books = unprofitable_books()
     adapter = DummyAdapter(books)

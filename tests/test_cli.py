@@ -22,7 +22,6 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
 sys.modules["arbit.adapters.ccxt_adapter"] = types.SimpleNamespace(CcxtAdapter=object)
 
 from arbit import cli
-from arbit.metrics import exporter
 
 
 class DummyAdapter:

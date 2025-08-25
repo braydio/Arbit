@@ -1,3 +1,9 @@
+"""Pytest configuration helpers.
+
+Ensure the project root is added to ``sys.path`` so test modules can import
+local packages without installation.
+"""
+
 import sys
 from pathlib import Path
 
