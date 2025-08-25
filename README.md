@@ -34,12 +34,14 @@ and prints the estimated net return of the USDT→ETH→BTC→USDT cycle.
 
 ### Typer CLI
 
-A Typer-based interface exposes `fitness` and `live` commands:
+A Typer-based interface exposes `keys:check`, `fitness`, and `live` commands:
 
 ```bash
+python -m arbit.cli keys:check
 python -m arbit.cli fitness --venue alpaca --secs 5
-python -m arbit.cli live --venue alpaca --cycles 1
+python -m arbit.cli live --venue alpaca
 ```
 
-Both commands load credentials from environment variables (`ARBIT_API_KEY`,
-`ARBIT_API_SECRET`) and use them to connect via `ccxt`.
+Use `keys:check` to validate API credentials. `live` runs indefinitely and honours
+the `DRY_RUN` setting. All commands load credentials from environment variables
+(`ARBIT_API_KEY`, `ARBIT_API_SECRET`) and use them to connect via `ccxt`.
