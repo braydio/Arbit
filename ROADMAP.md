@@ -1,4 +1,6 @@
-# -- MAIN ROADMAP FOR DEVELOPEMTN FEATURES
+# -- MAIN ROADMAP FOR DEVELOPMENT FEATURES
+
+Basic CLI `live` loop is operational via `python -m arbit.cli live`; runs in dry-run mode unless configured otherwise.
 
     kraken_api_key: str | None = None
     kraken_api_secret: str | None = None
