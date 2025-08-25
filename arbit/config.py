@@ -36,8 +36,8 @@ class Settings(BaseSettings):
 
     class Config(BaseSettings.Config):
         """Pydantic settings configuration."""
-
         env_file = ".env"
+        env_prefix = ""
 
 
 # Singleton settings instance populated on import.
