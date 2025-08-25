@@ -80,7 +80,12 @@ class Command:
 class Group(Command):
     """Collection of subcommands."""
 
-    def __init__(self, name: str | None = None, params: List[Option] | None = None, callback: Callable[..., Any] | None = None):
+    def __init__(
+        self,
+        name: str | None = None,
+        params: List[Option] | None = None,
+        callback: Callable[..., Any] | None = None,
+    ):
         super().__init__(name or "", params or [], callback or (lambda: None))
         self.commands: dict[str, Command] = {}
 
