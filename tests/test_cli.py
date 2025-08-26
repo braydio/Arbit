@@ -16,12 +16,13 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
         dry_run=True,
         net_threshold_bps=10.0,
         notional_per_trade_usd=200.0,
+        exchanges=["alpaca"],
     )
 )
 
 sys.modules["arbit.adapters.ccxt_adapter"] = types.SimpleNamespace(CcxtAdapter=object)
 
-from arbit import cli
+from arbit import cli  # noqa: E402
 
 
 class DummyAdapter:
@@ -72,6 +73,25 @@ def test_fitness(monkeypatch):
     runner = CliRunner()
     result = runner.invoke(cli.app, ["fitness", "--secs", "1"])
     assert result.exit_code == 0
+
+
+def test_keys_check(monkeypatch):
+    class DummyCcxt:
+        def load_markets(self):
+            return {"BTC/USD": {}}
+
+    class DummyKeyAdapter(DummyAdapter):
+        def __init__(self):
+            super().__init__()
+            self.ex = DummyCcxt()
+
+    adapter = DummyKeyAdapter()
+    monkeypatch.setattr(cli, "_build_adapter", lambda venue, _settings: adapter)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["keys_check"])
+    assert result.exit_code == 0
+    assert adapter.books_calls == ["BTC/USD"]
 
 
 def test_live() -> None:
