@@ -9,11 +9,10 @@ launched to visualise the live spreads and profit estimate.
 from __future__ import annotations
 
 import argparse
+import curses
 import os
 import time
-from typing import Dict, Tuple, TYPE_CHECKING
-
-import curses
+from typing import TYPE_CHECKING, Dict, Tuple
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
     import ccxt  # type: ignore
@@ -33,16 +32,24 @@ def top(ob: Dict[str, list]) -> Tuple[float | None, float | None]:
     return bid, ask
 
 
-def compute_net(bid_ab: float, ask_ab: float, bid_bc: float, ask_bc: float,
-                bid_ac: float, ask_ac: float, fee: float = FEE) -> float:
+def compute_net(
+    bid_ab: float,
+    ask_ab: float,
+    bid_bc: float,
+    ask_bc: float,
+    bid_ac: float,
+    ask_ac: float,
+    fee: float = FEE,
+) -> float:
     """Compute net gain of the USDT→ETH→BTC→USDT cycle."""
 
     gross = (1 / ask_ab) * bid_bc * bid_ac
     return gross * (1 - fee) ** 3 - 1
 
 
-def run_loop(ex: "ccxt.Exchange", cycles: int | None = None,
-             screen: curses.window | None = None) -> None:
+def run_loop(
+    ex: "ccxt.Exchange", cycles: int | None = None, screen: curses.window | None = None
+) -> None:
     """Continuously poll order books and report arbitrage opportunities.
 
     Args:
@@ -91,8 +98,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exchange", default=EX, help="ccxt exchange id")
     parser.add_argument("--tui", action="store_true", help="enable curses UI")
-    parser.add_argument("--cycles", type=int, default=None,
-                        help="number of iterations to run")
+    parser.add_argument(
+        "--cycles", type=int, default=None, help="number of iterations to run"
+    )
     args = parser.parse_args()
 
     import ccxt  # type: ignore

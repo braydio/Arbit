@@ -77,4 +77,3 @@ def insert_fill(conn: Connection, fill: Fill) -> int:
     )
     conn.commit()
     return cur.lastrowid
-
