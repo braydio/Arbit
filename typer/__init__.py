@@ -21,7 +21,7 @@ class Typer(click.Group):
             for name, param in sig.parameters.items():
                 annotation = type_hints.get(name, param.annotation)
                 opt = click.Option(
-                    [f"--{name.replace('_','-')}"],
+                    [f"--{name.replace('_', '-')}"],
                     default=param.default,
                     type=annotation if annotation is not inspect._empty else str,
                 )
