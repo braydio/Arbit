@@ -2,28 +2,29 @@ name: DeepSource
 
 on:
   push:
-    branches: ["main"]
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
 
 jobs:
-  tests:
+  deepsource:
     runs-on: ubuntu-latest
-    env:
-      DEEPSOURCE_DSN: ${{ secrets.DEEPSOURCE_DSN }}
+
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: "3.x"
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pytest coverage
-      - name: Install DeepSource CLI
-        run: curl https://deepsource.io/cli | sh
+          pip install -r requirements.txt
+          pip install pytest pytest-cov deepsource
+
       - name: Run tests with coverage
-        run: |
-          coverage run -m pytest
-          coverage xml
+        run: pytest --cov=arbit --cov-report=xml
+
       - name: Report coverage to DeepSource
-        run: ./bin/deepsource report --analyzer test-coverage --key python --value-file "$(pwd)/coverage.xml"
+        run: deepsource report --analyzer test-coverage --key python --value-file coverage.xml
