@@ -14,3 +14,14 @@ name = "ruff"
 
 [[transformers]]
 name = "black"
+
+# Tell DeepSource where tests live
+test_patterns = ["tests/**"]
+
+# Add coverage integration
+[[analyzers]]
+name = "test-coverage"
+
+  [analyzers.meta]
+  coverage_report_paths = ["coverage.xml"]
+  coverage_tool = "coverage.py"
