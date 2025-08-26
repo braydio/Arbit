@@ -77,7 +77,11 @@ def test_fitness(monkeypatch):
 
 def test_keys_check(monkeypatch):
     class DummyCcxt:
-        def load_markets(self):
+        """Minimal ccxt-like exchange for testing `keys_check`."""
+
+        @staticmethod
+        def load_markets() -> dict:
+            """Return available markets for the dummy exchange."""
             return {"BTC/USD": {}}
 
     class DummyKeyAdapter(DummyAdapter):
