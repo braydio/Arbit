@@ -67,4 +67,3 @@ def test_insufficient_eth_raises() -> None:
     acct = DummyAccount("0xabc")
     with pytest.raises(ValueError):
         ensure_account_ready(w3, acct, token, amount=100, min_token=100, min_eth=10**17)
-

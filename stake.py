@@ -126,4 +126,3 @@ if __name__ == "__main__":
 
     AMOUNT = Settings().min_usdc_stake
     stake_usdc(AMOUNT)
-
