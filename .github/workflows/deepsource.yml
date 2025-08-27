@@ -2,13 +2,15 @@ name: DeepSource
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
-  deepsource:
+  analyze:
     runs-on: ubuntu-latest
+    env:
+      DEEPSOURCE_API_KEY: ${{ secrets.DEEPSOURCE_DSN }}
 
     steps:
       - uses: actions/checkout@v3
