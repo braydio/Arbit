@@ -1,8 +1,40 @@
-"""Configuration management and credential helpers."""
+"""Configuration management and credential helpers.
 
+This module loads environment variables from a local ``.env`` file if one is
+present so that credentials such as API keys are available without manual
+exports.  Values in the real environment take precedence over those in the
+file.
+"""
+
+from pathlib import Path
+import os
 from typing import List
 
 from pydantic import BaseSettings
+
+
+def _load_env_file(path: str = ".env") -> None:
+    """Populate :mod:`os.environ` with key/value pairs from *path*.
+
+    The implementation is intentionally minimal to avoid depending on external
+    packages such as :mod:`python-dotenv`. Lines starting with ``#`` or lacking
+    an ``=`` separator are ignored. Existing keys are not overwritten.
+    """
+
+    try:
+        for line in Path(path).read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key, value)
+    except FileNotFoundError:
+        # It's fine if the .env file is absent; environment variables may be
+        # supplied via other means (e.g., shell exports).
+        pass
+
+
+_load_env_file()
 
 
 class Settings(BaseSettings):
