@@ -41,10 +41,12 @@ class DummyAdapter:
         return books.get(symbol, {"bids": [], "asks": []})
 
     def create_order(self, *args, **kwargs):  # pragma: no cover - not used
-        pass
+        """Stubbed order creation used solely for interface compatibility."""
+        return None
 
     def cancel_order(self, *args, **kwargs):  # pragma: no cover - not used
-        pass
+        """Stubbed order cancellation used solely for interface compatibility."""
+        return None
 
     @staticmethod
     def fetch_balance(*args, **kwargs) -> float:  # pragma: no cover
@@ -64,7 +66,8 @@ def test_fitness(monkeypatch):
             return self.t
 
         def sleep(self, _secs: float) -> None:
-            pass
+            """Advance the fake clock without real delay."""
+            return None
 
     monkeypatch.setattr(cli, "time", _Time())
 
