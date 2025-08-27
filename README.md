@@ -6,6 +6,12 @@ Implement the single‑exchange triangle with ccxt, REST polling first, tiny not
 
 Side‑task: deploy the Aave depositor (that’s a one‑time supply + a dashboard metric).
 
+The `stake.py` helper script now performs basic validation before sending
+transactions. Provide `RPC_URL` and `PRIVATE_KEY` environment variables and
+the script will ensure the account holds the configured minimum amounts of
+USDC and ETH and that the current gas price stays below a low-fee ceiling
+before depositing into Aave v3.
+
 Phase 2:
 
 Move arb to WebSockets / connectors, add multi‑symbol rotation, inventory rebalancing, Prometheus.
