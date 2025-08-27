@@ -16,7 +16,7 @@ Add stablecoin auto‑allocator logic with thresholded moves.
 
 The `legacy_arbit.py` script now exposes a small curses based TUI for monitoring
 triangular arbitrage opportunities on a single exchange.  Install
-dependencies (`pip install ccxt`) and run:
+dependencies (`pip install -r requirements.txt`) and run:
 
 ```bash
 python legacy_arbit.py --tui
