@@ -51,7 +51,7 @@ def try_triangle(
     if net < threshold:
         return None
 
-    ask_price, ask_qty = obAB["asks"][0]
+    ask_price = obAB["asks"][0][0]
     qtyB = size_from_depth([obAB["asks"][0], obBC["bids"][0], obAC["bids"][0]])
     qtyB = min(qtyB, settings.notional_per_trade_usd / ask_price)
     if (qtyB * ask_price) < adapter.min_notional(tri.leg_ab):
