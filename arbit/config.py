@@ -19,7 +19,9 @@ def _load_env_file(path: str = ".env") -> None:
 
     The implementation is intentionally minimal to avoid depending on external
     packages such as :mod:`python-dotenv`. Lines starting with ``#`` or lacking
-    an ``=`` separator are ignored. Existing keys are not overwritten.
+    an ``=`` separator are ignored. Existing keys are not overwritten. Values
+    wrapped in single or double quotes are unquoted to match typical ``.env``
+    file behavior.
     """
 
     try:
@@ -28,6 +30,11 @@ def _load_env_file(path: str = ".env") -> None:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, value = line.split("=", 1)
+            value = value.strip()
+            if (value.startswith('"') and value.endswith('"')) or (
+                value.startswith("'") and value.endswith("'")
+            ):
+                value = value[1:-1]
             os.environ.setdefault(key, value)
     except FileNotFoundError:
         # It's fine if the .env file is absent; environment variables may be
