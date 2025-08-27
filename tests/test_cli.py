@@ -46,7 +46,8 @@ class DummyAdapter:
     def cancel_order(self, *args, **kwargs):  # pragma: no cover - not used
         pass
 
-    def fetch_balance(self, *args, **kwargs) -> float:  # pragma: no cover
+    @staticmethod
+    def fetch_balance(*args, **kwargs) -> float:  # pragma: no cover
         return 0.0
 
 

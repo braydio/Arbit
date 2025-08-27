@@ -20,7 +20,8 @@ class Result:
 class CliRunner:
     """Execute commands and capture their output for tests."""
 
-    def invoke(self, app, args: List[str]) -> Result:
+    @staticmethod
+    def invoke(app, args: List[str]) -> Result:
         buf = io.StringIO()
         exc: Exception | None = None
         with contextlib.redirect_stdout(buf):
