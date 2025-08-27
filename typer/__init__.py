@@ -23,10 +23,9 @@ class Typer(click.Group):
                 opt = click.Option(
                     [f"--{name.replace('_', '-')}"],
                     default=param.default,
-                    type=
-                        annotation
-                        if annotation is not inspect.Signature.empty
-                        else str,
+                    type=(
+                        annotation if annotation is not inspect.Signature.empty else str
+                    ),
                 )
                 params.append(opt)
             cmd = click.Command(func.__name__, params=params, callback=func)
