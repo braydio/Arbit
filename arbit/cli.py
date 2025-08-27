@@ -69,18 +69,23 @@ def keys_check():
             symbol = (
                 "BTC/USDT"
                 if "BTC/USDT" in ms
-                else "BTC/USD"
-                if "BTC/USD" in ms
-                else next(iter(ms))
+                else "BTC/USD" if "BTC/USD" in ms else next(iter(ms))
             )
             ob = a.fetch_orderbook(symbol, 1)
             bid = ob.get("bids", [])
             ask = ob.get("asks", [])
             bid_price = bid[0][0] if bid else "n/a"
             ask_price = ask[0][0] if ask else "n/a"
-            log.info(f"[{venue}] markets={len(ms)} {symbol} {bid_price}/{ask_price}")
+            log.info(
+                "[%s] markets=%d %s %s/%s",
+                venue,
+                len(ms),
+                symbol,
+                bid_price,
+                ask_price,
+            )
         except Exception as e:
-            log.error(f"[{venue}] ERROR: {e}")
+            log.error("[%s] ERROR: %s", venue, e)
 
 
 @app.command()
@@ -95,7 +100,7 @@ def fitness(venue: str = "alpaca", secs: int = 20):
                 spread = (
                     (ob["asks"][0][0] - ob["bids"][0][0]) / ob["asks"][0][0]
                 ) * 1e4
-                log.info(f"{venue} {s} spread={spread:.1f} bps")
+                log.info("%s %s spread=%.1f bps", venue, s, spread)
         time.sleep(0.25)
 
 
@@ -107,7 +112,7 @@ def live(venue: str = "alpaca"):
     conn = init_db(settings.sqlite_path)
     for tri in TRIS:
         insert_triangle(conn, tri)
-    log.info(f"live@{venue} dry_run={settings.dry_run}")
+    log.info("live@%s dry_run=%s", venue, settings.dry_run)
     while True:
         for tri in TRIS:
             books = {
@@ -126,7 +131,11 @@ def live(venue: str = "alpaca"):
             PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
             ORDERS_TOTAL.labels(venue, "ok").inc()
             log.info(
-                f"{venue} {tri} net={res['net_est']:.3%} PnL={res['realized_usdt']:.2f} USDT"
+                "%s %s net=%.3f%% PnL=%.2f USDT",
+                venue,
+                tri,
+                res["net_est"] * 100,
+                res["realized_usdt"],
             )
         time.sleep(0.05)
 
