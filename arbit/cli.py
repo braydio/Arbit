@@ -6,6 +6,7 @@ imported here so tests can easily monkeypatch them.
 """
 
 import logging
+import sys
 import time
 
 import typer
@@ -16,7 +17,25 @@ from arbit.metrics.exporter import ORDERS_TOTAL, PROFIT_TOTAL, start_metrics_ser
 from arbit.models import Triangle
 from arbit.persistence.db import init_db, insert_triangle
 
-app = typer.Typer()
+
+class CLIApp(typer.Typer):
+    """Custom Typer application that prints usage on bad invocation."""
+
+    def main(self, args: list[str] | None = None):
+        """Run the CLI with *args*, showing usage on invalid input."""
+        if args is None:
+            args = sys.argv[1:]
+        if not args or args[0] not in self.commands:
+            typer.echo("Usage: arbit.cli [COMMAND]")
+            if self.commands:
+                typer.echo("Commands:")
+                for name in sorted(self.commands):
+                    typer.echo(f"  {name}")
+            raise SystemExit(0 if not args else 1)
+        return super().main(args)
+
+
+app = CLIApp()
 log = logging.getLogger("arbit")
 logging.basicConfig(level=settings.log_level)
 
@@ -50,9 +69,7 @@ def keys_check():
             symbol = (
                 "BTC/USDT"
                 if "BTC/USDT" in ms
-                else "BTC/USD"
-                if "BTC/USD" in ms
-                else next(iter(ms))
+                else "BTC/USD" if "BTC/USD" in ms else next(iter(ms))
             )
             ob = a.fetch_orderbook(symbol, 1)
             bid = ob.get("bids", [])
