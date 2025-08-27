@@ -51,7 +51,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def log_message(self, *_args, **_kwargs) -> None:  # pragma: no cover - quiet
-        pass
+        """Override to silence the default request logging."""
+        return None
 
 
 def start_http_server(port: int) -> None:
