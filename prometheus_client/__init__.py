@@ -17,10 +17,11 @@ class _Value:
     """Container for a single numeric metric value."""
 
     def __init__(self) -> None:
-        self._v = 0.0
+        self.value = 0.0
 
     def get(self) -> float:
-        return self._v
+        """Return the current metric value."""
+        return self.value
 
 
 class _Metric:
@@ -30,10 +31,12 @@ class _Metric:
         self._value = _Value()
 
     def inc(self, amount: float = 1.0) -> None:  # pragma: no cover - trivial
-        self._value._v += amount
+        """Increase the metric by *amount*."""
+        self._value.value += amount
 
     def set(self, value: float) -> None:  # pragma: no cover - trivial
-        self._value._v = value
+        """Set the metric to *value*."""
+        self._value.value = value
 
 
 Counter = Gauge = _Metric
