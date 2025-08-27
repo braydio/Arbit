@@ -6,9 +6,10 @@ exports.  Values in the real environment take precedence over those in the
 file.
 """
 
+import json
 import os
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
 from pydantic import BaseSettings
 
@@ -78,6 +79,22 @@ class Settings(BaseSettings):
 
         env_file = ".env"
         env_prefix = ""
+
+    def __init__(self, **kwargs: Any) -> None:
+        """Normalize exchange list from environment variables."""
+        super().__init__(**kwargs)
+        if isinstance(self.exchanges, str):
+            try:
+                parsed = json.loads(self.exchanges)
+            except Exception:
+                parsed = [e.strip() for e in self.exchanges.split(",") if e.strip()]
+            else:
+                if isinstance(parsed, str):
+                    parsed = [s.strip() for s in parsed.split(",") if s.strip()]
+            if isinstance(parsed, list):
+                self.exchanges = parsed
+            else:
+                self.exchanges = [str(parsed)]
 
 
 # Singleton settings instance populated on import.
