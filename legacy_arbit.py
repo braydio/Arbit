@@ -33,15 +33,22 @@ def top(ob: Dict[str, list]) -> Tuple[float | None, float | None]:
 
 
 def compute_net(
-    bid_ab: float,
     ask_ab: float,
     bid_bc: float,
-    ask_bc: float,
     bid_ac: float,
-    ask_ac: float,
     fee: float = FEE,
 ) -> float:
-    """Compute net gain of the USDT→ETH→BTC→USDT cycle."""
+    """Compute net gain of the USDT→ETH→BTC→USDT cycle.
+
+    Args:
+        ask_ab: Ask price for the ETH/USDT pair.
+        bid_bc: Bid price for the ETH/BTC pair.
+        bid_ac: Bid price for the BTC/USDT pair.
+        fee: Exchange taker fee applied per trade.
+
+    Returns:
+        Net profit ratio after accounting for fees.
+    """
 
     gross = (1 / ask_ab) * bid_bc * bid_ac
     return gross * (1 - fee) ** 3 - 1
@@ -71,7 +78,7 @@ def run_loop(
             time.sleep(0.2)
             continue
 
-        net = compute_net(bid_ab, ask_ab, bid_bc, ask_bc, bid_ac, ask_ac)
+        net = compute_net(ask_ab, bid_bc, bid_ac)
         if net >= THRESH:
             usdt = min(QTY_USDT, ask_ab * ob_ab["asks"][0][1])
             message = f"Arb! est_net={net:.4%} notional≈${usdt:.2f}"
