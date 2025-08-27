@@ -10,13 +10,22 @@ class CcxtAdapter(ExchangeAdapter):
     """Exchange adapter backed by the ``ccxt`` library."""
 
     def __init__(self, ex_id: str):
-        """Initialise the underlying ccxt client for *ex_id*."""
+        """Initialise the underlying ccxt client for *ex_id*.
+
+        The Alpaca adapter allows the trader API base URL to be customised via
+        :class:`arbit.config.Settings` so that paper trading or alternative
+        endpoints can be targeted.
+        """
         key, sec = creds_for(ex_id)
         cls = getattr(ccxt, ex_id)
         self.ex = cls({"apiKey": key, "secret": sec, "enableRateLimit": True})
         if ex_id == "alpaca" and settings.alpaca_base_url:
             # Some venues like Alpaca use non-ccxt defaults; allow override.
-            self.ex.urls["api"] = settings.alpaca_base_url
+            api_urls = self.ex.urls.get("api")
+            if isinstance(api_urls, dict):
+                api_urls["trader"] = settings.alpaca_base_url
+            else:  # pragma: no cover - legacy ccxt versions
+                self.ex.urls["api"] = settings.alpaca_base_url
         self._fee = {}
 
     def name(self):
