@@ -6,8 +6,8 @@ exports.  Values in the real environment take precedence over those in the
 file.
 """
 
-from pathlib import Path
 import os
+from pathlib import Path
 from typing import List
 
 from pydantic import BaseSettings
