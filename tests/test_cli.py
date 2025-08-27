@@ -98,5 +98,21 @@ def test_keys_check(monkeypatch):
     assert adapter.books_calls == ["BTC/USD"]
 
 
+def test_usage_without_args() -> None:
+    """Invoking CLI without arguments should display usage information."""
+    runner = CliRunner()
+    result = runner.invoke(cli.app, [])
+    assert result.exit_code == 0
+    assert "Usage" in result.output
+
+
+def test_usage_with_bad_command() -> None:
+    """An unknown command should produce a usage message."""
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["bogus"])
+    assert result.exit_code != 0
+    assert "Usage" in result.output
+
+
 def test_live() -> None:
     pytest.skip("live command runs indefinitely")
