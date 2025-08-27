@@ -6,8 +6,17 @@ import os
 from typing import Any
 
 
-def Field(default: Any, description: str | None = None):
-    """Return default value; kept for compatibility."""
+def Field(default: Any, description: str | None = None) -> Any:
+    """Return ``default`` value; kept for compatibility.
+
+    Args:
+        default: The default value to return.
+        description: Deprecated parameter retained for API compatibility.
+
+    Returns:
+        The ``default`` value as provided.
+    """
+    _ = description
     return default
 
 
