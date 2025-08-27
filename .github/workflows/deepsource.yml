@@ -9,6 +9,8 @@ on:
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    env:
+      DEEPSOURCE_API_KEY: ${{ secrets.DEEPSOURCE_DSN }}
 
     steps:
       - uses: actions/checkout@v3

@@ -1,0 +1,8 @@
+
+ccxt==4.1.98
+websockets==12.0
+pydantic==1.10.13
+typer==0.9.0
+prometheus-client==0.19.0
+orjson==3.9.15
+
