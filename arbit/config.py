@@ -81,6 +81,19 @@ class Settings(BaseSettings):
     sqlite_path: str = "arbit.db"
     discord_webhook_url: str | None = None
 
+    # Per-venue triangle definitions (override via JSON in env if desired)
+    # Format: { venue: [[leg_ab, leg_bc, leg_ac], ...], ... }
+    triangles_by_venue: dict[str, list[list[str]]] = {
+        "alpaca": [
+            ["ETH/USDT", "BTC/ETH", "BTC/USDT"],
+            ["ETH/USDC", "BTC/ETH", "BTC/USDC"],
+        ],
+        "kraken": [
+            ["ETH/USDT", "BTC/ETH", "BTC/USDT"],
+            ["ETH/USDC", "BTC/ETH", "BTC/USDC"],
+        ],
+    }
+
     class Config(BaseSettings.Config):
         """Pydantic settings configuration."""
 

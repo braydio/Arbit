@@ -6,16 +6,28 @@ imported here so tests can easily monkeypatch them.
 """
 
 import logging
-import sys
+import json
 import time
+import urllib.error
+import urllib.request
+import sys
+ 
 
 import typer
 from arbit import try_triangle
 from arbit.adapters.ccxt_adapter import CcxtAdapter
 from arbit.config import settings
-from arbit.metrics.exporter import ORDERS_TOTAL, PROFIT_TOTAL, start_metrics_server
-from arbit.models import Triangle
-from arbit.persistence.db import init_db, insert_triangle
+from arbit.metrics.exporter import (
+    CYCLE_LATENCY,
+    ERRORS_TOTAL,
+    FILLS_TOTAL,
+    ORDERS_TOTAL,
+    PROFIT_TOTAL,
+    SKIPS_TOTAL,
+    start_metrics_server,
+)
+from arbit.models import Fill, Triangle
+from arbit.persistence.db import init_db, insert_fill, insert_triangle
 
 
 class CLIApp(typer.Typer):
@@ -39,10 +51,13 @@ app = CLIApp()
 log = logging.getLogger("arbit")
 logging.basicConfig(level=settings.log_level)
 
-TRIS = [
-    Triangle("ETH/USDT", "BTC/ETH", "BTC/USDT"),
-    Triangle("ETH/USDC", "BTC/ETH", "BTC/USDC"),
-]
+def _triangles_for(venue: str) -> list[Triangle]:
+    data = getattr(settings, "triangles_by_venue", {}) or {}
+    triples = data.get(venue)
+    if not triples:
+        # Fallback defaults if config missing or tests stub settings
+        triples = [["ETH/USDT", "BTC/ETH", "BTC/USDT"], ["ETH/USDC", "BTC/ETH", "BTC/USDC"]]
+    return [Triangle(*t) for t in triples]
 
 
 def _build_adapter(venue: str, _settings=settings):
@@ -57,6 +72,29 @@ def _build_adapter(venue: str, _settings=settings):
     """
 
     return CcxtAdapter(venue)
+
+
+def _notify_discord(venue: str, message: str) -> None:
+    """Send a simple message to Discord webhook if configured.
+
+    Errors are swallowed; this is best-effort only.
+    """
+    url = settings.discord_webhook_url
+    if not url:
+        return
+    data = json.dumps({"content": message}).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=3) as _:
+            return
+    except Exception:
+        # Avoid spamming logs; bump an error metric instead
+        try:
+            ERRORS_TOTAL.labels(venue, "discord_send").inc()
+        except Exception:
+            pass
 
 
 @app.command("keys:check")
@@ -93,8 +131,9 @@ def keys_check():
 @app.command()
 def fitness(venue: str = "alpaca", secs: int = 20):
     a = _build_adapter(venue, settings)
+    tris = _triangles_for(venue)
     t0 = time.time()
-    syms = {s for t in TRIS for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
+    syms = {s for t in tris for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
     while time.time() - t0 < secs:
         for s in syms:
             ob = a.fetch_orderbook(s, 5)
@@ -112,26 +151,80 @@ def live(venue: str = "alpaca"):
     a = _build_adapter(venue, settings)
     start_metrics_server(settings.prom_port)
     conn = init_db(settings.sqlite_path)
-    for tri in TRIS:
+    tris = _triangles_for(venue)
+    for tri in tris:
         insert_triangle(conn, tri)
     log.info("live@%s dry_run=%s", venue, settings.dry_run)
+    last_alert_at = 0.0
     while True:
-        for tri in TRIS:
-            books = {
-                tri.leg_ab: a.fetch_orderbook(tri.leg_ab, 10),
-                tri.leg_bc: a.fetch_orderbook(tri.leg_bc, 10),
-                tri.leg_ac: a.fetch_orderbook(tri.leg_ac, 10),
-            }
+        for tri in tris:
+            t0 = time.time()
+            try:
+                books = {
+                    tri.leg_ab: a.fetch_orderbook(tri.leg_ab, 10),
+                    tri.leg_bc: a.fetch_orderbook(tri.leg_bc, 10),
+                    tri.leg_ac: a.fetch_orderbook(tri.leg_ac, 10),
+                }
+            except Exception as e:
+                ERRORS_TOTAL.labels(venue, "fetch_orderbook").inc()
+                log.error("fetch_orderbook error: %s", e)
+                continue
             res = try_triangle(
                 a,
                 tri,
                 books,
                 settings.net_threshold_bps / 10000.0,
+                skip_reasons := [],
             )
+            # Record latency per-triangle
+            try:
+                CYCLE_LATENCY.labels(venue).observe(max(time.time() - t0, 0.0))
+            except Exception:
+                pass
             if not res:
+                # Count skips by reason (default to 'unprofitable' if none)
+                if skip_reasons:
+                    for r in skip_reasons:
+                        try:
+                            SKIPS_TOTAL.labels(venue, r).inc()
+                        except Exception:
+                            pass
+                    # Alert on actionable skips (slippage/min_notional) with cooldown
+                    actionable = [
+                        r for r in skip_reasons if r.startswith("slippage") or r.startswith("min_notional")
+                    ]
+                    if actionable and time.time() - last_alert_at > 10:
+                        _notify_discord(
+                            venue,
+                            f"[{venue}] skipped {tri} reasons: {', '.join(actionable)}",
+                        )
+                        last_alert_at = time.time()
+                else:
+                    try:
+                        SKIPS_TOTAL.labels(venue, "unprofitable").inc()
+                    except Exception:
+                        pass
                 continue
             PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
             ORDERS_TOTAL.labels(venue, "ok").inc()
+            # Persist fills and update fills metric
+            for f in res.get("fills", []):
+                try:
+                    insert_fill(
+                        conn,
+                        Fill(
+                            order_id=str(f.get("id", "")),
+                            symbol=str(f.get("symbol", "")),
+                            side=str(f.get("side", "")),
+                            price=float(f.get("price", 0.0)),
+                            quantity=float(f.get("qty", 0.0)),
+                            fee=float(f.get("fee", 0.0)),
+                            timestamp=None,
+                        ),
+                    )
+                    FILLS_TOTAL.labels(venue).inc()
+                except Exception as e:
+                    log.error("persist fill error: %s", e)
             log.info(
                 "%s %s net=%.3f%% PnL=%.2f USDT",
                 venue,
