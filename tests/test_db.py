@@ -9,8 +9,8 @@ from arbit.persistence import db
 def test_insert_triangle_and_fill() -> None:
     """Records can be inserted and retrieved from the database."""
     conn = db.init_db(":memory:")
-    triangle = Triangle("BTC/USDT", "USDT/ETH", "BTC/ETH")
-    t_id = db.insert_triangle(conn, triangle)
+    tri = Triangle("ETH/USDT", "ETH/BTC", "BTC/USDT")
+    t_id = db.insert_triangle(conn, tri)
     assert t_id == 1
 
     fill = Fill(
@@ -27,6 +27,6 @@ def test_insert_triangle_and_fill() -> None:
 
     cur = conn.cursor()
     cur.execute("SELECT leg_ab, leg_bc, leg_ac FROM triangles")
-    assert cur.fetchone() == ("BTC/USDT", "USDT/ETH", "BTC/ETH")
+    assert cur.fetchone() == ("ETH/USDT", "ETH/BTC", "BTC/USDT")
     cur.execute("SELECT order_id, symbol, side, price, quantity, fee FROM fills")
     assert cur.fetchone() == ("o1", "BTC/USDT", "buy", 100.0, 0.5, 0.1)

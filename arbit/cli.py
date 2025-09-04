@@ -56,7 +56,7 @@ def _triangles_for(venue: str) -> list[Triangle]:
     triples = data.get(venue)
     if not triples:
         # Fallback defaults if config missing or tests stub settings
-        triples = [["ETH/USDT", "BTC/ETH", "BTC/USDT"], ["ETH/USDC", "BTC/ETH", "BTC/USDC"]]
+        triples = [["ETH/USDT", "ETH/BTC", "BTC/USDT"], ["ETH/USDC", "ETH/BTC", "BTC/USDC"]]
     return [Triangle(*t) for t in triples]
 
 

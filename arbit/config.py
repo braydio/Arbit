@@ -85,12 +85,12 @@ class Settings(BaseSettings):
     # Format: { venue: [[leg_ab, leg_bc, leg_ac], ...], ... }
     triangles_by_venue: dict[str, list[list[str]]] = {
         "alpaca": [
-            ["ETH/USDT", "BTC/ETH", "BTC/USDT"],
-            ["ETH/USDC", "BTC/ETH", "BTC/USDC"],
+            ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
+            ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
         ],
         "kraken": [
-            ["ETH/USDT", "BTC/ETH", "BTC/USDT"],
-            ["ETH/USDC", "BTC/ETH", "BTC/USDC"],
+            ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
+            ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
         ],
     }
 

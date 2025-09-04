@@ -35,7 +35,7 @@ class DummyAdapter:
         self.books_calls.append(symbol)
         books = {
             "ETH/USDT": {"asks": [(2000.0, 1.0)], "bids": []},
-            "BTC/ETH": {"bids": [(0.05, 1.0)], "asks": []},
+            "ETH/BTC": {"bids": [(0.05, 1.0)], "asks": []},
             "BTC/USDT": {"bids": [(60000.0, 1.0)], "asks": []},
         }
         return books.get(symbol, {"bids": [], "asks": []})
