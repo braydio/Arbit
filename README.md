@@ -30,6 +30,16 @@ Arbit monitors triangular arbitrage opportunities across cryptocurrency exchange
 - **Docker support** with multi-venue deployment
 - **Supported exchanges**: Alpaca, Kraken (via CCXT)
 
+### CLI Modes at a Glance
+
+| Mode        | Purpose                                                         | Example log line                             |
+|-------------|-----------------------------------------------------------------|----------------------------------------------|
+| `fitness`   | Read-only spread sampling to verify connectivity                | `kraken ETH/USDT spread=0.5 bps`             |
+| `live`      | Execute trades when triangles meet profit thresholds            | `alpaca Triangle(...) net=0.15% PnL=0.05`    |
+| `keys:check`| Validate exchange keys and permissions                          | `[alpaca] markets=123 BTC/USDT 60000/60010`  |
+
+Run `python -m arbit.cli --help-verbose` for command flags and more output samples.
+
 See [WARP.md](WARP.md) for comprehensive documentation, architecture details, and development roadmap.
 
 ## Quick Start
