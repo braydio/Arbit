@@ -5,13 +5,12 @@ arbitrage engine.  Helper functions for metrics and persistence are
 imported here so tests can easily monkeypatch them.
 """
 
-import logging
 import json
+import logging
+import sys
 import time
 import urllib.error
 import urllib.request
-import sys
- 
 
 import typer
 from arbit import try_triangle
@@ -51,12 +50,16 @@ app = CLIApp()
 log = logging.getLogger("arbit")
 logging.basicConfig(level=settings.log_level)
 
+
 def _triangles_for(venue: str) -> list[Triangle]:
     data = getattr(settings, "triangles_by_venue", {}) or {}
     triples = data.get(venue)
     if not triples:
         # Fallback defaults if config missing or tests stub settings
-        triples = [["ETH/USDT", "ETH/BTC", "BTC/USDT"], ["ETH/USDC", "ETH/BTC", "BTC/USDC"]]
+        triples = [
+            ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
+            ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
+        ]
     return [Triangle(*t) for t in triples]
 
 
@@ -215,7 +218,9 @@ def live(
                             pass
                     # Alert on actionable skips (slippage/min_notional) with cooldown
                     actionable = [
-                        r for r in skip_reasons if r.startswith("slippage") or r.startswith("min_notional")
+                        r
+                        for r in skip_reasons
+                        if r.startswith("slippage") or r.startswith("min_notional")
                     ]
                     if actionable and time.time() - last_alert_at > 10:
                         _notify_discord(
