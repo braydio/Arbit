@@ -51,8 +51,15 @@ pytest -q
 ```
 
 ### CLI Commands
-- Fitness sampling (read-only): `python -m arbit.cli fitness --venue kraken --secs 20`
-- Live trading cycles: `python -m arbit.cli live --venue alpaca --cycles 5 --metrics-port 9109`
+
+| Mode        | Purpose                                                         | Example log line                             |
+|-------------|-----------------------------------------------------------------|----------------------------------------------|
+| `fitness`   | Read-only spread sampling to verify connectivity                | `kraken ETH/USDT spread=0.5 bps`             |
+| `live`      | Execute trades when triangles meet profit thresholds            | `alpaca Triangle(...) net=0.15% PnL=0.05`    |
+| `keys:check`| Validate exchange keys and permissions                          | `[alpaca] markets=123 BTC/USDT 60000/60010`  |
+
+Run `python -m arbit.cli --help-verbose` for command flags and additional output samples.
+
 - Deprecated legacy TUI (monitor-only): `python deprecated/legacy_arbit.py --tui` (use `python -m arbit.cli` instead)
 
 ### Configuration
