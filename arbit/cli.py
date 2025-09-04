@@ -77,7 +77,8 @@ class CLIApp(typer.Typer):
             typer.echo(f"  {name.replace('_', ':'):<12} {desc}")
 
     # ------------------------------------------------------------------
-    def _print_verbose_help(self) -> None:
+    @staticmethod
+    def _print_verbose_help() -> None:
         """Print detailed command reference with flags and examples."""
 
         typer.echo("Command reference:\n")
