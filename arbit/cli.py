@@ -33,17 +33,80 @@ class CLIApp(typer.Typer):
     """Custom Typer application that prints usage on bad invocation."""
 
     def main(self, args: list[str] | None = None):
-        """Run the CLI with *args*, showing usage on invalid input."""
+        """Run the CLI with *args*, handling help flags and bad input.
+
+        Parameters
+        ----------
+        args:
+            Optional list of command-line arguments.  Defaults to
+            ``sys.argv[1:]`` when not provided.
+
+        The method detects ``--help`` and ``--help-verbose`` flags before
+        delegating to Typer's normal processing.  ``--help`` prints a short
+        summary of available commands while ``--help-verbose`` provides a
+        more detailed reference including flags and sample output.
+        """
+
         if args is None:
             args = sys.argv[1:]
+
+        if args and args[0] == "--help-verbose":
+            self._print_verbose_help()
+            raise SystemExit(0)
+
+        if args and args[0] == "--help":
+            self._print_basic_help()
+            raise SystemExit(0)
+
         if not args or args[0] not in self.commands:
             typer.echo("Usage: arbit.cli [COMMAND]")
             if self.commands:
                 typer.echo("Commands:")
                 for name in sorted(self.commands):
-                    typer.echo(f"  {name}")
+                    typer.echo(f"  {name.replace('_', ':')}")
             raise SystemExit(0 if not args else 1)
         return super().main(args)
+
+    # ------------------------------------------------------------------
+    def _print_basic_help(self) -> None:
+        """Print a short summary of available commands."""
+
+        typer.echo("Available commands:")
+        for name, command in sorted(self.commands.items()):
+            desc = (command.callback.__doc__ or "").strip().splitlines()[0]
+            typer.echo(f"  {name.replace('_', ':'):<12} {desc}")
+
+    # ------------------------------------------------------------------
+    def _print_verbose_help(self) -> None:
+        """Print detailed command reference with flags and examples."""
+
+        typer.echo("Command reference:\n")
+
+        typer.echo(
+            "keys:check\n"
+            "  Validate exchange credentials by fetching a sample order book.\n"
+            "  Sample output:\n"
+            "    [alpaca] markets=123 BTC/USDT 60000/60010\n"
+        )
+
+        typer.echo(
+            "fitness\n"
+            "  Monitor order books to gauge spread without trading.\n"
+            "  Flags:\n"
+            "    --venue TEXT   Exchange to query (default: alpaca)\n"
+            "    --secs INTEGER Seconds to run (default: 20)\n"
+            "  Sample output:\n"
+            "    alpaca ETH/USDT spread=10.0 bps\n"
+        )
+
+        typer.echo(
+            "live\n"
+            "  Continuously scan for profitable triangles and execute trades.\n"
+            "  Flags:\n"
+            "    --venue TEXT   Exchange to trade on (default: alpaca)\n"
+            "  Sample output:\n"
+            "    alpaca ETH/BTC net=0.5% PnL=0.10 USDT\n"
+        )
 
 
 app = CLIApp()

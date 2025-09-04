@@ -120,3 +120,25 @@ def test_usage_with_bad_command() -> None:
 
 def test_live() -> None:
     pytest.skip("live command runs indefinitely")
+
+
+def test_help_lists_commands() -> None:
+    """Global `--help` should list available commands with summaries."""
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["--help"])
+    assert result.exit_code == 0
+    assert "keys:check" in result.output
+    assert "fitness" in result.output
+    assert "live" in result.output
+
+
+def test_help_verbose_shows_details() -> None:
+    """`--help-verbose` should include flags and sample output."""
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["--help-verbose"])
+    assert result.exit_code == 0
+    assert "Command reference" in result.output
+    assert "--secs" in result.output
+    assert "Sample output" in result.output
