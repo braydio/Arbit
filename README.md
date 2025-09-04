@@ -238,7 +238,7 @@ This README provides user-focused documentation. For comprehensive technical det
 
 - **[WARP.md](WARP.md)** - Complete documentation (architecture, roadmap, development)
 - **Tests**: `pytest -q` 
-- **Legacy TUI**: `python legacy_arbit.py --tui`
+- **Deprecated legacy TUI**: `python deprecated/legacy_arbit.py --tui` (use `python -m arbit.cli` instead)
 
 ## Acknowledgments
 
