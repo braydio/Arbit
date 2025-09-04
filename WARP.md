@@ -31,7 +31,7 @@ curl http://localhost:9109/metrics
 **Notes:**
 - Use `fitness` command for safe read-only testing.
 - The `live` command can place real orders - use with caution.
-- Optional legacy TUI available in `legacy_arbit.py`.
+ - Deprecated legacy TUI script in `deprecated/legacy_arbit.py` (prefer `arbit.cli`).
 
 ## Development Workflow
 
@@ -53,7 +53,7 @@ pytest -q
 ### CLI Commands
 - Fitness sampling (read-only): `python -m arbit.cli fitness --venue kraken --secs 20`
 - Live trading cycles: `python -m arbit.cli live --venue alpaca --cycles 5 --metrics-port 9109`
-- Legacy TUI (monitor-only): `python legacy_arbit.py --tui`
+- Deprecated legacy TUI (monitor-only): `python deprecated/legacy_arbit.py --tui` (use `python -m arbit.cli` instead)
 
 ### Configuration
 The system uses Pydantic Settings with environment prefix `ARBIT_`:
@@ -121,7 +121,7 @@ Refer to `.env.example` for complete configuration template.
 - Docker containerization with docker-compose for multi-venue deployment
 
 **Legacy Components:**
-- Optional curses TUI in `legacy_arbit.py` (monitor only)
+ - Deprecated curses TUI in `deprecated/legacy_arbit.py` (monitor only; prefer `arbit.cli`)
 
 ## Strategy and Math
 
@@ -278,7 +278,7 @@ net   = gross * (1 - fee)^3 - 1
 - Data path defaults to `./data`; ensure directory exists or set `ARBIT_DATA_DIR`
 
 ### Legacy TUI
-- If TUI is needed, use `python legacy_arbit.py --tui` (monitor only)
+- If TUI is needed, use `python deprecated/legacy_arbit.py --tui` (deprecated; prefer `python -m arbit.cli`)
 
 ## FAQ
 
@@ -305,7 +305,7 @@ A: Estimates assume perfect execution at top-of-book prices. Real trading involv
 - **Metrics**: `arbit/metrics/exporter.py`
 - **DeFi**: `stake.py`
 - **Docker**: `Dockerfile`, `docker-compose.yml`
-- **Legacy**: `legacy_arbit.py`
+- **Deprecated**: `deprecated/legacy_arbit.py`
 - **Tests**: `tests/test_triangle.py`
 
 ## Common Development Commands

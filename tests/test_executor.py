@@ -51,7 +51,7 @@ def profitable_books() -> dict[str, dict[str, list[tuple[float, float]]]]:
     """Return a set of books that yields a profitable cycle."""
     return {
         "ETH/USDT": {"asks": [(100.0, 10.0)], "bids": [(99.0, 10.0)]},
-        "BTC/ETH": {"bids": [(0.1, 10.0)], "asks": [(0.2, 10.0)]},
+        "ETH/BTC": {"bids": [(0.1, 10.0)], "asks": [(0.2, 10.0)]},
         "BTC/USDT": {"bids": [(1100.0, 10.0)], "asks": [(1101.0, 10.0)]},
     }
 
@@ -65,7 +65,7 @@ def unprofitable_books() -> dict[str, dict[str, list[tuple[float, float]]]]:
 
 def test_try_triangle_executes_on_profit() -> None:
     """Arbitrage cycle executes when net edge exceeds threshold."""
-    tri = Triangle("ETH/USDT", "BTC/ETH", "BTC/USDT")
+    tri = Triangle("ETH/USDT", "ETH/BTC", "BTC/USDT")
     books = profitable_books()
     adapter = DummyAdapter(books)
     thresh = sys.modules["arbit.config"].settings.net_threshold_bps / 10000.0
@@ -76,7 +76,7 @@ def test_try_triangle_executes_on_profit() -> None:
 
 def test_try_triangle_skips_when_unprofitable() -> None:
     """Cycle is skipped when estimated net edge is below threshold."""
-    tri = Triangle("ETH/USDT", "BTC/ETH", "BTC/USDT")
+    tri = Triangle("ETH/USDT", "ETH/BTC", "BTC/USDT")
     books = unprofitable_books()
     adapter = DummyAdapter(books)
     thresh = sys.modules["arbit.config"].settings.net_threshold_bps / 10000.0

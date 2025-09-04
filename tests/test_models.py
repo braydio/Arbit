@@ -5,9 +5,9 @@ from arbit.models import Fill, OrderSpec, Triangle
 
 def test_triangle() -> None:
     """Triangle dataclass exposes configured legs."""
-    tri = Triangle("ETH/USDT", "BTC/ETH", "BTC/USDT")
+    tri = Triangle("ETH/USDT", "ETH/BTC", "BTC/USDT")
     assert tri.leg_ab == "ETH/USDT"
-    assert tri.leg_bc == "BTC/ETH"
+    assert tri.leg_bc == "ETH/BTC"
     assert tri.leg_ac == "BTC/USDT"
 
 
