@@ -78,12 +78,14 @@ def run_loop(
             time.sleep(0.2)
             continue
 
-        net = compute_net(ask_ab, bid_bc, bid_ac)
+        net = compute_net(ask_ab, bid_bc, bid_ac)  # estimated profit after fees
         if net >= THRESH:
             usdt = min(QTY_USDT, ask_ab * ob_ab["asks"][0][1])
-            message = f"Arb! est_net={net:.4%} notional≈${usdt:.2f}"
+            message = (
+                f"Arb! est_net={net:.4%} (est. profit after fees) notional≈${usdt:.2f}"
+            )
         else:
-            message = f"net={net:.4%}"
+            message = f"net={net:.4%} (est. profit after fees)"
 
         if screen:
             screen.erase()
