@@ -129,7 +129,20 @@ def keys_check():
 
 
 @app.command()
-def fitness(venue: str = "alpaca", secs: int = 20):
+def fitness(
+    venue: str = "alpaca",
+    secs: int = 20,
+    help_verbose: bool = False,
+):
+    """Read-only sanity check that prints bid/ask spreads."""
+
+    if help_verbose:
+        typer.echo(
+            "Typical log line: 'kraken ETH/USDT spread=0.5 bps' where spread is the\n"
+            "bid/ask gap expressed in basis points (1/100th of a percent)."
+        )
+        raise SystemExit(0)
+
     a = _build_adapter(venue, settings)
     tris = _triangles_for(venue)
     t0 = time.time()
@@ -140,14 +153,25 @@ def fitness(venue: str = "alpaca", secs: int = 20):
             if ob["bids"] and ob["asks"]:
                 spread = (
                     (ob["asks"][0][0] - ob["bids"][0][0]) / ob["asks"][0][0]
-                ) * 1e4
-                log.info("%s %s spread=%.1f bps", venue, s, spread)
+                ) * 1e4  # bid/ask gap in basis points
+                log.info("%s %s spread=%.1f bps (ask-bid gap)", venue, s, spread)
         time.sleep(0.25)
 
 
 @app.command()
-def live(venue: str = "alpaca"):
+def live(
+    venue: str = "alpaca",
+    help_verbose: bool = False,
+):
     """Continuously scan for profitable triangles and execute trades."""
+
+    if help_verbose:
+        typer.echo(
+            "Log line: 'alpaca Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.10 USDT'\n"
+            "net = estimated profit after fees; PnL = realized gain in USDT."
+        )
+        raise SystemExit(0)
+
     a = _build_adapter(venue, settings)
     start_metrics_server(settings.prom_port)
     conn = init_db(settings.sqlite_path)
@@ -226,7 +250,7 @@ def live(venue: str = "alpaca"):
                 except Exception as e:
                     log.error("persist fill error: %s", e)
             log.info(
-                "%s %s net=%.3f%% PnL=%.2f USDT",
+                "%s %s net=%.3f%% (est. profit after fees) PnL=%.2f USDT",
                 venue,
                 tri,
                 res["net_est"] * 100,
