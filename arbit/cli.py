@@ -5,13 +5,12 @@ arbitrage engine.  Helper functions for metrics and persistence are
 imported here so tests can easily monkeypatch them.
 """
 
-import logging
 import json
+import logging
+import sys
 import time
 import urllib.error
 import urllib.request
-import sys
- 
 
 import typer
 from arbit import try_triangle
@@ -34,29 +33,96 @@ class CLIApp(typer.Typer):
     """Custom Typer application that prints usage on bad invocation."""
 
     def main(self, args: list[str] | None = None):
-        """Run the CLI with *args*, showing usage on invalid input."""
+        """Run the CLI with *args*, handling help flags and bad input.
+
+        Parameters
+        ----------
+        args:
+            Optional list of command-line arguments.  Defaults to
+            ``sys.argv[1:]`` when not provided.
+
+        The method detects ``--help`` and ``--help-verbose`` flags before
+        delegating to Typer's normal processing.  ``--help`` prints a short
+        summary of available commands while ``--help-verbose`` provides a
+        more detailed reference including flags and sample output.
+        """
+
         if args is None:
             args = sys.argv[1:]
+
+        if args and args[0] == "--help-verbose":
+            self._print_verbose_help()
+            raise SystemExit(0)
+
+        if args and args[0] == "--help":
+            self._print_basic_help()
+            raise SystemExit(0)
+
         if not args or args[0] not in self.commands:
             typer.echo("Usage: arbit.cli [COMMAND]")
             if self.commands:
                 typer.echo("Commands:")
                 for name in sorted(self.commands):
-                    typer.echo(f"  {name}")
+                    typer.echo(f"  {name.replace('_', ':')}")
             raise SystemExit(0 if not args else 1)
         return super().main(args)
+
+    # ------------------------------------------------------------------
+    def _print_basic_help(self) -> None:
+        """Print a short summary of available commands."""
+
+        typer.echo("Available commands:")
+        for name, command in sorted(self.commands.items()):
+            desc = (command.callback.__doc__ or "").strip().splitlines()[0]
+            typer.echo(f"  {name.replace('_', ':'):<12} {desc}")
+
+    # ------------------------------------------------------------------
+    def _print_verbose_help(self) -> None:
+        """Print detailed command reference with flags and examples."""
+
+        typer.echo("Command reference:\n")
+
+        typer.echo(
+            "keys:check\n"
+            "  Validate exchange credentials by fetching a sample order book.\n"
+            "  Sample output:\n"
+            "    [alpaca] markets=123 BTC/USDT 60000/60010\n"
+        )
+
+        typer.echo(
+            "fitness\n"
+            "  Monitor order books to gauge spread without trading.\n"
+            "  Flags:\n"
+            "    --venue TEXT   Exchange to query (default: alpaca)\n"
+            "    --secs INTEGER Seconds to run (default: 20)\n"
+            "  Sample output:\n"
+            "    alpaca ETH/USDT spread=10.0 bps\n"
+        )
+
+        typer.echo(
+            "live\n"
+            "  Continuously scan for profitable triangles and execute trades.\n"
+            "  Flags:\n"
+            "    --venue TEXT   Exchange to trade on (default: alpaca)\n"
+            "  Sample output:\n"
+            "    alpaca ETH/BTC net=0.5% PnL=0.10 USDT\n"
+        )
 
 
 app = CLIApp()
 log = logging.getLogger("arbit")
 logging.basicConfig(level=settings.log_level)
 
+
 def _triangles_for(venue: str) -> list[Triangle]:
     data = getattr(settings, "triangles_by_venue", {}) or {}
     triples = data.get(venue)
     if not triples:
         # Fallback defaults if config missing or tests stub settings
-        triples = [["ETH/USDT", "ETH/BTC", "BTC/USDT"], ["ETH/USDC", "ETH/BTC", "BTC/USDC"]]
+        triples = [
+            ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
+            ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
+        ]
     return [Triangle(*t) for t in triples]
 
 
@@ -129,7 +195,20 @@ def keys_check():
 
 
 @app.command()
-def fitness(venue: str = "alpaca", secs: int = 20):
+def fitness(
+    venue: str = "alpaca",
+    secs: int = 20,
+    help_verbose: bool = False,
+):
+    """Read-only sanity check that prints bid/ask spreads."""
+
+    if help_verbose:
+        typer.echo(
+            "Typical log line: 'kraken ETH/USDT spread=0.5 bps' where spread is the\n"
+            "bid/ask gap expressed in basis points (1/100th of a percent)."
+        )
+        raise SystemExit(0)
+
     a = _build_adapter(venue, settings)
     tris = _triangles_for(venue)
     t0 = time.time()
@@ -140,14 +219,25 @@ def fitness(venue: str = "alpaca", secs: int = 20):
             if ob["bids"] and ob["asks"]:
                 spread = (
                     (ob["asks"][0][0] - ob["bids"][0][0]) / ob["asks"][0][0]
-                ) * 1e4
-                log.info("%s %s spread=%.1f bps", venue, s, spread)
+                ) * 1e4  # bid/ask gap in basis points
+                log.info("%s %s spread=%.1f bps (ask-bid gap)", venue, s, spread)
         time.sleep(0.25)
 
 
 @app.command()
-def live(venue: str = "alpaca"):
+def live(
+    venue: str = "alpaca",
+    help_verbose: bool = False,
+):
     """Continuously scan for profitable triangles and execute trades."""
+
+    if help_verbose:
+        typer.echo(
+            "Log line: 'alpaca Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.10 USDT'\n"
+            "net = estimated profit after fees; PnL = realized gain in USDT."
+        )
+        raise SystemExit(0)
+
     a = _build_adapter(venue, settings)
     start_metrics_server(settings.prom_port)
     conn = init_db(settings.sqlite_path)
@@ -191,7 +281,9 @@ def live(venue: str = "alpaca"):
                             pass
                     # Alert on actionable skips (slippage/min_notional) with cooldown
                     actionable = [
-                        r for r in skip_reasons if r.startswith("slippage") or r.startswith("min_notional")
+                        r
+                        for r in skip_reasons
+                        if r.startswith("slippage") or r.startswith("min_notional")
                     ]
                     if actionable and time.time() - last_alert_at > 10:
                         _notify_discord(
@@ -226,7 +318,7 @@ def live(venue: str = "alpaca"):
                 except Exception as e:
                     log.error("persist fill error: %s", e)
             log.info(
-                "%s %s net=%.3f%% PnL=%.2f USDT",
+                "%s %s net=%.3f%% (est. profit after fees) PnL=%.2f USDT",
                 venue,
                 tri,
                 res["net_est"] * 100,

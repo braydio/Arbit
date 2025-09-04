@@ -140,6 +140,11 @@ python -m arbit.cli fitness --venue kraken --secs 20
 python -m arbit.cli fitness --venue alpaca --secs 5
 ```
 
+Typical log line: ``kraken ETH/USDT spread=0.5 bps`` where ``spread`` is the
+best ask minus best bid expressed in basis points (1 bps = 0.01%). Smaller
+spreads generally indicate deeper liquidity. Use ``--help-verbose`` for more
+output guidance.
+
 ### Live Trading (⚠️ PLACES REAL ORDERS)
 
 **WARNING**: Only use with tiny amounts and proper risk management!
@@ -152,6 +157,12 @@ python -m arbit.cli live --venue alpaca
 # With different venue
 python -m arbit.cli live --venue kraken
 ```
+
+A typical execution log looks like
+``alpaca Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.05 USDT``.
+Here ``net`` denotes the estimated profit after fees for the triangle and
+``PnL`` shows realized profit in USDT. Invoke the command with
+``--help-verbose`` to see these explanations from the CLI itself.
 
 ### Monitoring & Metrics
 
