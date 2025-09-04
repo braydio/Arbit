@@ -120,8 +120,8 @@ def _triangles_for(venue: str) -> list[Triangle]:
     if not triples:
         # Fallback defaults if config missing or tests stub settings
         triples = [
-            ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
-            ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
+            ["ETH/USDT", "BTC/ETH", "BTC/USDT"],
+            ["ETH/USDC", "BTC/ETH", "BTC/USDC"],
         ]
     return [Triangle(*t) for t in triples]
 
