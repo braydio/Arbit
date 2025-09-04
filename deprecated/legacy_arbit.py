@@ -1,9 +1,11 @@
-"""Simple triangular arbitrage monitor with optional TUI interface.
+"""DEPRECATED: simple triangular arbitrage monitor with optional TUI interface.
 
 The script polls three markets on a single exchange to detect a
 USDT→ETH→BTC→USDT cycle. When the net return exceeds the configured
-threshold, the opportunity is logged.  A minimal curses based TUI can be
+threshold, the opportunity is logged. A minimal curses based TUI can be
 launched to visualise the live spreads and profit estimate.
+
+Use :mod:`arbit.cli` for current functionality.
 """
 
 from __future__ import annotations
@@ -12,7 +14,14 @@ import argparse
 import curses
 import os
 import time
+import warnings
 from typing import TYPE_CHECKING, Dict, Tuple
+
+warnings.warn(
+    "legacy_arbit.py is deprecated; use 'python -m arbit.cli' instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
     import ccxt  # type: ignore
@@ -78,12 +87,14 @@ def run_loop(
             time.sleep(0.2)
             continue
 
-        net = compute_net(ask_ab, bid_bc, bid_ac)
+        net = compute_net(ask_ab, bid_bc, bid_ac)  # estimated profit after fees
         if net >= THRESH:
             usdt = min(QTY_USDT, ask_ab * ob_ab["asks"][0][1])
-            message = f"Arb! est_net={net:.4%} notional≈${usdt:.2f}"
+            message = (
+                f"Arb! est_net={net:.4%} (est. profit after fees) notional≈${usdt:.2f}"
+            )
         else:
-            message = f"net={net:.4%}"
+            message = f"net={net:.4%} (est. profit after fees)"
 
         if screen:
             screen.erase()

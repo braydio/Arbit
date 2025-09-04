@@ -4,7 +4,7 @@ This module exposes counters and gauges for tracking orders and profit as well a
 utilities for starting the metrics HTTP server.
 """
 
-from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 # Metric collectors
 ORDERS_TOTAL = Counter("orders_total", "Total orders processed", ["venue", "result"])
