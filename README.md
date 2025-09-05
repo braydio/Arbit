@@ -162,7 +162,14 @@ Optionally simulate dry-run triangle executions and log simulated PnL:
 python -m arbit.cli fitness --venue alpaca --secs 5 --simulate
 # Persist simulated fills to SQLite
 python -m arbit.cli fitness --venue alpaca --secs 5 --simulate --persist
+# Force a safe synthetic execution to exercise the path
+python -m arbit.cli fitness --venue alpaca --secs 3 --simulate --dummy-trigger
 ```
+
+When ``--dummy-trigger`` is set (fitness mode only), the CLI injects a single
+synthetic top-of-book snapshot that yields a profitable triangle and records a
+dry-run execution. This is useful to validate your end-to-end flow (persistence
+and logging) without relying on market conditions.
 
 ### Live Trading (⚠️ PLACES REAL ORDERS)
 
@@ -197,6 +204,21 @@ curl http://localhost:9109/metrics
 **Supported Venues**: `alpaca`, `kraken`
 
 **Note**: Ensure triangle symbols exist on your chosen venue (ETH/USDT, ETH/BTC, BTC/USDT). See [WARP.md CLI Commands](WARP.md#cli-commands) for full documentation.
+
+## Persistence
+
+SQLite is used by default (see ``SQLITE_PATH``). In addition to the existing
+``triangles`` and ``fills`` tables, Arbit records per-attempt data in
+``triangle_attempts`` to help gauge system performance:
+
+- triangle_attempts: ts_iso, venue, legs, ok, net_est, realized_usdt,
+  threshold_bps, notional_usd, slippage_bps, dry_run, latency_ms, skip_reasons,
+  top-of-book (ab/bc/ac bid/ask) and qty_base.
+- fills now include: venue, leg (AB/BC/AC), tif, order_type, fee_rate,
+  notional, dry_run, and attempt_id linking back to the attempt.
+
+These additions are backwards-compatible; existing columns and tests remain
+unchanged.
 
 ### Setup Helpers
 

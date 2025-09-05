@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import typing
+import types as _types
 
 import click
 
@@ -53,25 +54,26 @@ class Typer(click.Group):
             for pname, param in sig.parameters.items():
                 annotation = type_hints.get(pname, param.annotation)
 
+                # Normalize Optional/Union[T, None] to T
+                ann = annotation
+                origin = typing.get_origin(ann)
+                if origin in (_types.UnionType, typing.Union):
+                    args = [a for a in typing.get_args(ann) if a is not type(None)]
+                    ann = args[0] if args else str
+
                 # Choose a converter callable for the option type.
-                opt_type: typing.Callable[[str], typing.Any]
-                if annotation is bool:
-
-                    def _parse_bool(s: str) -> bool:
-                        sl = s.lower()
-                        if sl in ("1", "true", "yes", "on"):  # common truthy tokens
-                            return True
-                        if sl in ("0", "false", "no", "off"):
-                            return False
-                        raise SystemExit(
-                            f"Invalid boolean for --{pname.replace('_', '-')}: {s}"
-                        )
-
-                    opt_type = _parse_bool
+                opt_type: typing.Any
+                if ann is bool:
+                    # Use the click shim's native boolean flag handling
+                    opt_type = bool
+                elif ann is inspect.Signature.empty:
+                    opt_type = str
+                elif isinstance(ann, type):
+                    # Basic builtins like str, int, float work as converters
+                    opt_type = ann
                 else:
-                    opt_type = (
-                        annotation if annotation is not inspect.Signature.empty else str
-                    )
+                    # Fallback for unsupported/complex annotations
+                    opt_type = str
 
                 default = (
                     None if param.default is inspect.Signature.empty else param.default

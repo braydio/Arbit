@@ -99,11 +99,22 @@ def try_triangle(
                 skip_reasons.append("slippage_ab")
             return None
     qtyB = min(qtyB, settings.notional_per_trade_usd / ask_price)
-    if (qtyB * ask_price) < adapter.min_notional(tri.leg_ab):
+    try:
+        min_cost_ab2 = float(adapter.min_notional(tri.leg_ab))
+    except Exception:
+        min_cost_ab2 = 0.0
+    if (qtyB * ask_price) < min_cost_ab2:
+        if skip_reasons is not None:
+            skip_reasons.append("min_notional_ab")
         return None
 
     # Three IOC market legs
     f1 = adapter.create_order(OrderSpec(tri.leg_ab, "buy", qtyB, "IOC", "market"))
+    try:
+        fee_rate_ab = adapter.fetch_fees(tri.leg_ab)[1]
+    except Exception:
+        fee_rate_ab = None
+    f1.update({"leg": "AB", "fee_rate": fee_rate_ab, "tif": "IOC", "type": "market"})
     # Slippage + min-notional check for BC leg
     obBC_now = adapter.fetch_orderbook(tri.leg_bc, 1)
     bidBC_now = obBC_now.get("bids", [[bidBC]])[0][0]
@@ -122,6 +133,11 @@ def try_triangle(
                 skip_reasons.append("min_notional_bc")
             return None
     f2 = adapter.create_order(OrderSpec(tri.leg_bc, "sell", qtyB, "IOC", "market"))
+    try:
+        fee_rate_bc = adapter.fetch_fees(tri.leg_bc)[1]
+    except Exception:
+        fee_rate_bc = None
+    f2.update({"leg": "BC", "fee_rate": fee_rate_bc, "tif": "IOC", "type": "market"})
     qtyC_est = qtyB * bidBC
     # Slippage + min-notional check for AC leg
     obAC_now = adapter.fetch_orderbook(tri.leg_ac, 1)
@@ -140,6 +156,11 @@ def try_triangle(
                 skip_reasons.append("min_notional_ac")
             return None
     f3 = adapter.create_order(OrderSpec(tri.leg_ac, "sell", qtyC_est, "IOC", "market"))
+    try:
+        fee_rate_ac = adapter.fetch_fees(tri.leg_ac)[1]
+    except Exception:
+        fee_rate_ac = None
+    f3.update({"leg": "AC", "fee_rate": fee_rate_ac, "tif": "IOC", "type": "market"})
 
     usdt_out = f1["price"] * f1["qty"] + f1["fee"]
     usdt_in = f3["price"] * f3["qty"] - f3["fee"]

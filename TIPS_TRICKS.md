@@ -9,6 +9,22 @@ This guide collects practical advice for configuring and operating Arbit safely,
 - Max slippage: Keep strict first. Start `5–10 bps` and relax if too many skips.
 - Dry run: Keep `true` until you’ve verified end-to-end behavior and logs.
 
+### Forcing a Safe Execution in Fitness
+
+- Add `--simulate` to `fitness` to attempt dry‑run triangle executions and log
+  `net%` and `PnL` when conditions are met.
+- Add `--dummy-trigger` to inject a single synthetic profitable snapshot on the
+  first loop and exercise the execution path end‑to‑end (no real orders).
+
+Example:
+
+```
+python -m arbit.cli fitness --venue alpaca --secs 3 --simulate --dummy-trigger
+```
+
+This will print one `[sim] Triangle(...) net=... PnL=...` line and update the
+database if `--persist` is also specified.
+
 ## What To Set For Notional (Starter Amount)
 
 - Purpose: Caps the max quote value for a triangle attempt (derived from `AB` ask). Lower = safer losses, fewer fills; higher = larger PnL swings and more exposure.
@@ -81,6 +97,7 @@ Below are the Strategy settings and how to think about each. Defaults are chosen
 - Simulated cycles:
   - `python -m arbit.cli fitness --venue alpaca --secs 10 --simulate`
   - Add `--persist` to save simulated fills into SQLite for post-hoc review.
+  - Add `--dummy-trigger` once to force a known-good execution for validation.
 - Cautious live:
   - Keep `DRY_RUN=true` first. Observe logs and metrics in parallel.
   - Only after confidence: set `DRY_RUN=false`, use tiny `NOTIONAL_PER_TRADE_USD`.
@@ -90,6 +107,24 @@ Below are the Strategy settings and how to think about each. Defaults are chosen
 - Skips by reason: frequent `slippage_*` → lower notional or slippage; frequent `min_notional_*` → raise notional slightly or pick deeper pairs.
 - Spread quality: small bps = deep books; large bps with low depth increase slippage risk.
 - Realized PnL (sim/live): look for stability across time and symbols, not just single spikes.
+
+## Database Signals for Performance Debugging
+
+To evaluate the quality of decisions and implementation, the database logs:
+
+- `triangle_attempts`: one row per attempt (success or skip) including
+  timestamps, venue, triangle legs, decision (`ok`), estimated edge
+  (`net_est`), realized PnL, threshold/slippage/notional settings used,
+  latency, skip reasons, top‑of‑book snapshots, and executed base quantity.
+- `fills`: enriched with venue, leg (AB/BC/AC), fee rate, TIF/type, notional,
+  dry‑run flag, and `attempt_id` linking to the parent attempt.
+
+These provide enough granularity to measure:
+
+- How often triangles meet thresholds vs. are skipped (by reason)
+- Latency distribution per venue/triangle
+- Slippage impact (via top‑of‑book snapshots and fee rates)
+- Realized vs. estimated outcomes across time
 
 ## Safety & Operational Tips
 

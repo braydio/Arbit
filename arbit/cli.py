@@ -7,6 +7,7 @@ imported here so tests can easily monkeypatch them.
 
 import asyncio
 import json
+from datetime import datetime
 import logging
 import sys
 import time
@@ -17,7 +18,7 @@ import typer
 from arbit import try_triangle
 from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.config import settings
-from arbit.engine.executor import stream_triangles
+from arbit.engine.executor import stream_triangles, try_triangle
 from arbit.metrics.exporter import (
     CYCLE_LATENCY,
     ERRORS_TOTAL,
@@ -27,8 +28,8 @@ from arbit.metrics.exporter import (
     SKIPS_TOTAL,
     start_metrics_server,
 )
-from arbit.models import Fill, Triangle
-from arbit.persistence.db import init_db, insert_fill, insert_triangle
+from arbit.models import Fill, Triangle, TriangleAttempt
+from arbit.persistence.db import init_db, insert_fill, insert_triangle, insert_attempt
 
 
 class CLIApp(typer.Typer):
@@ -349,6 +350,7 @@ def fitness(
     secs: int = 20,
     simulate: bool = False,
     persist: bool = False,
+    dummy_trigger: bool = False,
     help_verbose: bool = False,
 ):
     """Read-only sanity check that prints bid/ask spreads.
@@ -362,6 +364,13 @@ def fitness(
         typer.echo(
             "Typical log line: 'kraken ETH/USDT spread=0.5 bps' where spread is the\n"
             "bid/ask gap expressed in basis points (1/100th of a percent)."
+        )
+        typer.echo(
+            "Use --simulate to attempt dry-run triangle executions and log net%/PnL."
+        )
+        typer.echo(
+            "Use --dummy-trigger to inject one synthetic profitable triangle in fitness"
+            " mode to exercise the execution path without placing real orders."
         )
         raise SystemExit(0)
 
@@ -390,6 +399,7 @@ def fitness(
 
     sim_count = 0
     sim_pnl = 0.0
+    loop_idx = 0
     try:
         while time.time() - t0 < secs:
             books_cache: dict[str, dict] = {}
@@ -405,9 +415,46 @@ def fitness(
 
             # Optional: try triangles in dry-run and log/persist
             if simulate:
+                # Optionally inject a synthetic profitable setup once to
+                # validate the execution path in fitness mode.
+                injected: dict[str, dict] | None = None
+                if dummy_trigger and loop_idx == 0 and tris:
+                    tri0 = tris[0]
+                    # Craft generous top-of-book values that yield a clear edge
+                    # with sufficient size to pass min-notional checks.
+                    ask_ab = 100.0
+                    bid_bc = 1.01
+                    bid_ac = 100.7
+                    qty = 1.5
+                    injected = {
+                        tri0.leg_ab: {"bids": [[ask_ab * 0.999, qty]], "asks": [[ask_ab, qty]]},
+                        tri0.leg_bc: {"bids": [[bid_bc, qty]], "asks": [[bid_bc * 1.001, qty]]},
+                        tri0.leg_ac: {"bids": [[bid_ac, qty]], "asks": [[bid_ac * 1.001, qty]]},
+                    }
+                    books_cache.update(injected)
+
                 for tri in tris:
                     skip_reasons: list[str] = []
                     try:
+                        t_start = time.time()
+                        # If we injected synthetic books for this triangle,
+                        # temporarily serve them for top-of-book lookups used
+                        # by slippage guards and dry-run fills.
+                        if injected and tri.leg_ab in injected:
+                            orig_fetch = a.fetch_orderbook
+
+                            def _patched_fetch(sym: str, depth: int = 1):
+                                if depth == 1 and sym in injected:  # serve injected top-of-book
+                                    # Reduce to 1 level to match depth request
+                                    ob = injected[sym]
+                                    return {
+                                        "bids": [ob["bids"][0]],
+                                        "asks": [ob["asks"][0]],
+                                    }
+                                return orig_fetch(sym, depth)
+
+                            a.fetch_orderbook = _patched_fetch  # type: ignore[assignment]
+
                         res = try_triangle(
                             a,
                             tri,
@@ -418,6 +465,54 @@ def fitness(
                     except Exception as e:  # defensive: keep fitness resilient
                         log.error("simulate error for %s: %s", tri, e)
                         continue
+                    finally:
+                        if injected and tri.leg_ab in injected:
+                            a.fetch_orderbook = orig_fetch  # type: ignore[assignment]
+                    # Persist an attempt record with top-of-book snapshot
+                    if conn is not None:
+                        def _best(ob, side):
+                            try:
+                                arr = ob.get(side) or []
+                                return arr[0][0] if arr else None
+                            except Exception:
+                                return None
+                        ob_ab = books_cache.get(tri.leg_ab, {})
+                        ob_bc = books_cache.get(tri.leg_bc, {})
+                        ob_ac = books_cache.get(tri.leg_ac, {})
+                        latency_ms = (time.time() - t_start) * 1000.0
+                        ok = bool(res)
+                        net_est = float(res.get("net_est", 0.0)) if res else None
+                        realized = float(res.get("realized_usdt", 0.0)) if res else None
+                        qty_base = None
+                        if res and res.get("fills"):
+                            try:
+                                qty_base = float(res["fills"][0]["qty"])  # AB leg quantity
+                            except Exception:
+                                qty_base = None
+                        attempt = TriangleAttempt(
+                            venue=venue,
+                            leg_ab=tri.leg_ab,
+                            leg_bc=tri.leg_bc,
+                            leg_ac=tri.leg_ac,
+                            ts_iso=datetime.utcnow().isoformat(),
+                            ok=ok,
+                            net_est=net_est,
+                            realized_usdt=realized,
+                            threshold_bps=float(getattr(settings, "net_threshold_bps", 0.0)),
+                            notional_usd=float(getattr(settings, "notional_per_trade_usd", 0.0)),
+                            slippage_bps=float(getattr(settings, "max_slippage_bps", 0.0)),
+                            dry_run=True,
+                            latency_ms=latency_ms,
+                            skip_reasons=",".join(skip_reasons) if skip_reasons else None,
+                            ab_bid=_best(ob_ab, "bids"),
+                            ab_ask=_best(ob_ab, "asks"),
+                            bc_bid=_best(ob_bc, "bids"),
+                            bc_ask=_best(ob_bc, "asks"),
+                            ac_bid=_best(ob_ac, "bids"),
+                            ac_ask=_best(ob_ac, "asks"),
+                            qty_base=qty_base,
+                        )
+                        attempt_id = insert_attempt(conn, attempt)
                     if not res:
                         # Count skips by reason (no metrics emission in fitness)
                         continue
@@ -436,6 +531,19 @@ def fitness(
                                         quantity=float(f.get("qty", 0.0)),
                                         fee=float(f.get("fee", 0.0)),
                                         timestamp=None,
+                                        venue=venue,
+                                        leg=str(f.get("leg") or ""),
+                                        tif=str(f.get("tif") or ""),
+                                        order_type=str(f.get("type") or ""),
+                                        fee_rate=(
+                                            float(f.get("fee_rate"))
+                                            if f.get("fee_rate") is not None
+                                            else None
+                                        ),
+                                        notional=float(f.get("price", 0.0))
+                                        * float(f.get("qty", 0.0)),
+                                        dry_run=True,
+                                        attempt_id=attempt_id if 'attempt_id' in locals() else None,
                                     ),
                                 )
                             except Exception:
@@ -448,6 +556,7 @@ def fitness(
                         res.get("realized_usdt", 0.0),
                     )
             time.sleep(0.25)
+            loop_idx += 1
     finally:
         if simulate:
             try:
@@ -499,6 +608,44 @@ def live(
                 CYCLE_LATENCY.labels(venue).observe(latency)
             except Exception:
                 pass
+            # Persist attempt record
+            try:
+                ob_ab = a.fetch_orderbook(tri.leg_ab, 1)
+                ob_bc = a.fetch_orderbook(tri.leg_bc, 1)
+                ob_ac = a.fetch_orderbook(tri.leg_ac, 1)
+                def _best(ob, side):
+                    try:
+                        arr = ob.get(side) or []
+                        return arr[0][0] if arr else None
+                    except Exception:
+                        return None
+                attempt = TriangleAttempt(
+                    venue=venue,
+                    leg_ab=tri.leg_ab,
+                    leg_bc=tri.leg_bc,
+                    leg_ac=tri.leg_ac,
+                    ts_iso=datetime.utcnow().isoformat(),
+                    ok=bool(res),
+                    net_est=(float(res.get("net_est", 0.0)) if res else None),
+                    realized_usdt=(float(res.get("realized_usdt", 0.0)) if res else None),
+                    threshold_bps=float(getattr(settings, "net_threshold_bps", 0.0)),
+                    notional_usd=float(getattr(settings, "notional_per_trade_usd", 0.0)),
+                    slippage_bps=float(getattr(settings, "max_slippage_bps", 0.0)),
+                    dry_run=bool(getattr(settings, "dry_run", True)),
+                    latency_ms=latency * 1000.0,
+                    skip_reasons=",".join(skip_reasons) if skip_reasons else None,
+                    ab_bid=_best(ob_ab, "bids"),
+                    ab_ask=_best(ob_ab, "asks"),
+                    bc_bid=_best(ob_bc, "bids"),
+                    bc_ask=_best(ob_bc, "asks"),
+                    ac_bid=_best(ob_ac, "bids"),
+                    ac_ask=_best(ob_ac, "asks"),
+                    qty_base=(float(res["fills"][0]["qty"]) if res and res.get("fills") else None),
+                )
+                attempt_id = insert_attempt(conn, attempt)
+            except Exception:
+                attempt_id = None
+
             if not res:
                 if skip_reasons:
                     for r in skip_reasons:
@@ -537,6 +684,17 @@ def live(
                             quantity=float(f.get("qty", 0.0)),
                             fee=float(f.get("fee", 0.0)),
                             timestamp=None,
+                            venue=venue,
+                            leg=str(f.get("leg") or ""),
+                            tif=str(f.get("tif") or ""),
+                            order_type=str(f.get("type") or ""),
+                            fee_rate=(
+                                float(f.get("fee_rate")) if f.get("fee_rate") is not None else None
+                            ),
+                            notional=float(f.get("price", 0.0))
+                            * float(f.get("qty", 0.0)),
+                            dry_run=bool(getattr(settings, "dry_run", True)),
+                            attempt_id=attempt_id,
                         ),
                     )
                     FILLS_TOTAL.labels(venue).inc()

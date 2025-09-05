@@ -60,12 +60,19 @@ class Command:
         it = iter(args)
         for token in it:
             if token.startswith("--"):
-                name = token[2:].replace("-", "_")
+                is_neg = False
+                # Support --no-flag for booleans
+                if token.startswith("--no-"):
+                    is_neg = True
+                    name = token[5:].replace("-", "_")
+                else:
+                    name = token[2:].replace("-", "_")
                 opt = next((p for p in self.params if p.name == name), None)
                 if opt is None:
                     raise SystemExit(f"Unknown option {token}")
-                if opt.type is bool or isinstance(opt.default, bool):
-                    values[name] = not token.startswith("--no-")
+                # Boolean flags don't consume a value; presence toggles state
+                if opt.type is bool:
+                    values[name] = not is_neg
                     continue
                 try:
                     value = next(it)
