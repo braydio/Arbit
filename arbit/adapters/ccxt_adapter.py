@@ -7,6 +7,7 @@ expose a stream.
 """
 
 from __future__ import annotations
+
 from typing import AsyncGenerator, Iterable
 
 import ccxt

@@ -7,11 +7,11 @@ imported here so tests can easily monkeypatch them.
 
 import asyncio
 import json
-from datetime import datetime
 import logging
 import sys
 import time
 import urllib.request
+from datetime import datetime
 
 import typer
 from arbit import try_triangle
@@ -28,7 +28,7 @@ from arbit.metrics.exporter import (
     start_metrics_server,
 )
 from arbit.models import Fill, Triangle, TriangleAttempt
-from arbit.persistence.db import init_db, insert_fill, insert_triangle, insert_attempt
+from arbit.persistence.db import init_db, insert_attempt, insert_fill, insert_triangle
 
 
 class CLIApp(typer.Typer):
@@ -426,9 +426,18 @@ def fitness(
                     bid_ac = 100.7
                     qty = 1.5
                     injected = {
-                        tri0.leg_ab: {"bids": [[ask_ab * 0.999, qty]], "asks": [[ask_ab, qty]]},
-                        tri0.leg_bc: {"bids": [[bid_bc, qty]], "asks": [[bid_bc * 1.001, qty]]},
-                        tri0.leg_ac: {"bids": [[bid_ac, qty]], "asks": [[bid_ac * 1.001, qty]]},
+                        tri0.leg_ab: {
+                            "bids": [[ask_ab * 0.999, qty]],
+                            "asks": [[ask_ab, qty]],
+                        },
+                        tri0.leg_bc: {
+                            "bids": [[bid_bc, qty]],
+                            "asks": [[bid_bc * 1.001, qty]],
+                        },
+                        tri0.leg_ac: {
+                            "bids": [[bid_ac, qty]],
+                            "asks": [[bid_ac * 1.001, qty]],
+                        },
                     }
                     books_cache.update(injected)
 
@@ -443,7 +452,9 @@ def fitness(
                             orig_fetch = a.fetch_orderbook
 
                             def _patched_fetch(sym: str, depth: int = 1):
-                                if depth == 1 and sym in injected:  # serve injected top-of-book
+                                if (
+                                    depth == 1 and sym in injected
+                                ):  # serve injected top-of-book
                                     # Reduce to 1 level to match depth request
                                     ob = injected[sym]
                                     return {
@@ -469,12 +480,14 @@ def fitness(
                             a.fetch_orderbook = orig_fetch  # type: ignore[assignment]
                     # Persist an attempt record with top-of-book snapshot
                     if conn is not None:
+
                         def _best(ob, side):
                             try:
                                 arr = ob.get(side) or []
                                 return arr[0][0] if arr else None
                             except Exception:
                                 return None
+
                         ob_ab = books_cache.get(tri.leg_ab, {})
                         ob_bc = books_cache.get(tri.leg_bc, {})
                         ob_ac = books_cache.get(tri.leg_ac, {})
@@ -485,7 +498,9 @@ def fitness(
                         qty_base = None
                         if res and res.get("fills"):
                             try:
-                                qty_base = float(res["fills"][0]["qty"])  # AB leg quantity
+                                qty_base = float(
+                                    res["fills"][0]["qty"]
+                                )  # AB leg quantity
                             except Exception:
                                 qty_base = None
                         attempt = TriangleAttempt(
@@ -497,12 +512,20 @@ def fitness(
                             ok=ok,
                             net_est=net_est,
                             realized_usdt=realized,
-                            threshold_bps=float(getattr(settings, "net_threshold_bps", 0.0)),
-                            notional_usd=float(getattr(settings, "notional_per_trade_usd", 0.0)),
-                            slippage_bps=float(getattr(settings, "max_slippage_bps", 0.0)),
+                            threshold_bps=float(
+                                getattr(settings, "net_threshold_bps", 0.0)
+                            ),
+                            notional_usd=float(
+                                getattr(settings, "notional_per_trade_usd", 0.0)
+                            ),
+                            slippage_bps=float(
+                                getattr(settings, "max_slippage_bps", 0.0)
+                            ),
                             dry_run=True,
                             latency_ms=latency_ms,
-                            skip_reasons=",".join(skip_reasons) if skip_reasons else None,
+                            skip_reasons=(
+                                ",".join(skip_reasons) if skip_reasons else None
+                            ),
                             ab_bid=_best(ob_ab, "bids"),
                             ab_ask=_best(ob_ab, "asks"),
                             bc_bid=_best(ob_bc, "bids"),
@@ -542,7 +565,11 @@ def fitness(
                                         notional=float(f.get("price", 0.0))
                                         * float(f.get("qty", 0.0)),
                                         dry_run=True,
-                                        attempt_id=attempt_id if 'attempt_id' in locals() else None,
+                                        attempt_id=(
+                                            attempt_id
+                                            if "attempt_id" in locals()
+                                            else None
+                                        ),
                                     ),
                                 )
                             except Exception:
@@ -612,12 +639,14 @@ def live(
                 ob_ab = a.fetch_orderbook(tri.leg_ab, 1)
                 ob_bc = a.fetch_orderbook(tri.leg_bc, 1)
                 ob_ac = a.fetch_orderbook(tri.leg_ac, 1)
+
                 def _best(ob, side):
                     try:
                         arr = ob.get(side) or []
                         return arr[0][0] if arr else None
                     except Exception:
                         return None
+
                 attempt = TriangleAttempt(
                     venue=venue,
                     leg_ab=tri.leg_ab,
@@ -626,9 +655,13 @@ def live(
                     ts_iso=datetime.utcnow().isoformat(),
                     ok=bool(res),
                     net_est=(float(res.get("net_est", 0.0)) if res else None),
-                    realized_usdt=(float(res.get("realized_usdt", 0.0)) if res else None),
+                    realized_usdt=(
+                        float(res.get("realized_usdt", 0.0)) if res else None
+                    ),
                     threshold_bps=float(getattr(settings, "net_threshold_bps", 0.0)),
-                    notional_usd=float(getattr(settings, "notional_per_trade_usd", 0.0)),
+                    notional_usd=float(
+                        getattr(settings, "notional_per_trade_usd", 0.0)
+                    ),
                     slippage_bps=float(getattr(settings, "max_slippage_bps", 0.0)),
                     dry_run=bool(getattr(settings, "dry_run", True)),
                     latency_ms=latency * 1000.0,
@@ -639,7 +672,11 @@ def live(
                     bc_ask=_best(ob_bc, "asks"),
                     ac_bid=_best(ob_ac, "bids"),
                     ac_ask=_best(ob_ac, "asks"),
-                    qty_base=(float(res["fills"][0]["qty"]) if res and res.get("fills") else None),
+                    qty_base=(
+                        float(res["fills"][0]["qty"])
+                        if res and res.get("fills")
+                        else None
+                    ),
                 )
                 attempt_id = insert_attempt(conn, attempt)
             except Exception:
@@ -688,7 +725,9 @@ def live(
                             tif=str(f.get("tif") or ""),
                             order_type=str(f.get("type") or ""),
                             fee_rate=(
-                                float(f.get("fee_rate")) if f.get("fee_rate") is not None else None
+                                float(f.get("fee_rate"))
+                                if f.get("fee_rate") is not None
+                                else None
                             ),
                             notional=float(f.get("price", 0.0))
                             * float(f.get("qty", 0.0)),
