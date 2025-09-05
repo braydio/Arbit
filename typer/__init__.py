@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import inspect
-import typing
 import types as _types
+import typing
 
 import click
 
