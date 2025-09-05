@@ -56,13 +56,16 @@ class Typer(click.Group):
                 # Choose a converter callable for the option type.
                 opt_type: typing.Callable[[str], typing.Any]
                 if annotation is bool:
+
                     def _parse_bool(s: str) -> bool:
                         sl = s.lower()
                         if sl in ("1", "true", "yes", "on"):  # common truthy tokens
                             return True
                         if sl in ("0", "false", "no", "off"):
                             return False
-                        raise SystemExit(f"Invalid boolean for --{pname.replace('_', '-')}: {s}")
+                        raise SystemExit(
+                            f"Invalid boolean for --{pname.replace('_', '-')}: {s}"
+                        )
 
                     opt_type = _parse_bool
                 else:
