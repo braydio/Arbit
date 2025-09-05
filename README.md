@@ -28,6 +28,7 @@ Arbit monitors triangular arbitrage opportunities across cryptocurrency exchange
 - **Prometheus metrics** for monitoring and alerting
 - **SQLite persistence** for trade history
 - **Docker support** with multi-venue deployment
+- **WebSocket streaming** with automatic REST fallback
 - **Supported exchanges**: Alpaca, Kraken (via CCXT)
 
 ### CLI Modes at a Glance

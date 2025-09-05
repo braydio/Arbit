@@ -5,6 +5,7 @@ arbitrage engine.  Helper functions for metrics and persistence are
 imported here so tests can easily monkeypatch them.
 """
 
+import asyncio
 import json
 import logging
 import sys
@@ -13,7 +14,6 @@ import urllib.error
 import urllib.request
 
 import typer
-from arbit import try_triangle
 from arbit.adapters.ccxt_adapter import CcxtAdapter
 from arbit.config import settings
 from arbit.metrics.exporter import (
@@ -27,6 +27,7 @@ from arbit.metrics.exporter import (
 )
 from arbit.models import Fill, Triangle
 from arbit.persistence.db import init_db, insert_fill, insert_triangle
+from arbit.engine.executor import stream_triangles
 
 
 class CLIApp(typer.Typer):
@@ -239,48 +240,29 @@ def live(
         )
         raise SystemExit(0)
 
-    a = _build_adapter(venue, settings)
-    start_metrics_server(settings.prom_port)
-    conn = init_db(settings.sqlite_path)
-    tris = _triangles_for(venue)
-    for tri in tris:
-        insert_triangle(conn, tri)
-    log.info("live@%s dry_run=%s", venue, settings.dry_run)
-    last_alert_at = 0.0
-    while True:
+    async def _run() -> None:
+        a = _build_adapter(venue, settings)
+        start_metrics_server(settings.prom_port)
+        conn = init_db(settings.sqlite_path)
+        tris = _triangles_for(venue)
         for tri in tris:
-            t0 = time.time()
+            insert_triangle(conn, tri)
+        log.info("live@%s dry_run=%s", venue, settings.dry_run)
+        last_alert_at = 0.0
+        async for tri, res, skip_reasons, latency in stream_triangles(
+            a, tris, settings.net_threshold_bps / 10000.0
+        ):
             try:
-                books = {
-                    tri.leg_ab: a.fetch_orderbook(tri.leg_ab, 10),
-                    tri.leg_bc: a.fetch_orderbook(tri.leg_bc, 10),
-                    tri.leg_ac: a.fetch_orderbook(tri.leg_ac, 10),
-                }
-            except Exception as e:
-                ERRORS_TOTAL.labels(venue, "fetch_orderbook").inc()
-                log.error("fetch_orderbook error: %s", e)
-                continue
-            res = try_triangle(
-                a,
-                tri,
-                books,
-                settings.net_threshold_bps / 10000.0,
-                skip_reasons := [],
-            )
-            # Record latency per-triangle
-            try:
-                CYCLE_LATENCY.labels(venue).observe(max(time.time() - t0, 0.0))
+                CYCLE_LATENCY.labels(venue).observe(latency)
             except Exception:
                 pass
             if not res:
-                # Count skips by reason (default to 'unprofitable' if none)
                 if skip_reasons:
                     for r in skip_reasons:
                         try:
                             SKIPS_TOTAL.labels(venue, r).inc()
                         except Exception:
                             pass
-                    # Alert on actionable skips (slippage/min_notional) with cooldown
                     actionable = [
                         r
                         for r in skip_reasons
@@ -300,7 +282,6 @@ def live(
                 continue
             PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
             ORDERS_TOTAL.labels(venue, "ok").inc()
-            # Persist fills and update fills metric
             for f in res.get("fills", []):
                 try:
                     insert_fill(
@@ -325,7 +306,8 @@ def live(
                 res["net_est"] * 100,
                 res["realized_usdt"],
             )
-        time.sleep(0.05)
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":
