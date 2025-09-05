@@ -15,7 +15,7 @@ For installation and configuration guidance, see [README](README.md) or [WARP.md
 - Supported exchanges: `alpaca`, `kraken`
 
 **CLI Modes:**
-- `fitness`: Read-only connectivity/spread sampling
+- `fitness`: Read-only connectivity/spread sampling; optional dry-run simulation (`--simulate`)
 - `live`: Simplified live attempts; places orders if keys have trade permissions
 
 **Performance:**
@@ -49,7 +49,7 @@ net   = gross * (1 - fee)^3 - 1
 - The current engine's `net_edge_cycle` multiplies supplied edges and subtracts one
 - Fees are not explicitly modeled in the current implementation by default
 - Sizing uses `size_from_depth` with the minimum size across top levels of each leg
-- **Important:** Slippage, fees, and partial fills are not yet accounted for - consider these before live trading
+- **Important:** Slippage, fees, and partial fills are not yet fully accounted for - consider these before live trading
 
 ## Architecture: Current Implementation
 
@@ -141,8 +141,8 @@ net   = gross * (1 - fee)^3 - 1
 ## Safety and Risk Management
 
 ### Current Safety Features
-- `fitness` command is read-only and safe for connectivity testing
-- `live` command can place real orders - **no explicit dry run switch yet**
+- `fitness` command is read-only and safe for connectivity testing; use `--simulate` to dry-run
+- `live` command can place real orders
 - No IOC/time-in-force or slippage rails implemented by default
 - Top-of-book limit orders are used
 - Rate limiting enabled to respect exchange limits
@@ -209,4 +209,3 @@ A: Estimates assume perfect execution at top-of-book prices. Real trading involv
 - **Docker**: `Dockerfile`, `docker-compose.yml`
 - **Legacy**: `legacy_arbit.py`
 - **Tests**: `tests/test_triangle.py`
-
