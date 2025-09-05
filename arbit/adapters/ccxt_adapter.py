@@ -122,9 +122,11 @@ class CcxtAdapter(ExchangeAdapter):
         """Yield order book updates for ``symbols``.
 
         When a websocket client is available, ``ccxt.pro``'s
-        ``watch_order_book`` coroutine is used.  Otherwise, order books are
-        polled via the REST ``fetch_order_book`` endpoint using
-        :func:`asyncio.to_thread` to avoid blocking the event loop.
+        ``watch_order_book`` coroutine is used.  Each symbol is subscribed
+        concurrently so that a silent or slow book does not block others.
+        Otherwise, order books are polled via the REST ``fetch_order_book``
+        endpoint using :func:`asyncio.to_thread` to avoid blocking the event
+        loop.
 
         Parameters
         ----------
@@ -138,10 +140,21 @@ class CcxtAdapter(ExchangeAdapter):
 
         syms = list(symbols)
         if self.ex_ws is not None and hasattr(self.ex_ws, "watch_order_book"):
+            tasks: dict[asyncio.Task, str] = {
+                asyncio.create_task(self.ex_ws.watch_order_book(sym, depth)): sym
+                for sym in syms
+            }
             while True:
-                for sym in syms:
-                    ob = await self.ex_ws.watch_order_book(sym, depth)  # type: ignore[attr-defined]
+                done, _ = await asyncio.wait(
+                    tasks.keys(), return_when=asyncio.FIRST_COMPLETED
+                )
+                for t in done:
+                    sym = tasks.pop(t)
+                    ob = t.result()
                     yield sym, ob
+                    tasks[
+                        asyncio.create_task(self.ex_ws.watch_order_book(sym, depth))
+                    ] = sym
         else:
             while True:
                 for sym in syms:
