@@ -93,7 +93,7 @@ net   = gross * (1 - fee)^3 - 1
 
 **Exchange Adapters:**
 - `ExchangeAdapter` ABC with standardized interface
-- `CcxtAdapter` implementation for multiple venues
+- `CCXTAdapter` implementation for multiple venues
 - Optional native WebSocket implementations for speed
 
 **Execution Engine:**

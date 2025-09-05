@@ -20,7 +20,7 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
     )
 )
 
-sys.modules["arbit.adapters.ccxt_adapter"] = types.SimpleNamespace(CcxtAdapter=object)
+sys.modules["arbit.adapters.ccxt_adapter"] = types.SimpleNamespace(CCXTAdapter=object)
 
 from arbit import cli  # noqa: E402
 
@@ -194,11 +194,11 @@ def test_help_lists_commands() -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["--help"])
     assert result.exit_code == 0
-    assert "keys:check" in result.output
-    assert "fitness" in result.output
-    assert "live" in result.output
-    assert "markets:limits" in result.output
-    assert "config:recommend" in result.output
+    assert result.output.count("keys:check") == 1
+    assert result.output.count("fitness") == 1
+    assert result.output.count("live") == 1
+    assert result.output.count("markets:limits") == 1
+    assert result.output.count("config:recommend") == 1
 
 
 def test_help_verbose_shows_details() -> None:
