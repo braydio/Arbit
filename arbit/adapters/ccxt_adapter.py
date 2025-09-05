@@ -13,37 +13,35 @@ from typing import AsyncGenerator, Iterable
 
 import ccxt
 
-try:  # pragma: no cover - optional dependency
-    import ccxt.pro as ccxtpro
-except Exception:  # pragma: no cover - websockets optional
-    ccxtpro = None
-
-from arbit.adapters.base import ExchangeAdapter, OrderSpec
+from arbit.adapters.base import ExchangeAdapter
 from arbit.config import creds_for, settings
+from arbit.models import Fill, OrderSpec
 
 
-class CcxtAdapter(ExchangeAdapter):
+class CCXTAdapter(ExchangeAdapter):
     """Exchange adapter backed by the ``ccxt`` library."""
 
-    def __init__(self, ex_id: str):
+    def __init__(self, ex_id: str, key: str | None = None, secret: str | None = None):
         """Initialise the underlying ccxt client for *ex_id*.
+
+        Parameters
+        ----------
+        ex_id:
+            Exchange identifier recognised by ``ccxt``.
+        key, secret:
+            API credentials. When omitted, :func:`arbit.config.creds_for`
+            provides them so production code can rely on environment
+            configuration.
 
         The Alpaca adapter allows the trader API base URL to be customised via
         :class:`arbit.config.Settings` so that paper trading or alternative
         endpoints can be targeted.
         """
-        key, sec = creds_for(ex_id)
+        if key is None or secret is None:
+            key, secret = creds_for(ex_id)
         cls = getattr(ccxt, ex_id)
-        self.ex = cls({"apiKey": key, "secret": sec, "enableRateLimit": True})
-        self.ex_ws = None
-        if ccxtpro is not None:
-            try:  # pragma: no cover - depends on optional lib
-                ws_cls = getattr(ccxtpro, ex_id)
-                self.ex_ws = ws_cls(
-                    {"apiKey": key, "secret": sec, "enableRateLimit": True}
-                )
-            except AttributeError:
-                self.ex_ws = None
+        self.ex = cls({"apiKey": key, "secret": secret, "enableRateLimit": True})
+        self.client = self.ex
         if ex_id == "alpaca" and settings.alpaca_base_url:
             # Some venues like Alpaca use non-ccxt defaults; allow override.
             api_urls = self.ex.urls.get("api")
@@ -61,6 +59,12 @@ class CcxtAdapter(ExchangeAdapter):
         """Return order book for *symbol* limited to *depth* levels."""
         return self.ex.fetch_order_book(symbol, depth)
 
+    # Compatibility wrappers expected by tests -------------------------------------------------
+    def fetch_order_book(self, symbol: str, depth: int = 10) -> dict:
+        """Alias for :meth:`fetch_orderbook` using snake-case name."""
+
+        return self.fetch_orderbook(symbol, depth)
+
     def fetch_fees(self, symbol):
         """Return ``(maker, taker)`` fees for *symbol*, caching results."""
         if symbol in self._fee:
@@ -76,92 +80,51 @@ class CcxtAdapter(ExchangeAdapter):
         m = self.ex.market(symbol)
         return float(m.get("limits", {}).get("cost", {}).get("min", 1.0))
 
-    def create_order(self, spec: OrderSpec):
-        """Place an order described by *spec* and return a fill-like mapping."""
-        # Dry-run → synthesize taker fill at top-of-book.
+    def create_order(self, spec: OrderSpec) -> Fill:
+        """Place an order described by *spec* and return a :class:`Fill`."""
+        qty = getattr(spec, "qty", getattr(spec, "quantity"))
+        order_type = getattr(spec, "type", getattr(spec, "order_type", "market"))
+
         if settings.dry_run:
             ob = self.fetch_orderbook(spec.symbol, 1)
             price = ob["asks"][0][0] if spec.side == "buy" else ob["bids"][0][0]
-            fee = self.fetch_fees(spec.symbol)[1] * price * spec.qty
-            return {
-                "id": "dryrun",
-                "symbol": spec.symbol,
-                "side": spec.side,
-                "qty": spec.qty,
-                "price": price,
-                "fee": fee,
-            }
+            fee = self.fetch_fees(spec.symbol)[1] * price * qty
+            return Fill(
+                order_id="dryrun",
+                symbol=spec.symbol,
+                side=spec.side,
+                price=price,
+                quantity=qty,
+                fee=fee,
+            )
 
-        params = {"timeInForce": spec.tif}
-        o = self.ex.create_order(
-            spec.symbol, spec.type, spec.side, spec.qty, None, params
+        o = self.client.create_order(
+            spec.symbol, order_type, spec.side, qty, spec.price or None
         )
-        filled = float(o.get("filled", spec.qty))
+        filled = float(o.get("filled", qty))
         price = float(o.get("average") or o.get("price") or 0.0)
         fee_cost = sum(float(f.get("cost") or 0) for f in o.get("fees", []))
-        return {
-            "id": o["id"],
-            "symbol": spec.symbol,
-            "side": spec.side,
-            "qty": filled,
-            "price": price,
-            "fee": fee_cost,
-        }
+        return Fill(
+            order_id=o["id"],
+            symbol=spec.symbol,
+            side=spec.side,
+            price=price,
+            quantity=filled,
+            fee=fee_cost,
+        )
 
     def balances(self):
         """Return assets with non-zero balances."""
         b = self.ex.fetch_balance()
         return {k: float(v) for k, v in b.get("total", {}).items() if float(v or 0) > 0}
 
-    async def orderbook_stream(
-        self,
-        symbols: Iterable[str],
-        depth: int = 10,
-        poll_interval: float = 1.0,
-    ) -> AsyncGenerator[tuple[str, dict], None]:
-        """Yield order book updates for ``symbols``.
+    # Additional convenience methods expected by tests ----------------------------------------
+    def cancel_order(self, order_id: str, symbol: str) -> None:
+        """Cancel order *order_id* for *symbol* on the exchange."""
 
-        When a websocket client is available, ``ccxt.pro``'s
-        ``watch_order_book`` coroutine is used.  Each symbol is subscribed
-        concurrently so that a silent or slow book does not block others.
-        Otherwise, order books are polled via the REST ``fetch_order_book``
-        endpoint using :func:`asyncio.to_thread` to avoid blocking the event
-        loop.
+        self.ex.cancel_order(order_id, symbol)
 
-        Parameters
-        ----------
-        symbols:
-            Symbols to monitor for order book updates.
-        depth:
-            Maximum number of levels to request per book.
-        poll_interval:
-            Delay between REST polling cycles when websockets are unavailable.
-        """
+    def fetch_balance(self, asset: str) -> float:
+        """Return free balance for *asset*."""
 
-        syms = list(symbols)
-        if self.ex_ws is not None and hasattr(self.ex_ws, "watch_order_book"):
-            tasks: dict[asyncio.Task, str] = {
-                asyncio.create_task(self.ex_ws.watch_order_book(sym, depth)): sym
-                for sym in syms
-            }
-            while True:
-                done, _ = await asyncio.wait(
-                    tasks.keys(), return_when=asyncio.FIRST_COMPLETED
-                )
-                for t in done:
-                    sym = tasks.pop(t)
-                    ob = t.result()
-                    yield sym, ob
-                    tasks[
-                        asyncio.create_task(self.ex_ws.watch_order_book(sym, depth))
-                    ] = sym
-        else:
-            while True:
-                for sym in syms:
-                    ob = await asyncio.to_thread(self.fetch_orderbook, sym, depth)
-                    yield sym, ob
-                await asyncio.sleep(poll_interval)
-
-
-# Backwards compatibility for older tests expecting ``CCXTAdapter``
-CCXTAdapter = CcxtAdapter
+        return float(self.ex.fetch_balance().get("free", {}).get(asset, 0.0))

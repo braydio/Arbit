@@ -14,7 +14,8 @@ import urllib.error
 import urllib.request
 
 import typer
-from arbit.adapters.ccxt_adapter import CcxtAdapter
+from arbit import try_triangle
+from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles
 from arbit.metrics.exporter import (
@@ -32,6 +33,17 @@ from arbit.persistence.db import init_db, insert_fill, insert_triangle
 
 class CLIApp(typer.Typer):
     """Custom Typer application that prints usage on bad invocation."""
+
+    # ------------------------------------------------------------------
+    def _unique_commands(self) -> dict[str, dict[str, object]]:
+        """Return mapping of canonical command names to command/aliases."""
+
+        mapping: dict[str, dict[str, object]] = {}
+        for name, cmd in self.commands.items():
+            canonical = name.replace("_", ":")
+            info = mapping.setdefault(canonical, {"command": cmd, "aliases": []})
+            info["aliases"].append(name)
+        return mapping
 
     def main(self, args: list[str] | None = None):
         """Run the CLI with *args*, handling help flags and bad input.
@@ -63,8 +75,8 @@ class CLIApp(typer.Typer):
             typer.echo("Usage: arbit.cli [COMMAND]")
             if self.commands:
                 typer.echo("Commands:")
-                for name in sorted(self.commands):
-                    typer.echo(f"  {name.replace('_', ':')}")
+                for cname in sorted(self._unique_commands()):
+                    typer.echo(f"  {cname}")
             raise SystemExit(0 if not args else 1)
         return super().main(args)
 
@@ -73,9 +85,15 @@ class CLIApp(typer.Typer):
         """Print a short summary of available commands."""
 
         typer.echo("Available commands:")
-        for name, command in sorted(self.commands.items()):
-            desc = (command.callback.__doc__ or "").strip().splitlines()[0]
-            typer.echo(f"  {name.replace('_', ':'):<12} {desc}")
+        for cname, info in sorted(self._unique_commands().items()):
+            desc = (info["command"].callback.__doc__ or "").strip().splitlines()[0]
+            aliases = [
+                a.replace("_", ":")
+                for a in info["aliases"]
+                if a.replace("_", ":") != cname
+            ]
+            alias_str = f" (aliases: {', '.join(sorted(aliases))})" if aliases else ""
+            typer.echo(f"  {cname:<12} {desc}{alias_str}")
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -164,7 +182,7 @@ def _build_adapter(venue: str, _settings=settings):
         Settings object used to configure the adapter (unused for now).
     """
 
-    return CcxtAdapter(venue)
+    return CCXTAdapter(venue)
 
 
 def _notify_discord(venue: str, message: str) -> None:

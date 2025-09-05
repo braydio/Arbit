@@ -64,11 +64,15 @@ class Command:
                 opt = next((p for p in self.params if p.name == name), None)
                 if opt is None:
                     raise SystemExit(f"Unknown option {token}")
+                if opt.type is bool or isinstance(opt.default, bool):
+                    values[name] = not token.startswith("--no-")
+                    continue
                 try:
                     value = next(it)
                 except StopIteration:  # pragma: no cover - invalid usage
                     raise SystemExit(f"Missing value for {token}")
-                values[name] = opt.type(value)
+                conv = opt.type if callable(opt.type) else (lambda x: x)
+                values[name] = conv(value)
             else:  # pragma: no cover - no positional args used in tests
                 raise SystemExit(f"Unexpected argument {token}")
         return self.callback(**values)
