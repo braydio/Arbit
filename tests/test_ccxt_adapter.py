@@ -5,9 +5,9 @@ import pytest
 ccxt = pytest.importorskip("ccxt")
 
 from arbit.adapters import CCXTAdapter, ExchangeAdapter
-from arbit.models import OrderSpec
 from arbit.adapters.base import OrderSpec as LegacyOrderSpec
 from arbit.config import settings
+from arbit.models import OrderSpec
 
 
 def test_initialization() -> None:
