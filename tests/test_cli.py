@@ -232,7 +232,10 @@ def test_markets_limits(monkeypatch):
 
     monkeypatch.setattr(cli, "_build_adapter", lambda venue, _settings: DummyAdapter())
     runner = CliRunner()
-    result = runner.invoke(cli.app, ["markets:limits", "--venue", "alpaca", "--symbols", "ETH/USDT,BTC/USDT"])
+    result = runner.invoke(
+        cli.app,
+        ["markets:limits", "--venue", "alpaca", "--symbols", "ETH/USDT,BTC/USDT"],
+    )
     assert result.exit_code == 0
 
 
