@@ -103,6 +103,44 @@ class Settings(BaseSettings):
     def __init__(self, **kwargs: Any) -> None:
         """Normalize exchange list from environment variables."""
         super().__init__(**kwargs)
+        # Coerce common env-sourced strings to proper types for robustness.
+        def _coerce_float(attr: str) -> None:
+            v = getattr(self, attr, None)
+            if isinstance(v, str):
+                try:
+                    setattr(self, attr, float(v))
+                except Exception:
+                    pass
+
+        def _coerce_int(attr: str) -> None:
+            v = getattr(self, attr, None)
+            if isinstance(v, str):
+                try:
+                    setattr(self, attr, int(float(v)))
+                except Exception:
+                    pass
+
+        def _coerce_bool(attr: str) -> None:
+            v = getattr(self, attr, None)
+            if isinstance(v, str):
+                s = v.strip().lower()
+                if s in {"1", "true", "yes", "on"}:
+                    setattr(self, attr, True)
+                elif s in {"0", "false", "no", "off"}:
+                    setattr(self, attr, False)
+
+        for f in ("notional_per_trade_usd", "net_threshold_bps", "max_slippage_bps"):
+            _coerce_float(f)
+        for f in (
+            "max_open_orders",
+            "prom_port",
+            "min_usdc_stake",
+            "min_eth_balance_wei",
+            "max_gas_price_gwei",
+        ):
+            _coerce_int(f)
+        _coerce_bool("dry_run")
+
         if isinstance(self.exchanges, str):
             try:
                 parsed = json.loads(self.exchanges)
