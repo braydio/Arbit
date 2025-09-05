@@ -6,6 +6,8 @@ ccxt = pytest.importorskip("ccxt")
 
 from arbit.adapters import CCXTAdapter, ExchangeAdapter
 from arbit.models import OrderSpec
+from arbit.adapters.base import OrderSpec as LegacyOrderSpec
+from arbit.config import settings
 
 
 def test_initialization() -> None:
@@ -19,7 +21,7 @@ def test_fetch_order_book(monkeypatch) -> None:
     """Order books are retrieved via the underlying ccxt client."""
     adapter = CCXTAdapter("kraken", "k", "s")
 
-    def fake_fetch_order_book(symbol: str) -> dict:
+    def fake_fetch_order_book(symbol: str, *args, **kwargs) -> dict:
         assert symbol == "BTC/USD"
         return {"bids": [], "asks": []}
 
@@ -31,13 +33,14 @@ def test_fetch_order_book(monkeypatch) -> None:
 def test_create_order(monkeypatch) -> None:
     """Order creation passes through to the ccxt client."""
     adapter = CCXTAdapter("alpaca", "k", "s")
+    monkeypatch.setattr(settings, "dry_run", False)
 
     def fake_create_order(symbol, order_type, side, amount, price):
         return {
             "id": "1",
             "price": price,
             "amount": amount,
-            "fee": {"cost": 0.1},
+            "fees": [{"cost": 0.1}],
         }
 
     monkeypatch.setattr(adapter.client, "create_order", fake_create_order)
@@ -46,6 +49,30 @@ def test_create_order(monkeypatch) -> None:
     assert fill.order_id == "1"
     assert fill.quantity == 1.0
     assert fill.fee == 0.1
+    assert fill["qty"] == 1.0
+
+
+def test_create_order_accepts_legacy_spec(monkeypatch) -> None:
+    """Legacy OrderSpec dataclasses remain supported."""
+    adapter = CCXTAdapter("alpaca", "k", "s")
+    monkeypatch.setattr(settings, "dry_run", False)
+
+    def fake_create_order(symbol, order_type, side, amount, price):
+        assert amount == 1.0
+        assert price is None
+        return {
+            "id": "1",
+            "price": 1000.0,
+            "amount": amount,
+            "fees": [{"cost": 0.1}],
+        }
+
+    monkeypatch.setattr(adapter.client, "create_order", fake_create_order)
+    order = LegacyOrderSpec(symbol="ETH/USDT", side="buy", qty=1.0)
+    fill = adapter.create_order(order)
+    assert fill["qty"] == 1.0
+    assert fill["price"] == 1000.0
+    assert fill["fee"] == 0.1
 
 
 def test_cancel_order(monkeypatch) -> None:
