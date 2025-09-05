@@ -1,7 +1,7 @@
 """Tests for streaming utilities and WebSocket integration."""
 
-from types import SimpleNamespace
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,7 +16,9 @@ class DummyWs:
         self.book = book
         self.calls = 0
 
-    async def watch_order_book(self, symbol: str, depth: int):  # pragma: no cover - trivial
+    async def watch_order_book(
+        self, symbol: str, depth: int
+    ):  # pragma: no cover - trivial
         self.calls += 1
         return self.book
 
@@ -117,4 +119,3 @@ def test_stream_triangles(monkeypatch) -> None:
         assert out[1]["tri"] == tri
 
     asyncio.run(run())
-

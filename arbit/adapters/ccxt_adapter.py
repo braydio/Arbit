@@ -152,4 +152,3 @@ class CcxtAdapter(ExchangeAdapter):
 
 # Backwards compatibility for older tests expecting ``CCXTAdapter``
 CCXTAdapter = CcxtAdapter
-

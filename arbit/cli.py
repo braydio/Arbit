@@ -16,6 +16,7 @@ import urllib.request
 import typer
 from arbit.adapters.ccxt_adapter import CcxtAdapter
 from arbit.config import settings
+from arbit.engine.executor import stream_triangles
 from arbit.metrics.exporter import (
     CYCLE_LATENCY,
     ERRORS_TOTAL,
@@ -27,7 +28,6 @@ from arbit.metrics.exporter import (
 )
 from arbit.models import Fill, Triangle
 from arbit.persistence.db import init_db, insert_fill, insert_triangle
-from arbit.engine.executor import stream_triangles
 
 
 class CLIApp(typer.Typer):

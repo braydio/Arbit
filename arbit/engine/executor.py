@@ -1,11 +1,12 @@
 """Utilities for executing triangular arbitrage cycles."""
 
+import time
+from typing import AsyncGenerator, Iterable
+
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.config import settings
 from arbit.engine.triangle import net_edge, size_from_depth, top
 from arbit.models import Triangle
-import time
-from typing import AsyncGenerator, Iterable
 
 
 def try_triangle(
@@ -167,11 +168,7 @@ async def stream_triangles(
     the return value from :func:`try_triangle`.
     """
 
-    syms = {
-        s
-        for t in tris
-        for s in (t.leg_ab, t.leg_bc, t.leg_ac)
-    }
+    syms = {s for t in tris for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
     books: dict[str, dict] = {}
     async for sym, ob in adapter.orderbook_stream(syms, depth):
         books[sym] = ob
