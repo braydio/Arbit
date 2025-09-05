@@ -25,6 +25,12 @@ python -m arbit.cli fitness --venue alpaca --secs 3 --simulate --dummy-trigger
 This will print one `[sim] Triangle(...) net=... PnL=...` line and update the
 database if `--persist` is also specified.
 
+### CLI Help Quick Reference
+
+- Global help: `python -m arbit.cli --help` (summary) or `--help-verbose` (all flags + examples)
+- Fitness flags: `--venue`, `--secs`, `--simulate/--no-simulate`, `--persist/--no-persist`, `--dummy-trigger`, `--help-verbose`
+- Live flags: `--venue`, `--help-verbose`
+
 ## What To Set For Notional (Starter Amount)
 
 - Purpose: Caps the max quote value for a triangle attempt (derived from `AB` ask). Lower = safer losses, fewer fills; higher = larger PnL swings and more exposure.

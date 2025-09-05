@@ -19,7 +19,7 @@ except Exception:  # pragma: no cover - ccxt.pro may be unavailable
 
 from arbit.adapters.base import ExchangeAdapter
 from arbit.config import creds_for, settings
-from arbit.models import Fill, OrderSpec
+from arbit.models import Fill  # retained for type parity elsewhere (not returned here)
 
 
 class CCXTAdapter(ExchangeAdapter):
@@ -41,6 +41,9 @@ class CCXTAdapter(ExchangeAdapter):
         :class:`arbit.config.Settings` so that paper trading or alternative
         endpoints can be targeted.
         """
+        # Normalize exchange id from env/user input (strip quotes/whitespace)
+        ex_id = (ex_id or "").strip().strip("'\"").lower()
+
         if key is None or secret is None:
             key, secret = creds_for(ex_id)
         cls = getattr(ccxt, ex_id)
@@ -84,23 +87,33 @@ class CCXTAdapter(ExchangeAdapter):
         m = self.ex.market(symbol)
         return float(m.get("limits", {}).get("cost", {}).get("min", 1.0))
 
-    def create_order(self, spec: OrderSpec) -> Fill:
+    def create_order(self, spec) -> Fill:
         """Place an order described by *spec* and return a :class:`Fill`."""
-        qty = getattr(spec, "qty", getattr(spec, "quantity"))
-        order_type = getattr(spec, "type", getattr(spec, "order_type", "market"))
+        # Be robust to differing OrderSpec flavors (adapters.base vs models).
+        if hasattr(spec, "qty"):
+            qty = getattr(spec, "qty")
+        elif hasattr(spec, "quantity"):
+            qty = getattr(spec, "quantity")
+        else:  # pragma: no cover - defensive
+            raise AttributeError("OrderSpec missing qty/quantity")
+
+        if hasattr(spec, "type"):
+            order_type = getattr(spec, "type") or "market"
+        else:
+            order_type = getattr(spec, "order_type", "market")
 
         if settings.dry_run:
             ob = self.fetch_orderbook(spec.symbol, 1)
             price = ob["asks"][0][0] if spec.side == "buy" else ob["bids"][0][0]
             fee = self.fetch_fees(spec.symbol)[1] * price * qty
-            return Fill(
-                order_id="dryrun",
-                symbol=spec.symbol,
-                side=spec.side,
-                price=price,
-                quantity=qty,
-                fee=fee,
-            )
+            return {
+                "id": "dryrun",
+                "symbol": spec.symbol,
+                "side": spec.side,
+                "price": price,
+                "qty": qty,
+                "fee": fee,
+            }
 
         o = self.client.create_order(
             spec.symbol, order_type, spec.side, qty, spec.price or None
@@ -108,14 +121,14 @@ class CCXTAdapter(ExchangeAdapter):
         filled = float(o.get("filled", qty))
         price = float(o.get("average") or o.get("price") or 0.0)
         fee_cost = sum(float(f.get("cost") or 0) for f in o.get("fees", []))
-        return Fill(
-            order_id=o["id"],
-            symbol=spec.symbol,
-            side=spec.side,
-            price=price,
-            quantity=filled,
-            fee=fee_cost,
-        )
+        return {
+            "id": o.get("id", ""),
+            "symbol": spec.symbol,
+            "side": spec.side,
+            "price": price,
+            "qty": filled,
+            "fee": fee_cost,
+        }
 
     async def orderbook_stream(
         self, symbols: Iterable[str], depth: int = 10, poll_interval: float = 1.0

@@ -41,6 +41,13 @@ Arbit monitors triangular arbitrage opportunities across cryptocurrency exchange
 
 Run `python -m arbit.cli --help-verbose` for command flags and more output samples.
 
+### CLI Help
+
+- Global: `--help` (summary), `--help-verbose` (all flags + examples)
+- `fitness` flags: `--venue`, `--secs`, `--simulate/--no-simulate`, `--persist/--no-persist`, `--dummy-trigger`, `--help-verbose`
+- `live` flags: `--venue`, `--help-verbose`
+- Helpers: `keys:check`, `markets:limits --venue --symbols`, `config:recommend --venue`
+
 See [WARP.md](WARP.md) for comprehensive documentation, architecture details, and development roadmap.
 
 ## Quick Start

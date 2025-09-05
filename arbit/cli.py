@@ -7,6 +7,7 @@ imported here so tests can easily monkeypatch them.
 
 import asyncio
 import json
+from datetime import datetime, timezone
 import logging
 import sys
 import time
@@ -84,7 +85,8 @@ class CLIApp(typer.Typer):
     def _print_basic_help(self) -> None:
         """Print a short summary of available commands."""
 
-        typer.echo("Available commands:")
+        typer.echo("Usage: python -m arbit.cli [--help | --help-verbose] COMMAND [ARGS]")
+        typer.echo("\nAvailable commands:")
         for cname, info in sorted(self._unique_commands().items()):
             desc = (info["command"].callback.__doc__ or "").strip().splitlines()[0]
             aliases = [
@@ -94,6 +96,7 @@ class CLIApp(typer.Typer):
             ]
             alias_str = f" (aliases: {', '.join(sorted(aliases))})" if aliases else ""
             typer.echo(f"  {cname:<12} {desc}{alias_str}")
+        typer.echo("\nTip: run --help-verbose for flags and examples.")
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -101,6 +104,7 @@ class CLIApp(typer.Typer):
         """Print detailed command reference with flags and examples."""
 
         typer.echo("Command reference:\n")
+        typer.echo("Global: --help (short list), --help-verbose (this view)\n")
 
         typer.echo(
             "keys:check\n"
@@ -118,6 +122,8 @@ class CLIApp(typer.Typer):
             "    --secs INTEGER            Seconds to run (default: 20)\n"
             "    --simulate/--no-simulate  Try dry-run triangle executions (default: no-simulate)\n"
             "    --persist/--no-persist    Persist simulated fills to SQLite (used with --simulate)\n"
+            "    --dummy-trigger           Inject one synthetic profitable triangle (with --simulate)\n"
+            "    --help-verbose            Print extra context about fitness output\n"
             "  Sample output:\n"
             "    alpaca ETH/USDT spread=10.0 bps\n"
             "    alpaca [sim] Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.05 USDT\n"
@@ -128,6 +134,7 @@ class CLIApp(typer.Typer):
             "  Continuously scan for profitable triangles and execute trades.\n"
             "  Flags (optional):\n"
             "    --venue TEXT   Exchange to trade on (default: alpaca)\n"
+            "    --help-verbose Print extra context about live output semantics\n"
             "  Sample output:\n"
             "    alpaca ETH/BTC net=0.5% PnL=0.10 USDT\n"
         )
@@ -230,7 +237,7 @@ def keys_check():
             ask_price = ask[0][0] if ask else "n/a"
             log.info(
                 "[%s] markets=%d %s %s/%s",
-                venue,
+                getattr(a, "name", lambda: a.ex.id)(),
                 len(ms),
                 symbol,
                 bid_price,
@@ -508,7 +515,7 @@ def fitness(
                             leg_ab=tri.leg_ab,
                             leg_bc=tri.leg_bc,
                             leg_ac=tri.leg_ac,
-                            ts_iso=datetime.utcnow().isoformat(),
+                            ts_iso=datetime.now(timezone.utc).isoformat(),
                             ok=ok,
                             net_est=net_est,
                             realized_usdt=realized,
@@ -652,7 +659,7 @@ def live(
                     leg_ab=tri.leg_ab,
                     leg_bc=tri.leg_bc,
                     leg_ac=tri.leg_ac,
-                    ts_iso=datetime.utcnow().isoformat(),
+                    ts_iso=datetime.now(timezone.utc).isoformat(),
                     ok=bool(res),
                     net_est=(float(res.get("net_est", 0.0)) if res else None),
                     realized_usdt=(

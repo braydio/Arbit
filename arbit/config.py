@@ -155,9 +155,27 @@ class Settings(BaseSettings):
                 if isinstance(parsed, str):
                     parsed = [s.strip() for s in parsed.split(",") if s.strip()]
             if isinstance(parsed, list):
-                self.exchanges = parsed
+                items = parsed
             else:
-                self.exchanges = [str(parsed)]
+                items = [str(parsed)]
+        else:
+            items = list(self.exchanges)
+
+        # Clean up any stray quotes/brackets from env strings
+        cleaned: list[str] = []
+        for e in items:
+            s = str(e).strip()
+            # remove leading/trailing quotes and brackets
+            s = s.strip("[] ")
+            if (s.startswith('"') and s.endswith('"')) or (
+                s.startswith("'") and s.endswith("'")
+            ):
+                s = s[1:-1]
+            s = s.strip().strip('"\'')
+            if s:
+                cleaned.append(s)
+        if cleaned:
+            self.exchanges = cleaned
 
 
 # Singleton settings instance populated on import.
