@@ -104,8 +104,14 @@ export ARBIT_API_SECRET=your_venue_api_secret
 # Trading parameters
 export NET_THRESHOLD_BPS=10          # minimum profit threshold (basis points)
 export NOTIONAL_PER_TRADE_USD=200    # maximum trade size
+export RESERVE_AMOUNT_USD=0          # funds to keep in reserve
+export RESERVE_PERCENT=0             # % of balance to reserve
 export SQLITE_PATH=./data/arbit.db   # database file path
 export PROM_PORT=9109               # metrics server port
+
+# RESERVE_AMOUNT_USD and RESERVE_PERCENT let you keep part of the account
+# balance untouched during arbitrage. Set one or both depending on your risk
+# tolerance.
 
 # Create data directory
 mkdir -p data

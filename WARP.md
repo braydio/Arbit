@@ -91,6 +91,8 @@ ARBIT_API_SECRET=your_venue_api_secret
 ARBIT_NET_THRESHOLD=0.001  # minimum net return threshold
 ARBIT_DATA_DIR=./data      # directory for SQLite and logs
 ARBIT_LOG_PATH=./arbit.log # log file path
+ARBIT_RESERVE_AMOUNT_USD=0 # funds to keep in reserve
+ARBIT_RESERVE_PERCENT=0    # percentage of balance to reserve
 ```
 
 **DeFi Integration (Aave) Environment Variables:**

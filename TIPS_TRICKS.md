@@ -89,6 +89,17 @@ Below are the Strategy settings and how to think about each. Defaults are chosen
 - Recommendations:
   - Keep `true` initially. Flip to `false` only after you’ve observed healthy simulated PnL and acceptable skip patterns.
 
+### `RESERVE_AMOUNT_USD` / `RESERVE_PERCENT`
+
+- Meaning: Hold back capital so the engine never deploys the full account
+  balance.
+- Implications:
+  - Ensures a cushion remains untouched for withdrawals or manual trading.
+  - If both are set, the larger resulting reserve is applied.
+- Recommendations:
+  - Start with a small dollar amount (e.g., `20`) or percentage (e.g., `10`)
+    to keep a safety buffer.
+
 ## Practical Workflows
 
 - First contact (safe):

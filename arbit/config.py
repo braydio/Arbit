@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     max_slippage_bps: float = 8.0
     max_open_orders: int = 3
     dry_run: bool = True
+    reserve_amount_usd: float = 0.0
+    reserve_percent: float = 0.0
 
     # Aave staking defaults
     usdc_address: str = "0xff970A61a04b1Ca14834A43F5de4533eBDDB5CC8"
@@ -131,6 +133,8 @@ class Settings(BaseSettings):
                     setattr(self, attr, False)
 
         for f in ("notional_per_trade_usd", "net_threshold_bps", "max_slippage_bps"):
+            _coerce_float(f)
+        for f in ("reserve_amount_usd", "reserve_percent"):
             _coerce_float(f)
         for f in (
             "max_open_orders",
