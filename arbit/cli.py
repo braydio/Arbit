@@ -87,27 +87,52 @@ class CLIApp(typer.Typer):
         typer.echo(
             "keys:check\n"
             "  Validate exchange credentials by fetching a sample order book.\n"
+            "  Aliases: keys:check, keys_check\n"
             "  Sample output:\n"
             "    [alpaca] markets=123 BTC/USDT 60000/60010\n"
         )
 
         typer.echo(
             "fitness\n"
-            "  Monitor order books to gauge spread without trading.\n"
-            "  Flags:\n"
-            "    --venue TEXT   Exchange to query (default: alpaca)\n"
-            "    --secs INTEGER Seconds to run (default: 20)\n"
+            "  Monitor order books to gauge spread without trading. Optionally simulate executions.\n"
+            "  Flags (all optional):\n"
+            "    --venue TEXT              Exchange to query (default: alpaca)\n"
+            "    --secs INTEGER            Seconds to run (default: 20)\n"
+            "    --simulate/--no-simulate  Try dry-run triangle executions (default: no-simulate)\n"
+            "    --persist/--no-persist    Persist simulated fills to SQLite (used with --simulate)\n"
             "  Sample output:\n"
             "    alpaca ETH/USDT spread=10.0 bps\n"
+            "    alpaca [sim] Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.05 USDT\n"
         )
 
         typer.echo(
             "live\n"
             "  Continuously scan for profitable triangles and execute trades.\n"
-            "  Flags:\n"
+            "  Flags (optional):\n"
             "    --venue TEXT   Exchange to trade on (default: alpaca)\n"
             "  Sample output:\n"
             "    alpaca ETH/BTC net=0.5% PnL=0.10 USDT\n"
+        )
+
+        typer.echo(
+            "markets:limits\n"
+            "  List market min-notional and fees to help size trades.\n"
+            "  Aliases: markets:limits, markets_limits\n"
+            "  Flags (all optional):\n"
+            "    --venue TEXT     Exchange to query (default: alpaca)\n"
+            "    --symbols TEXT   CSV filter (e.g., BTC/USDT,ETH/USDT); default = triangle symbols\n"
+            "  Sample output:\n"
+            "    BTC/USDT min_cost=5.0 maker=10 bps taker=10 bps\n"
+        )
+
+        typer.echo(
+            "config:recommend\n"
+            "  Suggest starter Strategy settings based on venue data.\n"
+            "  Aliases: config:recommend, config_recommend\n"
+            "  Flags (optional):\n"
+            "    --venue TEXT   Exchange to query (default: alpaca)\n"
+            "  Sample output:\n"
+            "    Recommend: NOTIONAL_PER_TRADE_USD=10 NET_THRESHOLD_BPS=25 MAX_SLIPPAGE_BPS=8 DRY_RUN=true\n"
         )
 
 
@@ -166,6 +191,7 @@ def _notify_discord(venue: str, message: str) -> None:
 
 
 @app.command("keys:check")
+@app.command("keys_check")
 def keys_check():
     """Validate exchange credentials by fetching a sample order book."""
     for venue in settings.exchanges:
@@ -196,13 +222,123 @@ def keys_check():
             log.error("[%s] ERROR: %s", venue, e)
 
 
+@app.command("markets:limits")
+@app.command("markets_limits")
+def markets_limits(
+    venue: str = "alpaca",
+    symbols: str | None = None,
+):
+    """List min-notional (cost.min) and maker/taker fees for symbols.
+
+    Use ``--symbols`` to filter by a comma-separated list, otherwise prints
+    entries for the configured triangles for quick relevance.
+    """
+
+    a = _build_adapter(venue, settings)
+    try:
+        ms = a.ex.load_markets()
+    except Exception:
+        ms = {}
+
+    selected: list[str]
+    if symbols:
+        selected = [s.strip() for s in symbols.split(",") if s.strip()]
+    else:
+        tris = _triangles_for(venue)
+        selected = sorted({s for t in tris for s in (t.leg_ab, t.leg_bc, t.leg_ac)})
+
+    for s in selected:
+        if ms and s not in ms:
+            log.info("%s not in markets; skipping", s)
+            continue
+        try:
+            maker, taker = a.fetch_fees(s)
+        except Exception:
+            maker, taker = 0.0, 0.0
+        try:
+            min_cost = float(a.min_notional(s))
+        except Exception:
+            min_cost = 0.0
+        log.info(
+            "%s min_cost=%.6g maker=%d bps taker=%d bps",
+            s,
+            min_cost,
+            int(round(maker * 1e4)),
+            int(round(taker * 1e4)),
+        )
+
+
+@app.command("config:recommend")
+@app.command("config_recommend")
+def config_recommend(
+    venue: str = "alpaca",
+):
+    """Suggest starter Strategy settings based on current venue data.
+
+    Heuristics:
+    - Threshold = (avg taker across legs * 3 + 5 bps) rounded up
+    - Notional = max(2 × min_notional(AB), $5)
+    - Slippage = 8 bps default
+    """
+
+    a = _build_adapter(venue, settings)
+    tris = _triangles_for(venue)
+    tri = tris[0]
+    legs = [tri.leg_ab, tri.leg_bc, tri.leg_ac]
+    takers: list[float] = []
+    for s in legs:
+        try:
+            takers.append(a.fetch_fees(s)[1])
+        except Exception:
+            takers.append(0.001)
+    avg_taker = sum(takers) / max(len(takers), 1)
+    thresh_bps = int((avg_taker * 3 * 1e4) + 5)  # +5 bps buffer
+
+    try:
+        min_cost_ab = float(a.min_notional(tri.leg_ab))
+    except Exception:
+        min_cost_ab = 1.0
+    # Ensure a practical floor for notional suggestion
+    notional_usd = max(2.0 * min_cost_ab, 5.0)
+
+    # Recommend defaults
+    rec = {
+        "NOTIONAL_PER_TRADE_USD": int(round(notional_usd)),
+        "NET_THRESHOLD_BPS": max(thresh_bps, 10),
+        "MAX_SLIPPAGE_BPS": 8,
+        "DRY_RUN": True,
+    }
+    # Print a compact single-line summary for easy copy/paste
+    log.info(
+        "Recommend: NOTIONAL_PER_TRADE_USD=%s NET_THRESHOLD_BPS=%s MAX_SLIPPAGE_BPS=%s DRY_RUN=%s",
+        rec["NOTIONAL_PER_TRADE_USD"],
+        rec["NET_THRESHOLD_BPS"],
+        rec["MAX_SLIPPAGE_BPS"],
+        str(rec["DRY_RUN"]).lower(),
+    )
+    # And a bit more context
+    log.info(
+        "Reference: avg_taker=%d bps legs=%s min_notional_ab=%.6g",
+        int(round(avg_taker * 1e4)),
+        ",".join(legs),
+        min_cost_ab,
+    )
+
+
 @app.command()
 def fitness(
     venue: str = "alpaca",
     secs: int = 20,
+    simulate: bool = False,
+    persist: bool = False,
     help_verbose: bool = False,
 ):
-    """Read-only sanity check that prints bid/ask spreads."""
+    """Read-only sanity check that prints bid/ask spreads.
+
+    When ``--simulate`` is provided, attempt dry-run triangle executions using
+    current order books and log simulated PnL. Use ``--persist`` to store
+    simulated fills in SQLite for later analysis.
+    """
 
     if help_verbose:
         typer.echo(
@@ -215,15 +351,104 @@ def fitness(
     tris = _triangles_for(venue)
     t0 = time.time()
     syms = {s for t in tris for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
-    while time.time() - t0 < secs:
-        for s in syms:
-            ob = a.fetch_orderbook(s, 5)
-            if ob["bids"] and ob["asks"]:
-                spread = (
-                    (ob["asks"][0][0] - ob["bids"][0][0]) / ob["asks"][0][0]
-                ) * 1e4  # bid/ask gap in basis points
-                log.info("%s %s spread=%.1f bps (ask-bid gap)", venue, s, spread)
-        time.sleep(0.25)
+
+    # Optional persistence for simulated fills
+    conn = None
+    if simulate and persist:
+        conn = init_db(settings.sqlite_path)
+        for tri in tris:
+            try:
+                insert_triangle(conn, tri)
+            except Exception:
+                pass
+
+    # Force dry-run behavior during simulation regardless of global setting
+    prev_dry_run = settings.dry_run
+    if simulate:
+        try:
+            settings.dry_run = True
+        except Exception:
+            pass
+
+    sim_count = 0
+    sim_pnl = 0.0
+    try:
+        while time.time() - t0 < secs:
+            books_cache: dict[str, dict] = {}
+            # Spread sampling per symbol
+            for s in syms:
+                ob = a.fetch_orderbook(s, 5)
+                books_cache[s] = ob
+                if ob.get("bids") and ob.get("asks"):
+                    spread = (
+                        (ob["asks"][0][0] - ob["bids"][0][0]) / ob["asks"][0][0]
+                    ) * 1e4  # bid/ask gap in basis points
+                    log.info("%s %s spread=%.1f bps (ask-bid gap)", venue, s, spread)
+
+            # Optional: try triangles in dry-run and log/persist
+            if simulate:
+                for tri in tris:
+                    skip_reasons: list[str] = []
+                    try:
+                        res = try_triangle(
+                            a,
+                            tri,
+                            books_cache,
+                            settings.net_threshold_bps / 10000.0,
+                            skip_reasons,
+                        )
+                    except Exception as e:  # defensive: keep fitness resilient
+                        log.error("simulate error for %s: %s", tri, e)
+                        continue
+                    if not res:
+                        # Count skips by reason (no metrics emission in fitness)
+                        continue
+                    sim_count += 1
+                    sim_pnl += float(res.get("realized_usdt", 0.0))
+                    for f in res.get("fills", []):
+                        if conn is not None:
+                            try:
+                                insert_fill(
+                                    conn,
+                                    Fill(
+                                        order_id=str(f.get("id", "")),
+                                        symbol=str(f.get("symbol", "")),
+                                        side=str(f.get("side", "")),
+                                        price=float(f.get("price", 0.0)),
+                                        quantity=float(f.get("qty", 0.0)),
+                                        fee=float(f.get("fee", 0.0)),
+                                        timestamp=None,
+                                    ),
+                                )
+                            except Exception:
+                                pass
+                    log.info(
+                        "%s [sim] %s net=%.3f%% PnL=%.2f USDT",
+                        venue,
+                        tri,
+                        res.get("net_est", 0.0) * 100.0,
+                        res.get("realized_usdt", 0.0),
+                    )
+            time.sleep(0.25)
+    finally:
+        if simulate:
+            try:
+                settings.dry_run = prev_dry_run
+            except Exception:
+                pass
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    if simulate:
+        log.info(
+            "%s [sim] summary: trades=%d total_pnl=%.2f USDT",
+            venue,
+            sim_count,
+            sim_pnl,
+        )
 
 
 @app.command()

@@ -82,6 +82,69 @@ def test_fitness(monkeypatch):
     assert result.exit_code == 0
 
 
+def test_fitness_simulate(monkeypatch):
+    monkeypatch.setenv("ARBIT_API_KEY", "x")
+    monkeypatch.setenv("ARBIT_API_SECRET", "y")
+
+    class _Time:
+        def __init__(self):
+            self.t = 0.0
+
+        def time(self) -> float:
+            self.t += 1.0
+            return self.t
+
+        @staticmethod
+        def sleep(_secs: float) -> None:
+            return None
+
+    monkeypatch.setattr(cli, "time", _Time())
+
+    class DummySimAdapter:
+        """Adapter with minimal behavior to satisfy try_triangle in simulate mode."""
+
+        def __init__(self) -> None:
+            # Fixed profitable top-of-book across legs
+            self._books = {
+                "ETH/USDT": {"asks": [(2000.0, 1.0)], "bids": [(1999.5, 1.0)]},
+                "ETH/BTC": {"bids": [(0.05, 1.0)], "asks": [(0.049, 1.0)]},
+                "BTC/USDT": {"bids": [(41000.0, 1.0)], "asks": [(41010.0, 1.0)]},
+            }
+
+        def fetch_orderbook(self, symbol: str, depth: int = 10) -> dict:
+            ob = self._books.get(symbol)
+            return ob if ob else {"bids": [], "asks": []}
+
+        @staticmethod
+        def fetch_fees(_symbol: str) -> tuple[float, float]:
+            return 0.0, 0.001  # maker, taker
+
+        @staticmethod
+        def min_notional(_symbol: str) -> float:
+            return 1.0
+
+        def create_order(self, spec):  # type: ignore[no-untyped-def]
+            # Synthesize a taker fill at top-of-book
+            ob = self.fetch_orderbook(spec.symbol, 1)
+            price = ob["asks"][0][0] if spec.side == "buy" else ob["bids"][0][0]
+            fee = self.fetch_fees(spec.symbol)[1] * price * spec.qty
+            return {
+                "id": "dryrun",
+                "symbol": spec.symbol,
+                "side": spec.side,
+                "qty": spec.qty,
+                "price": price,
+                "fee": fee,
+            }
+
+    adapter = DummySimAdapter()
+    monkeypatch.setattr(cli, "_build_adapter", lambda venue, _settings: adapter)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["fitness", "--secs", "1", "--simulate"])
+    assert result.exit_code == 0
+
+
 def test_keys_check(monkeypatch):
     class DummyCcxt:
         """Minimal ccxt-like exchange for testing `keys_check`."""
@@ -134,6 +197,8 @@ def test_help_lists_commands() -> None:
     assert "keys:check" in result.output
     assert "fitness" in result.output
     assert "live" in result.output
+    assert "markets:limits" in result.output
+    assert "config:recommend" in result.output
 
 
 def test_help_verbose_shows_details() -> None:
@@ -145,3 +210,58 @@ def test_help_verbose_shows_details() -> None:
     assert "Command reference" in result.output
     assert "--secs" in result.output
     assert "Sample output" in result.output
+
+
+def test_markets_limits(monkeypatch):
+    class DummyCcxt:
+        @staticmethod
+        def load_markets() -> dict:
+            return {"ETH/USDT": {}, "BTC/USDT": {}}
+
+    class DummyAdapter:
+        def __init__(self) -> None:
+            self.ex = DummyCcxt()
+
+        @staticmethod
+        def fetch_fees(symbol: str) -> tuple[float, float]:
+            return (0.001, 0.001) if symbol else (0.0, 0.0)
+
+        @staticmethod
+        def min_notional(symbol: str) -> float:
+            return 5.0 if symbol else 0.0
+
+    monkeypatch.setattr(cli, "_build_adapter", lambda venue, _settings: DummyAdapter())
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["markets:limits", "--venue", "alpaca", "--symbols", "ETH/USDT,BTC/USDT"],
+    )
+    assert result.exit_code == 0
+
+
+def test_config_recommend(monkeypatch):
+    class DummyAdapter:
+        class _EX:
+            @staticmethod
+            def load_markets():
+                return {"ETH/USDT": {}, "ETH/BTC": {}, "BTC/USDT": {}}
+
+        def __init__(self) -> None:
+            self.ex = self._EX()
+
+        @staticmethod
+        def fetch_fees(_s: str) -> tuple[float, float]:
+            return (0.001, 0.001)
+
+        @staticmethod
+        def min_notional(_s: str) -> float:
+            return 5.0
+
+        @staticmethod
+        def fetch_orderbook(_s: str, _d: int = 1) -> dict:
+            return {"asks": [(2000.0, 1.0)], "bids": [(1999.0, 1.0)]}
+
+    monkeypatch.setattr(cli, "_build_adapter", lambda venue, _settings: DummyAdapter())
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["config:recommend", "--venue", "alpaca"])
+    assert result.exit_code == 0

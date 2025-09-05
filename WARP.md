@@ -54,9 +54,11 @@ pytest -q
 
 | Mode        | Purpose                                                         | Example log line                             |
 |-------------|-----------------------------------------------------------------|----------------------------------------------|
-| `fitness`   | Read-only spread sampling to verify connectivity                | `kraken ETH/USDT spread=0.5 bps`             |
+| `fitness`   | Read-only spread sampling; optional dry-run simulation          | `kraken ETH/USDT spread=0.5 bps`             |
 | `live`      | Execute trades when triangles meet profit thresholds            | `alpaca Triangle(...) net=0.15% PnL=0.05`    |
 | `keys:check`| Validate exchange keys and permissions                          | `[alpaca] markets=123 BTC/USDT 60000/60010`  |
+| `markets:limits` | List min-notional and fees for symbols                   | `BTC/USDT min_cost=5 maker=10bps taker=10bps`|
+| `config:recommend` | Suggest starter Strategy settings                      | `Recommend: NOTIONAL=10 NET=25 ...`          |
 
 Run `python -m arbit.cli --help-verbose` for command flags and additional output samples.
 
@@ -246,8 +248,8 @@ net   = gross * (1 - fee)^3 - 1
 ## Safety and Risk Management
 
 ### Current Safety Features
-- `fitness` command is read-only and safe for connectivity testing
-- `live` command can place real orders - **no explicit dry run switch yet**
+- `fitness` command is read-only and safe for connectivity testing; add `--simulate` to try dry-run executions
+- `live` command can place real orders
 - No IOC/time-in-force or slippage rails implemented by default
 - Top-of-book limit orders are used
 - Rate limiting enabled to respect exchange limits
@@ -320,6 +322,7 @@ A: Estimates assume perfect execution at top-of-book prices. Real trading involv
 ```bash
 # Quick connectivity test
 python -m arbit.cli fitness --venue kraken --secs 5
+python -m arbit.cli fitness --venue alpaca --secs 5 --simulate --persist
 
 # Live (caution: may place orders)
 python -m arbit.cli live --venue alpaca --cycles 1 --metrics-port 9109

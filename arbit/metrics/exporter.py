@@ -28,4 +28,5 @@ def start_metrics_server(port: int) -> None:
         TCP port to bind the HTTP server to.
     """
 
-    start_http_server(port)
+    # Be tolerant of env-sourced strings like "9109".
+    start_http_server(int(port))

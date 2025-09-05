@@ -9,7 +9,7 @@ A modular Python package for triangular arbitrage trading on cryptocurrency exch
 > - The `live` command **WILL place real orders** if your API keys have trading permissions
 > - Always start with `fitness` mode (read-only) for testing connectivity
 > - Use sandbox/paper trading environments when available (see `.env.example`)
-> - Current limitations: no explicit dry-run toggle, fees/slippage/partial fills not fully modeled
+> - Current limitations: fees/slippage/partial fills not fully modeled
 > - **This is not financial advice. Use at your own risk.**
 > - **NOT READY FOR PRODUCTION TRADING** - see [WARP.md](WARP.md#safety-and-risk-management) for current limitations
 
@@ -88,7 +88,7 @@ pip install web3
 pip install windows-curses  # Windows only
 ```
 
-See [WARP.md Development Workflow](WARP.md#development-workflow) for complete setup instructions.
+See [WARP.md Development Workflow](WARP.md#development-workflow) for complete setup instructions. For practical guidance on safe tuning and starter values, see [TIPS_TRICKS.md](TIPS_TRICKS.md).
 
 ## Configuration
 
@@ -156,6 +156,14 @@ best ask minus best bid expressed in basis points (1 bps = 0.01%). Smaller
 spreads generally indicate deeper liquidity. Use ``--help-verbose`` for more
 output guidance.
 
+Optionally simulate dry-run triangle executions and log simulated PnL:
+
+```bash
+python -m arbit.cli fitness --venue alpaca --secs 5 --simulate
+# Persist simulated fills to SQLite
+python -m arbit.cli fitness --venue alpaca --secs 5 --simulate --persist
+```
+
 ### Live Trading (⚠️ PLACES REAL ORDERS)
 
 **WARNING**: Only use with tiny amounts and proper risk management!
@@ -189,6 +197,20 @@ curl http://localhost:9109/metrics
 **Supported Venues**: `alpaca`, `kraken`
 
 **Note**: Ensure triangle symbols exist on your chosen venue (ETH/USDT, ETH/BTC, BTC/USDT). See [WARP.md CLI Commands](WARP.md#cli-commands) for full documentation.
+
+### Setup Helpers
+
+Inspect market limits and fees for sizing notional:
+
+```bash
+python -m arbit.cli markets:limits --venue alpaca --symbols ETH/USDT,BTC/USDT
+```
+
+Get recommended starter Strategy settings based on venue data:
+
+```bash
+python -m arbit.cli config:recommend --venue alpaca
+```
 
 ## Docker Quick Start
 
