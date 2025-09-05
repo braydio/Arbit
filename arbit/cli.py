@@ -16,7 +16,6 @@ import urllib.request
 import typer
 from arbit import try_triangle
 from arbit.adapters.ccxt_adapter import CCXTAdapter
-
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles
 from arbit.metrics.exporter import (

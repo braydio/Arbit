@@ -14,7 +14,6 @@ from typing import AsyncGenerator, Iterable
 import ccxt
 
 from arbit.adapters.base import ExchangeAdapter
-
 from arbit.config import creds_for, settings
 from arbit.models import Fill, OrderSpec
 
