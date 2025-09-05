@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     def __init__(self, **kwargs: Any) -> None:
         """Normalize exchange list from environment variables."""
         super().__init__(**kwargs)
+
         # Coerce common env-sourced strings to proper types for robustness.
         def _coerce_float(attr: str) -> None:
             v = getattr(self, attr, None)
