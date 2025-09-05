@@ -44,3 +44,7 @@ class ExchangeAdapter(ABC):
     @abstractmethod
     def balances(self) -> Dict[str, float]:
         """Return asset balances with non-zero amounts."""
+
+    @abstractmethod
+    def fetch_balance(self, asset: str) -> float:
+        """Return free balance for *asset* in its native units."""
