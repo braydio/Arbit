@@ -28,6 +28,14 @@ def try_triangle(
         Mapping of symbol to order book used for pricing.
     threshold:
         Minimum net profit fraction required to execute.
+    skip_reasons:
+        Optional list to record skip reasons for diagnostics.
+
+    Notes
+    -----
+    Available balance is reduced by ``Settings.reserve_amount_usd`` or
+    ``Settings.reserve_percent`` before sizing trades so that funds are held in
+    reserve.
     """
 
     obAB = books.get(tri.leg_ab, {"bids": [], "asks": []})
@@ -77,6 +85,27 @@ def try_triangle(
                 skip_reasons.append("notional_cap")
             return None
 
+    # Enforce account reserve so a portion of balance is held back
+    quote = tri.leg_ab.split("/")[1]
+    available = None
+    if hasattr(adapter, "fetch_balance"):
+        try:
+            bal = float(adapter.fetch_balance(quote))
+            reserve = float(getattr(settings, "reserve_amount_usd", 0.0))
+            pct = float(getattr(settings, "reserve_percent", 0.0))
+            if pct > 0:
+                reserve = max(reserve, bal * pct / 100.0)
+            available = max(bal - reserve, 0.0)
+        except Exception:
+            available = None
+    if available is not None and ask_price > 0:
+        max_qty_by_balance = available / ask_price
+        qtyB = min(qtyB, max_qty_by_balance)
+        if qtyB <= 0:
+            if skip_reasons is not None:
+                skip_reasons.append("reserve")
+            return None
+
     # Enforce exchange min-notional for AB leg
     try:
         min_cost_ab = float(adapter.min_notional(tri.leg_ab))
@@ -98,7 +127,6 @@ def try_triangle(
             if skip_reasons is not None:
                 skip_reasons.append("slippage_ab")
             return None
-    qtyB = min(qtyB, settings.notional_per_trade_usd / ask_price)
     try:
         min_cost_ab2 = float(adapter.min_notional(tri.leg_ab))
     except Exception:

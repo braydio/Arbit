@@ -8,10 +8,14 @@ expose a stream.
 
 from __future__ import annotations
 
-import asyncio
 from typing import AsyncGenerator, Iterable
 
 import ccxt
+
+try:  # pragma: no cover - optional dependency
+    import ccxt.pro as ccxtpro  # noqa: F401
+except Exception:  # pragma: no cover - ccxt.pro may be unavailable
+    ccxtpro = None
 
 from arbit.adapters.base import ExchangeAdapter
 from arbit.config import creds_for, settings
@@ -113,6 +117,34 @@ class CCXTAdapter(ExchangeAdapter):
             fee=fee_cost,
         )
 
+    async def orderbook_stream(
+        self, symbols: Iterable[str], depth: int = 10, poll_interval: float = 1.0
+    ) -> AsyncGenerator[tuple[str, dict], None]:
+        """Yield ``(symbol, order_book)`` updates for *symbols*.
+
+        Uses a websocket client if ``self.ex_ws`` is available; otherwise falls
+        back to polling REST with ``poll_interval`` seconds between cycles.
+        """
+
+        if getattr(self, "ex_ws", None):
+            while True:
+                tasks = {
+                    asyncio.create_task(self.ex_ws.watch_order_book(sym, depth)): sym
+                    for sym in symbols
+                }
+                done, pending = await asyncio.wait(
+                    tasks.keys(), return_when=asyncio.FIRST_COMPLETED
+                )
+                for t in done:
+                    yield tasks[t], t.result()
+                for t in pending:
+                    t.cancel()
+        else:
+            while True:
+                for sym in symbols:
+                    yield sym, self.fetch_orderbook(sym, depth)
+                await asyncio.sleep(poll_interval)
+
     def balances(self):
         """Return assets with non-zero balances."""
         b = self.ex.fetch_balance()
@@ -125,6 +157,10 @@ class CCXTAdapter(ExchangeAdapter):
         self.ex.cancel_order(order_id, symbol)
 
     def fetch_balance(self, asset: str) -> float:
-        """Return free balance for *asset*."""
+        """Return free balance for *asset* in its native units."""
 
         return float(self.ex.fetch_balance().get("free", {}).get(asset, 0.0))
+
+
+# Backwards compatible alias
+CcxtAdapter = CCXTAdapter

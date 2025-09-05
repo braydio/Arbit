@@ -3,6 +3,8 @@
 import sys
 import types
 
+# ruff: noqa: E402
+
 sys.modules["arbit.config"] = types.SimpleNamespace(
     settings=types.SimpleNamespace(
         notional_per_trade_usd=200.0,
@@ -10,6 +12,8 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
         dry_run=True,
         prom_port=9109,
         log_level="INFO",
+        reserve_amount_usd=0.0,
+        reserve_percent=0.0,
     )
 )
 
@@ -21,8 +25,9 @@ from arbit.models import Triangle
 class DummyAdapter(ExchangeAdapter):
     """Lightweight adapter stub used for executor tests."""
 
-    def __init__(self, books):
+    def __init__(self, books, balance: float = 1000.0):
         self.books = books
+        self.balance = balance
         self.orders: list[OrderSpec] = []
 
     def name(self) -> str:  # pragma: no cover - not used
@@ -45,6 +50,9 @@ class DummyAdapter(ExchangeAdapter):
 
     def balances(self):  # pragma: no cover - not used
         return {}
+
+    def fetch_balance(self, asset: str) -> float:  # pragma: no cover - simple stub
+        return self.balance
 
 
 def profitable_books() -> dict[str, dict[str, list[tuple[float, float]]]]:
@@ -83,3 +91,18 @@ def test_try_triangle_skips_when_unprofitable() -> None:
     res = try_triangle(adapter, tri, books, thresh)
     assert res is None
     assert len(adapter.orders) == 0
+
+
+def test_try_triangle_respects_reserve(monkeypatch) -> None:
+    """Cycle is skipped when reserve leaves no available balance."""
+    tri = Triangle("ETH/USDT", "ETH/BTC", "BTC/USDT")
+    books = profitable_books()
+    adapter = DummyAdapter(books, balance=40.0)
+    cfg = sys.modules["arbit.config"].settings
+    monkeypatch.setattr(cfg, "reserve_amount_usd", 50.0)
+    monkeypatch.setattr(sys.modules["arbit.engine.executor"], "settings", cfg)
+    thresh = cfg.net_threshold_bps / 10000.0
+    skips: list[str] = []
+    res = try_triangle(adapter, tri, books, thresh, skips)
+    assert res is None
+    assert "reserve" in skips
