@@ -1,6 +1,22 @@
-"""Ccxt-based adapter implementing the ExchangeAdapter interface."""
+"""Ccxt-based adapter implementing the :class:`ExchangeAdapter` interface.
+
+This adapter now supports streaming market data via ``ccxt.pro`` WebSocket
+feeds when available.  A lightweight REST polling fallback is provided for
+environments where the websocket client is missing or an exchange does not
+expose a stream.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import AsyncGenerator, Iterable
 
 import ccxt
+
+try:  # pragma: no cover - optional dependency
+    import ccxt.pro as ccxtpro
+except Exception:  # pragma: no cover - websockets optional
+    ccxtpro = None
 
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.config import creds_for, settings
@@ -19,6 +35,15 @@ class CcxtAdapter(ExchangeAdapter):
         key, sec = creds_for(ex_id)
         cls = getattr(ccxt, ex_id)
         self.ex = cls({"apiKey": key, "secret": sec, "enableRateLimit": True})
+        self.ex_ws = None
+        if ccxtpro is not None:
+            try:  # pragma: no cover - depends on optional lib
+                ws_cls = getattr(ccxtpro, ex_id)
+                self.ex_ws = ws_cls(
+                    {"apiKey": key, "secret": sec, "enableRateLimit": True}
+                )
+            except AttributeError:
+                self.ex_ws = None
         if ex_id == "alpaca" and settings.alpaca_base_url:
             # Some venues like Alpaca use non-ccxt defaults; allow override.
             api_urls = self.ex.urls.get("api")
@@ -87,3 +112,43 @@ class CcxtAdapter(ExchangeAdapter):
         """Return assets with non-zero balances."""
         b = self.ex.fetch_balance()
         return {k: float(v) for k, v in b.get("total", {}).items() if float(v or 0) > 0}
+
+    async def orderbook_stream(
+        self,
+        symbols: Iterable[str],
+        depth: int = 10,
+        poll_interval: float = 1.0,
+    ) -> AsyncGenerator[tuple[str, dict], None]:
+        """Yield order book updates for ``symbols``.
+
+        When a websocket client is available, ``ccxt.pro``'s
+        ``watch_order_book`` coroutine is used.  Otherwise, order books are
+        polled via the REST ``fetch_order_book`` endpoint using
+        :func:`asyncio.to_thread` to avoid blocking the event loop.
+
+        Parameters
+        ----------
+        symbols:
+            Symbols to monitor for order book updates.
+        depth:
+            Maximum number of levels to request per book.
+        poll_interval:
+            Delay between REST polling cycles when websockets are unavailable.
+        """
+
+        syms = list(symbols)
+        if self.ex_ws is not None and hasattr(self.ex_ws, "watch_order_book"):
+            while True:
+                for sym in syms:
+                    ob = await self.ex_ws.watch_order_book(sym, depth)  # type: ignore[attr-defined]
+                    yield sym, ob
+        else:
+            while True:
+                for sym in syms:
+                    ob = await asyncio.to_thread(self.fetch_orderbook, sym, depth)
+                    yield sym, ob
+                await asyncio.sleep(poll_interval)
+
+
+# Backwards compatibility for older tests expecting ``CCXTAdapter``
+CCXTAdapter = CcxtAdapter

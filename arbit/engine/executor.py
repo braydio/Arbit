@@ -1,5 +1,8 @@
 """Utilities for executing triangular arbitrage cycles."""
 
+import time
+from typing import AsyncGenerator, Iterable
+
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.config import settings
 from arbit.engine.triangle import net_edge, size_from_depth, top
@@ -148,3 +151,37 @@ def try_triangle(
         "fills": [f1, f2, f3],
         "realized_usdt": realized,
     }
+
+
+async def stream_triangles(
+    adapter: ExchangeAdapter,
+    tris: Iterable[Triangle],
+    threshold: float,
+    depth: int = 10,
+) -> AsyncGenerator[tuple[Triangle, dict | None, list[str], float], None]:
+    """Yield arbitrage attempts driven by streaming order book updates.
+
+    This helper maintains an internal cache of the latest order book for each
+    symbol referenced by ``tris``.  Whenever all three legs of a triangle have
+    fresh data an attempt is made via :func:`try_triangle`.  The function yields
+    tuples of ``(triangle, result, skip_reasons, latency)`` where ``result`` is
+    the return value from :func:`try_triangle`.
+    """
+
+    syms = {s for t in tris for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
+    books: dict[str, dict] = {}
+    async for sym, ob in adapter.orderbook_stream(syms, depth):
+        books[sym] = ob
+        for tri in tris:
+            legs = (tri.leg_ab, tri.leg_bc, tri.leg_ac)
+            if all(b in books for b in legs):
+                t0 = time.time()
+                res = try_triangle(
+                    adapter,
+                    tri,
+                    {s: books[s] for s in legs},
+                    threshold,
+                    skip_reasons := [],
+                )
+                latency = max(time.time() - t0, 0.0)
+                yield tri, res, skip_reasons, latency
