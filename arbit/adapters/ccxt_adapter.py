@@ -1,8 +1,20 @@
-"""Ccxt-based adapter implementing the ExchangeAdapter interface."""
+"""Ccxt-based adapter implementing the :class:`ExchangeAdapter` interface.
+
+This adapter now supports streaming market data via ``ccxt.pro`` WebSocket
+feeds when available.  A lightweight REST polling fallback is provided for
+environments where the websocket client is missing or an exchange does not
+expose a stream.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import AsyncGenerator, Iterable
 
 import ccxt
 
 from arbit.adapters.base import ExchangeAdapter
+
 from arbit.config import creds_for, settings
 from arbit.models import Fill, OrderSpec
 
