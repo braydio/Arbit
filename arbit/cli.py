@@ -12,7 +12,6 @@ import logging
 import sys
 import time
 import urllib.request
-from datetime import datetime
 
 import typer
 from arbit import try_triangle
@@ -26,6 +25,12 @@ from arbit.metrics.exporter import (
     ORDERS_TOTAL,
     PROFIT_TOTAL,
     SKIPS_TOTAL,
+    YIELD_ALERTS_TOTAL,
+    YIELD_APR,
+    YIELD_CHECKS_TOTAL,
+    YIELD_DEPOSITS_TOTAL,
+    YIELD_ERRORS_TOTAL,
+    YIELD_WITHDRAWS_TOTAL,
     start_metrics_server,
 )
 from arbit.models import Fill, Triangle, TriangleAttempt
@@ -160,6 +165,35 @@ class CLIApp(typer.Typer):
             "    Recommend: NOTIONAL_PER_TRADE_USD=10 NET_THRESHOLD_BPS=25 MAX_SLIPPAGE_BPS=8 DRY_RUN=true\n"
         )
 
+        typer.echo(
+            "yield:collect\n"
+            "  Deposit idle USDC to Aave v3 to earn yield (beta).\n"
+            "  Aliases: yield:collect, yield_collect\n"
+            "  Flags (optional):\n"
+            "    --asset TEXT        Asset to deposit (default: USDC)\n"
+            "    --min-stake INTEGER Minimum token units to deposit (default: settings.min_usdc_stake)\n"
+            "    --reserve-usd FLOAT Keep this much USD in wallet (default: settings.reserve_amount_usd; reserve_percent also applied)\n"
+            "    --help-verbose      Print extra context and environment requirements\n"
+            "  Environment:\n"
+            "    RPC_URL, PRIVATE_KEY; USDC/Pool addresses from settings.\n"
+            "  Sample output:\n"
+            "    [dry-run] would deposit 150.00 USDC to Aave (reserve=50.00)\n"
+        )
+
+        typer.echo(
+            "yield:watch\n"
+            "  Periodically check APR sources and alert if a better yield exists.\n"
+            "  Aliases: yield:watch, yield_watch\n"
+            "  Flags (optional):\n"
+            "    --asset TEXT        Asset symbol (default: USDC)\n"
+            "    --sources TEXT      CSV or JSON array of URLs returning {provider, asset, apr_percent}\n"
+            "    --interval FLOAT    Poll interval in seconds (default: 60)\n"
+            "    --apr-hint FLOAT    Current provider APR used as baseline for alerts\n"
+            "    --min-delta-bps INT Minimum APR improvement to alert (default: 50 bps)\n"
+            "  Sample output:\n"
+            "    Better yield available for USDC: foo 5.10% >= current 4.50% + 0.50%\n"
+        )
+
 
 app = CLIApp()
 log = logging.getLogger("arbit")
@@ -215,6 +249,203 @@ def _notify_discord(venue: str, message: str) -> None:
             pass
 
 
+@app.command("yield:collect")
+@app.command("yield_collect")
+def yield_collect(
+    asset: str = "USDC",
+    min_stake: int | None = None,
+    reserve_usd: float | None = None,
+    help_verbose: bool = False,
+):
+    """Deposit idle stablecoin into Aave v3 (beta, USDC only).
+
+    Uses on-chain wallet balance (RPC_URL/PRIVATE_KEY) and keeps a configured
+    USD reserve in the wallet. In dry-run mode, logs intended actions only.
+    """
+
+    if help_verbose:
+        typer.echo(
+            "Deposits idle wallet USDC to Aave v3. Requires RPC_URL and PRIVATE_KEY.\n"
+            "Reserves are computed as max(reserve_amount_usd, reserve_percent * balance_usd).\n"
+            "Amounts are in token units: USDC uses 6 decimals. Honors global DRY_RUN."
+        )
+        raise SystemExit(0)
+
+    asset = (asset or "").strip().upper()
+    if asset != "USDC":
+        log.error("yield:collect supports USDC only for now")
+        return
+
+    try:
+        from web3 import Web3  # type: ignore
+    except Exception:
+        log.error("web3 not installed; cannot perform yield:collect")
+        return
+
+    from stake import ERC20_ABI, stake_usdc
+    rpc = (getattr(settings, "rpc_url", None) or __import__("os").getenv("RPC_URL"))
+    pk = (getattr(settings, "private_key", None) or __import__("os").getenv("PRIVATE_KEY"))
+    if not rpc or not pk:
+        log.error("RPC_URL and PRIVATE_KEY must be set for yield:collect")
+        return
+
+    w3 = Web3(Web3.HTTPProvider(rpc))
+    acct = w3.eth.account.from_key(pk)
+
+    usdc_addr = settings.usdc_address
+    usdc = w3.eth.contract(address=usdc_addr, abi=ERC20_ABI)
+    bal_raw = int(usdc.functions.balanceOf(acct.address).call())
+    # 6 decimals for USDC
+    bal_usd = bal_raw / 1_000_000.0
+
+    # Determine reserve
+    reserve_abs = (
+        float(reserve_usd)
+        if reserve_usd is not None
+        else float(getattr(settings, "reserve_amount_usd", 0.0))
+    )
+    reserve_pct = float(getattr(settings, "reserve_percent", 0.0)) / 100.0
+    reserve_pct_amt = bal_usd * reserve_pct if reserve_pct > 0 else 0.0
+    reserve_final = max(reserve_abs, reserve_pct_amt)
+
+    available_usd = max(bal_usd - reserve_final, 0.0)
+    amount_raw = int(available_usd * 1_000_000)
+    # Default minimum stake from settings
+    min_units = int(min_stake) if min_stake is not None else int(settings.min_usdc_stake)
+
+    if amount_raw < min_units:
+        log.info(
+            "nothing to do: balance=%.2f USDC reserve=%.2f min_stake=%.2f",
+            bal_usd,
+            reserve_final,
+            min_units / 1_000_000.0,
+        )
+        return
+
+    if bool(getattr(settings, "dry_run", True)):
+        log.info(
+            "[dry-run] would deposit %.2f USDC to Aave (reserve=%.2f)",
+            amount_raw / 1_000_000.0,
+            reserve_final,
+        )
+        try:
+            YIELD_DEPOSITS_TOTAL.labels("aave", "dry_run").inc()
+        except Exception:
+            pass
+        return
+
+    try:
+        stake_usdc(amount_raw)
+        log.info(
+            "deposited %.2f USDC to Aave (kept reserve=%.2f)",
+            amount_raw / 1_000_000.0,
+            reserve_final,
+        )
+        try:
+            YIELD_DEPOSITS_TOTAL.labels("aave", "live").inc()
+        except Exception:
+            pass
+    except Exception as e:  # pragma: no cover - depends on chain state
+        log.error("yield:collect deposit error: %s", e)
+        try:
+            YIELD_ERRORS_TOTAL.labels("deposit").inc()
+        except Exception:
+            pass
+
+
+@app.command("yield:watch")
+@app.command("yield_watch")
+def yield_watch(
+    asset: str = "USDC",
+    sources: str | None = None,
+    interval: float = 60.0,
+    apr_hint: float | None = None,
+    min_delta_bps: int = 50,
+):
+    """Periodically fetch APRs and alert if a better yield is found.
+
+    Sources may be a CSV of URLs or a JSON array of URLs. Each URL should
+    return a JSON object or list with items like:
+    {"provider": "aave", "asset": "USDC", "apr_percent": 3.25}.
+    """
+
+    import json as _json
+    import urllib.request as _rq
+
+    def _parse_sources(s: str | None) -> list[str]:
+        if not s:
+            return []
+        s = s.strip()
+        try:
+            arr = _json.loads(s)
+            if isinstance(arr, list):
+                return [str(u) for u in arr]
+        except Exception:
+            pass
+        return [u.strip() for u in s.split(",") if u.strip()]
+
+    urls = _parse_sources(sources)
+    asset_u = (asset or "").strip().upper() or "USDC"
+    target_apr = float(apr_hint) if apr_hint is not None else None
+    min_delta = float(min_delta_bps) / 100.0
+
+    log.info(
+        "yield:watch asset=%s interval=%.1fs sources=%d min_delta=%.2f%%",
+        asset_u,
+        interval,
+        len(urls),
+        min_delta,
+    )
+
+    while True:
+        try:
+            YIELD_CHECKS_TOTAL.inc()
+        except Exception:
+            pass
+
+        best_apr = 0.0
+        best_provider = None
+        for url in urls:
+            try:
+                with _rq.urlopen(url, timeout=5) as resp:
+                    data = resp.read()
+                doc = _json.loads(data)
+            except Exception:
+                continue
+            items = doc if isinstance(doc, list) else [doc]
+            for it in items:
+                try:
+                    if (str(it.get("asset", asset_u))).upper() != asset_u:
+                        continue
+                    provider = str(it.get("provider") or "unknown")
+                    apr = float(it.get("apr_percent") or 0.0)
+                except Exception:
+                    continue
+                try:
+                    YIELD_APR.labels(provider, asset_u).set(apr)
+                except Exception:
+                    pass
+                if apr > best_apr:
+                    best_apr, best_provider = apr, provider
+
+        try:
+            YIELD_BEST_APR.labels(asset_u).set(best_apr)
+        except Exception:
+            pass
+
+        if target_apr is not None and best_apr >= target_apr + min_delta:
+            msg = (
+                f"Better yield available for {asset_u}: {best_provider} {best_apr:.2f}% "
+                f">= current {target_apr:.2f}% + {min_delta:.2f}%"
+            )
+            log.info(msg)
+            try:
+                YIELD_ALERTS_TOTAL.labels(asset_u).inc()
+            except Exception:
+                pass
+            _notify_discord("yield", msg)
+
+        time.sleep(max(interval, 1.0))
 @app.command("keys:check")
 @app.command("keys_check")
 def keys_check():

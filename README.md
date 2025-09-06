@@ -47,6 +47,8 @@ Run `python -m arbit.cli --help-verbose` for command flags and more output sampl
 - `fitness` flags: `--venue`, `--secs`, `--simulate/--no-simulate`, `--persist/--no-persist`, `--dummy-trigger`, `--help-verbose`
 - `live` flags: `--venue`, `--help-verbose`
 - Helpers: `keys:check`, `markets:limits --venue --symbols`, `config:recommend --venue`
+- Yield: `yield:collect --asset USDC --reserve-usd 50` (beta, on-chain)
+- Yield watch: `yield:watch --asset USDC --sources <CSV|JSON> --interval 60 --apr-hint 4.5`
 
 See [WARP.md](WARP.md) for comprehensive documentation, architecture details, and development roadmap.
 
@@ -280,6 +282,41 @@ export ARBIT_POOL_ABI_PATH=aave_pool.json
 ```
 
 **⚠️ EXTREME CAUTION**: Never use mainnet private keys in development. See [WARP.md DeFi Integration](WARP.md#defi-integration) for safety practices.
+
+### Yield Collector (Beta)
+
+Use the CLI to deposit idle on-chain USDC to Aave while keeping a wallet reserve. Honors global `DRY_RUN` (logs only):
+
+```
+# Dry-run preview (no txs): keeps $50 in wallet, deposits rest if >= min stake
+python -m arbit.cli yield:collect --asset USDC --reserve-usd 50
+
+# Live (DRY_RUN=false): executes approve + supply using stake.py checks
+export DRY_RUN=false
+python -m arbit.cli yield:collect --asset USDC --reserve-usd 50
+```
+
+Requirements:
+- Env: `RPC_URL`, `PRIVATE_KEY`
+- Settings: `usdc_address`, `pool_address`, `min_usdc_stake`, `max_gas_price_gwei`, `reserve_amount_usd`, `reserve_percent`
+- Asset: USDC (6 decimals) only for now
+
+### Yield Watch (APR Monitoring)
+
+Continuously polls APR endpoints and alerts if a better yield is available.
+
+```
+# CSV of URLs or JSON array; each URL should return objects with {provider, asset, apr_percent}
+python -m arbit.cli yield:watch --asset USDC --sources "https://api.example/apr.json,https://api.other/apr"
+
+# Provide baseline APR for current provider to trigger alerts when best APR exceeds baseline by delta
+python -m arbit.cli yield:watch --asset USDC --sources '["https://api.example/apr.json"]' --apr-hint 4.5 --min-delta-bps 50
+```
+
+Metrics:
+- `yield_apr_percent{provider,asset}` and `yield_best_apr_percent{asset}`
+- `yield_checks_total`, `yield_alerts_total{asset}`
+- Deposit counters: `yield_deposits_total{provider,mode}`; errors: `yield_errors_total{stage}`
 
 ## Troubleshooting
 
