@@ -25,15 +25,11 @@ YIELD_DEPOSITS_TOTAL = Counter(
 YIELD_WITHDRAWS_TOTAL = Counter(
     "yield_withdraws_total", "Total yield withdrawals executed", ["provider", "mode"]
 )
-YIELD_ERRORS_TOTAL = Counter(
-    "yield_errors_total", "Yield-related errors", ["stage"]
-)
+YIELD_ERRORS_TOTAL = Counter("yield_errors_total", "Yield-related errors", ["stage"])
 YIELD_CAPITAL_USD = Gauge(
     "yield_capital_usd", "Capital allocated to yield in USD", ["provider"]
 )
-YIELD_APR = Gauge(
-    "yield_apr_percent", "Provider APR (percent)", ["provider", "asset"]
-)
+YIELD_APR = Gauge("yield_apr_percent", "Provider APR (percent)", ["provider", "asset"])
 YIELD_BEST_APR = Gauge(
     "yield_best_apr_percent", "Best APR observed across sources (percent)", ["asset"]
 )
