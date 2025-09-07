@@ -70,9 +70,13 @@ class CCXTAdapter(ExchangeAdapter):
         return float(m.get("limits", {}).get("cost", {}).get("min", 1.0))
 
     def create_order(self, spec: OrderSpec) -> Fill:
-        """Place an order described by *spec* and return a :class:`Fill`."""
-        qty = getattr(spec, "qty", getattr(spec, "quantity"))
-        order_type = getattr(spec, "type", getattr(spec, "order_type", "market"))
+        """Place an order described by *spec* and return a :class:`Fill`.
+
+        Supports both current and legacy :class:`OrderSpec` attribute names so
+        existing executors using ``qty``/``type`` continue to work.
+        """
+        qty = getattr(spec, "quantity", getattr(spec, "qty", None))
+        order_type = getattr(spec, "order_type", getattr(spec, "type", "market"))
 
         if settings.dry_run:
             ob = self.fetch_orderbook(spec.symbol, 1)
@@ -87,9 +91,8 @@ class CCXTAdapter(ExchangeAdapter):
                 fee=fee,
             )
 
-        o = self.client.create_order(
-            spec.symbol, order_type, spec.side, qty, spec.price or None
-        )
+        price = getattr(spec, "price", None)
+        o = self.client.create_order(spec.symbol, order_type, spec.side, qty, price)
         filled = float(o.get("filled", qty))
         price = float(o.get("average") or o.get("price") or 0.0)
         fee_cost = sum(float(f.get("cost") or 0) for f in o.get("fees", []))

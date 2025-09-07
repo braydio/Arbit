@@ -38,3 +38,9 @@ class Fill:
     quantity: float
     fee: float
     timestamp: datetime | None = None
+
+    def __getitem__(self, key: str):
+        """Provide dict-style access for backward compatibility."""
+        if key == "qty":
+            return self.quantity
+        return getattr(self, key)
