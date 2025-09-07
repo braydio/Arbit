@@ -49,6 +49,7 @@ Run `python -m arbit.cli --help-verbose` for command flags and more output sampl
 - Helpers: `keys:check`, `markets:limits --venue --symbols`, `config:recommend --venue`
 - Yield: `yield:collect --asset USDC --reserve-usd 50` (beta, on-chain)
 - Yield watch: `yield:watch --asset USDC --sources <CSV|JSON> --interval 60 --apr-hint 4.5`
+- Yield withdraw: `yield:withdraw --asset USDC --amount-usd 75` or `--all-excess`
 
 See [WARP.md](WARP.md) for comprehensive documentation, architecture details, and development roadmap.
 
@@ -306,8 +307,8 @@ Requirements:
 Continuously polls APR endpoints and alerts if a better yield is available.
 
 ```
-# CSV of URLs or JSON array; each URL should return objects with {provider, asset, apr_percent}
-python -m arbit.cli yield:watch --asset USDC --sources "https://api.example/apr.json,https://api.other/apr"
+# CSV of URLs or JSON array; supports local files too
+python -m arbit.cli yield:watch --asset USDC --sources "https://api.example/apr.json,apr_local.json"
 
 # Provide baseline APR for current provider to trigger alerts when best APR exceeds baseline by delta
 python -m arbit.cli yield:watch --asset USDC --sources '["https://api.example/apr.json"]' --apr-hint 4.5 --min-delta-bps 50
