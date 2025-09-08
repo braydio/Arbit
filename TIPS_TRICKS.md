@@ -30,6 +30,21 @@ database if `--persist` is also specified.
 - Global help: `python -m arbit.cli --help` (summary) or `--help-verbose` (all flags + examples)
 - Fitness flags: `--venue`, `--secs`, `--simulate/--no-simulate`, `--persist/--no-persist`, `--dummy-trigger`, `--help-verbose`
 - Live flags: `--venue`, `--help-verbose`
+- Yield (beta): `yield:collect --asset USDC --reserve-usd <USD> [--min-stake <units>]`; requires `RPC_URL`/`PRIVATE_KEY`.
+- Yield watch: `yield:watch --asset USDC --sources <CSV|JSON> --apr-hint <percent> [--interval 60]`.
+
+### Using the Yield Collector Safely
+
+- Start in dry-run: keep `DRY_RUN=true` to preview deposit amounts.
+- Set a reserve: use `--reserve-usd` or `RESERVE_AMOUNT_USD` to keep cash on hand for fees.
+- Respect minimums: deposits occur only if available balance ≥ `MIN_USDC_STAKE`.
+- Understand risk: smart contract risk and gas spikes apply; `max_gas_price_gwei` is enforced in `stake.py`.
+
+### Monitoring APR for Better Yield
+
+- Start with a single source endpoint to validate parsing; expand to multiple.
+- Set `--apr-hint` to your current provider’s APR; use `--min-delta-bps` to reduce alert noise.
+- Metrics to watch: `yield_apr_percent`, `yield_best_apr_percent`, `yield_alerts_total`.
 
 ## What To Set For Notional (Starter Amount)
 

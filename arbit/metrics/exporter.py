@@ -18,6 +18,32 @@ CYCLE_LATENCY = Histogram(
     ["venue"],
 )
 
+# Yield metrics
+YIELD_DEPOSITS_TOTAL = Counter(
+    "yield_deposits_total", "Total yield deposits executed", ["provider", "mode"]
+)
+YIELD_WITHDRAWS_TOTAL = Counter(
+    "yield_withdraws_total", "Total yield withdrawals executed", ["provider", "mode"]
+)
+YIELD_ERRORS_TOTAL = Counter(
+    "yield_errors_total", "Yield-related errors", ["stage"]
+)
+YIELD_CAPITAL_USD = Gauge(
+    "yield_capital_usd", "Capital allocated to yield in USD", ["provider"]
+)
+YIELD_APR = Gauge(
+    "yield_apr_percent", "Provider APR (percent)", ["provider", "asset"]
+)
+YIELD_BEST_APR = Gauge(
+    "yield_best_apr_percent", "Best APR observed across sources (percent)", ["asset"]
+)
+YIELD_CHECKS_TOTAL = Counter(
+    "yield_checks_total", "Scheduled yield rate checks executed"
+)
+YIELD_ALERTS_TOTAL = Counter(
+    "yield_alerts_total", "Alerts triggered for better yield", ["asset"]
+)
+
 
 def start_metrics_server(port: int) -> None:
     """Start the Prometheus metrics server on the provided ``port``.
