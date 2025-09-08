@@ -13,6 +13,9 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 
+from datetime import datetime, timezone
+
+
 import typer
 from arbit import try_triangle
 from arbit.adapters.ccxt_adapter import CCXTAdapter
@@ -294,6 +297,12 @@ def yield_collect(
         log.error("RPC_URL and PRIVATE_KEY must be set for yield:collect")
         return
 
+    # Start metrics server if not already running
+    try:
+        start_metrics_server(settings.prom_port)
+    except Exception:
+        pass
+
     w3 = Web3(Web3.HTTPProvider(rpc))
     acct = w3.eth.account.from_key(pk)
 
@@ -339,6 +348,13 @@ def yield_collect(
             YIELD_DEPOSITS_TOTAL.labels("aave", "dry_run").inc()
         except Exception:
             pass
+        try:
+            _notify_discord(
+                "yield",
+                f"[yield] DRY-RUN deposit {amount_raw/1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
+            )
+        except Exception:
+            pass
         return
 
     try:
@@ -352,10 +368,134 @@ def yield_collect(
             YIELD_DEPOSITS_TOTAL.labels("aave", "live").inc()
         except Exception:
             pass
+        try:
+            _notify_discord(
+                "yield",
+                f"[yield] deposited {amount_raw/1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
+            )
+        except Exception:
+            pass
     except Exception as e:  # pragma: no cover - depends on chain state
         log.error("yield:collect deposit error: %s", e)
         try:
             YIELD_ERRORS_TOTAL.labels("deposit").inc()
+        except Exception:
+            pass
+
+
+@app.command("yield:withdraw")
+@app.command("yield_withdraw")
+def yield_withdraw(
+    asset: str = "USDC",
+    amount_usd: float | None = None,
+    all_excess: bool = False,
+    reserve_usd: float | None = None,
+    help_verbose: bool = False,
+):
+    """Withdraw USDC from Aave v3 Pool back into the wallet.
+
+    Specify an explicit amount via --amount-usd or use --all-excess to withdraw
+    everything above the configured reserve. Honors global DRY_RUN.
+    """
+
+    if help_verbose:
+        typer.echo(
+            "Withdraws USDC from Aave v3. Use --amount-usd for a fixed amount or --all-excess to leave only the reserve."
+        )
+        raise SystemExit(0)
+
+    asset = (asset or "").strip().upper()
+    if asset != "USDC":
+        log.error("yield:withdraw supports USDC only for now")
+        return
+
+    try:
+        from web3 import Web3  # type: ignore
+    except Exception:
+        log.error("web3 not installed; cannot perform yield:withdraw")
+        return
+
+    # Start metrics server if not already running
+    try:
+        start_metrics_server(settings.prom_port)
+    except Exception:
+        pass
+
+    from stake import ERC20_ABI, POOL_ABI, withdraw_usdc
+    import os as _os
+
+    rpc = (getattr(settings, "rpc_url", None) or _os.getenv("RPC_URL"))
+    pk = (getattr(settings, "private_key", None) or _os.getenv("PRIVATE_KEY"))
+    if not rpc or not pk:
+        log.error("RPC_URL and PRIVATE_KEY must be set for yield:withdraw")
+        return
+
+    w3 = Web3(Web3.HTTPProvider(rpc))
+    acct = w3.eth.account.from_key(pk)
+
+    # If all_excess, compute based on wallet balance (assumes aToken redemption immediate)
+    reserve_abs = (
+        float(reserve_usd)
+        if reserve_usd is not None
+        else float(getattr(settings, "reserve_amount_usd", 0.0))
+    )
+    reserve_pct = float(getattr(settings, "reserve_percent", 0.0)) / 100.0
+
+    usdc = w3.eth.contract(address=settings.usdc_address, abi=ERC20_ABI)
+    bal_raw = int(usdc.functions.balanceOf(acct.address).call())
+    bal_usd = bal_raw / 1_000_000.0
+    reserve_pct_amt = bal_usd * reserve_pct if reserve_pct > 0 else 0.0
+    reserve_final = max(reserve_abs, reserve_pct_amt)
+
+    if amount_usd is None and not all_excess:
+        log.error("Specify --amount-usd or --all-excess")
+        return
+
+    if all_excess:
+        # Withdraw down to reserve, naive approach; a full integration would read aToken balance
+        # For now, withdraw the requested difference if wallet < reserve to top up
+        if bal_usd >= reserve_final:
+            log.info("nothing to do: wallet >= reserve (%.2f >= %.2f)", bal_usd, reserve_final)
+            return
+        amount_usd = reserve_final - bal_usd
+
+    amount_raw = int(max(float(amount_usd or 0.0), 0.0) * 1_000_000)
+    if amount_raw <= 0:
+        log.error("withdraw amount must be positive")
+        return
+
+    if bool(getattr(settings, "dry_run", True)):
+        log.info("[dry-run] would withdraw %.2f USDC from Aave", amount_raw / 1_000_000.0)
+        try:
+            YIELD_WITHDRAWS_TOTAL.labels("aave", "dry_run").inc()
+        except Exception:
+            pass
+        try:
+            _notify_discord(
+                "yield",
+                f"[yield] DRY-RUN withdraw {amount_raw/1_000_000.0:.2f} USDC from Aave",
+            )
+        except Exception:
+            pass
+        return
+
+    try:
+        withdraw_usdc(amount_raw)
+        log.info("withdrew %.2f USDC from Aave", amount_raw / 1_000_000.0)
+        try:
+            YIELD_WITHDRAWS_TOTAL.labels("aave", "live").inc()
+        except Exception:
+            pass
+        try:
+            _notify_discord(
+                "yield", f"[yield] withdrew {amount_raw/1_000_000.0:.2f} USDC from Aave"
+            )
+        except Exception:
+            pass
+    except Exception as e:  # pragma: no cover
+        log.error("yield:withdraw error: %s", e)
+        try:
+            YIELD_ERRORS_TOTAL.labels("withdraw").inc()
         except Exception:
             pass
 
@@ -378,6 +518,7 @@ def yield_watch(
 
     import json as _json
     import urllib.request as _rq
+    import os as _os
 
     def _parse_sources(s: str | None) -> list[str]:
         if not s:
@@ -414,8 +555,18 @@ def yield_watch(
         best_provider = None
         for url in urls:
             try:
-                with _rq.urlopen(url, timeout=5) as resp:
-                    data = resp.read()
+                # Support local files (absolute/relative) and file:// scheme
+                data: bytes
+                if url.startswith("file://"):
+                    path = url[len("file://") :]
+                    with open(path, "rb") as fh:
+                        data = fh.read()
+                elif _os.path.exists(url):
+                    with open(url, "rb") as fh:
+                        data = fh.read()
+                else:
+                    with _rq.urlopen(url, timeout=5) as resp:
+                        data = resp.read()
                 doc = _json.loads(data)
             except Exception:
                 continue
@@ -687,6 +838,13 @@ def fitness(
                         },
                     }
                     books_cache.update(injected)
+                    try:
+                        _notify_discord(
+                            venue,
+                            f"[{venue}] dummy_trigger: injected synthetic profitable triangle for {tri0}",
+                        )
+                    except Exception:
+                        pass
 
                 for tri in tris:
                     skip_reasons: list[str] = []
@@ -874,9 +1032,13 @@ def live(
             insert_triangle(conn, tri)
         log.info("live@%s dry_run=%s", venue, settings.dry_run)
         last_alert_at = 0.0
+        last_hb_at = 0.0
+        attempts_total = 0
+        successes_total = 0
         async for tri, res, skip_reasons, latency in stream_triangles(
             a, tris, settings.net_threshold_bps / 10000.0
         ):
+            attempts_total += 1
             try:
                 CYCLE_LATENCY.labels(venue).observe(latency)
             except Exception:
@@ -953,6 +1115,7 @@ def live(
                     except Exception:
                         pass
                 continue
+            successes_total += 1
             PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
             ORDERS_TOTAL.labels(venue, "ok").inc()
             for f in res.get("fills", []):
@@ -992,6 +1155,22 @@ def live(
                 res["net_est"] * 100,
                 res["realized_usdt"],
             )
+
+            # Periodic Discord heartbeat summary
+            hb_interval = float(getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0)
+            if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
+                try:
+                    _notify_discord(
+                        venue,
+                        (
+                            f"[{venue}] heartbeat dry_run={getattr(settings, 'dry_run', True)} "
+                            f"attempts={attempts_total} successes={successes_total} "
+                            f"last_net={res['net_est']*100:.2f}% last_pnl={res['realized_usdt']:.2f} USDT"
+                        ),
+                    )
+                except Exception:
+                    pass
+                last_hb_at = time.time()
 
     asyncio.run(_run())
 

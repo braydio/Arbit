@@ -47,7 +47,17 @@ POOL_ABI = [
             {"name": "referralCode", "type": "uint16"},
         ],
         "outputs": [],
-    }
+    },
+    {
+        "name": "withdraw",
+        "type": "function",
+        "inputs": [
+            {"name": "asset", "type": "address"},
+            {"name": "amount", "type": "uint256"},
+            {"name": "to", "type": "address"},
+        ],
+        "outputs": [{"name": "amountWithdrawn", "type": "uint256"}],
+    },
 ]
 
 
@@ -119,6 +129,34 @@ def stake_usdc(amount: int) -> None:
     ).build_transaction({"from": acct.address, "nonce": nonce, "gasPrice": gas_price})
     signed2 = acct.sign_transaction(tx2)
     w3.eth.send_raw_transaction(signed2.rawTransaction)
+
+
+def withdraw_usdc(amount: int) -> None:
+    """Withdraw ``amount`` of USDC from Aave v3 Pool to the wallet."""
+
+    from web3 import Web3
+
+    from arbit.config import Settings
+
+    settings = Settings()
+
+    w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
+    acct = w3.eth.account.from_key(os.getenv("PRIVATE_KEY"))
+
+    usdc = w3.eth.contract(address=settings.usdc_address, abi=ERC20_ABI)
+    pool = w3.eth.contract(address=settings.pool_address, abi=POOL_ABI)
+
+    gas_price = w3.eth.gas_price
+    if gas_price > settings.max_gas_price_gwei * 10**9:
+        raise RuntimeError("Gas price exceeds configured maximum")
+
+    nonce = w3.eth.get_transaction_count(acct.address)
+
+    tx = pool.functions.withdraw(usdc.address, amount, acct.address).build_transaction(
+        {"from": acct.address, "nonce": nonce, "gasPrice": gas_price}
+    )
+    signed = acct.sign_transaction(tx)
+    w3.eth.send_raw_transaction(signed.rawTransaction)
 
 
 if __name__ == "__main__":

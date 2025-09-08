@@ -9,7 +9,7 @@ expose a stream.
 from __future__ import annotations
 
 from typing import AsyncGenerator, Iterable
-
+import asyncio
 import ccxt
 
 try:  # pragma: no cover - optional dependency

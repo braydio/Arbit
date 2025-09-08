@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     prom_port: int = 9109
     sqlite_path: str = "arbit.db"
     discord_webhook_url: str | None = None
+    discord_heartbeat_secs: int = 60
+
+    # Optional RPC configuration for on-chain yield ops
+    rpc_url: str | None = None
+    private_key: str | None = None
 
     # Per-venue triangle definitions (override via JSON in env if desired)
     # Format: { venue: [[leg_ab, leg_bc, leg_ac], ...], ... }
@@ -171,7 +176,7 @@ class Settings(BaseSettings):
                 s.startswith("'") and s.endswith("'")
             ):
                 s = s[1:-1]
-            s = s.strip().strip('"\'')
+            s = s.strip().strip("\"'")
             if s:
                 cleaned.append(s)
         if cleaned:
