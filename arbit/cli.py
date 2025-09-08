@@ -7,11 +7,13 @@ imported here so tests can easily monkeypatch them.
 
 import asyncio
 import json
-from datetime import datetime, timezone
 import logging
 import sys
 import time
 import urllib.request
+
+from datetime import datetime, timezone
+
 
 import typer
 from arbit import try_triangle
@@ -90,7 +92,9 @@ class CLIApp(typer.Typer):
     def _print_basic_help(self) -> None:
         """Print a short summary of available commands."""
 
-        typer.echo("Usage: python -m arbit.cli [--help | --help-verbose] COMMAND [ARGS]")
+        typer.echo(
+            "Usage: python -m arbit.cli [--help | --help-verbose] COMMAND [ARGS]"
+        )
         typer.echo("\nAvailable commands:")
         for cname, info in sorted(self._unique_commands().items()):
             desc = (info["command"].callback.__doc__ or "").strip().splitlines()[0]

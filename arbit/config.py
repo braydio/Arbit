@@ -176,7 +176,7 @@ class Settings(BaseSettings):
                 s.startswith("'") and s.endswith("'")
             ):
                 s = s[1:-1]
-            s = s.strip().strip('"\'')
+            s = s.strip().strip("\"'")
             if s:
                 cleaned.append(s)
         if cleaned:
