@@ -11,6 +11,7 @@ import logging
 import sys
 import time
 import urllib.request
+from datetime import datetime, timezone
 
 from datetime import datetime, timezone
 
@@ -287,8 +288,11 @@ def yield_collect(
         return
 
     from stake import ERC20_ABI, stake_usdc
-    rpc = (getattr(settings, "rpc_url", None) or __import__("os").getenv("RPC_URL"))
-    pk = (getattr(settings, "private_key", None) or __import__("os").getenv("PRIVATE_KEY"))
+
+    rpc = getattr(settings, "rpc_url", None) or __import__("os").getenv("RPC_URL")
+    pk = getattr(settings, "private_key", None) or __import__("os").getenv(
+        "PRIVATE_KEY"
+    )
     if not rpc or not pk:
         log.error("RPC_URL and PRIVATE_KEY must be set for yield:collect")
         return
@@ -321,7 +325,9 @@ def yield_collect(
     available_usd = max(bal_usd - reserve_final, 0.0)
     amount_raw = int(available_usd * 1_000_000)
     # Default minimum stake from settings
-    min_units = int(min_stake) if min_stake is not None else int(settings.min_usdc_stake)
+    min_units = (
+        int(min_stake) if min_stake is not None else int(settings.min_usdc_stake)
+    )
 
     if amount_raw < min_units:
         log.info(
@@ -598,6 +604,8 @@ def yield_watch(
             _notify_discord("yield", msg)
 
         time.sleep(max(interval, 1.0))
+
+
 @app.command("keys:check")
 @app.command("keys_check")
 def keys_check():
