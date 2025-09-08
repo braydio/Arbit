@@ -13,6 +13,7 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 
+
 import typer
 from arbit import try_triangle
 from arbit.adapters.ccxt_adapter import CCXTAdapter
