@@ -11,9 +11,7 @@ import logging
 import sys
 import time
 import urllib.request
-
 from datetime import datetime, timezone
-
 
 import typer
 from arbit import try_triangle
@@ -287,8 +285,11 @@ def yield_collect(
         return
 
     from stake import ERC20_ABI, stake_usdc
-    rpc = (getattr(settings, "rpc_url", None) or __import__("os").getenv("RPC_URL"))
-    pk = (getattr(settings, "private_key", None) or __import__("os").getenv("PRIVATE_KEY"))
+
+    rpc = getattr(settings, "rpc_url", None) or __import__("os").getenv("RPC_URL")
+    pk = getattr(settings, "private_key", None) or __import__("os").getenv(
+        "PRIVATE_KEY"
+    )
     if not rpc or not pk:
         log.error("RPC_URL and PRIVATE_KEY must be set for yield:collect")
         return
@@ -321,7 +322,9 @@ def yield_collect(
     available_usd = max(bal_usd - reserve_final, 0.0)
     amount_raw = int(available_usd * 1_000_000)
     # Default minimum stake from settings
-    min_units = int(min_stake) if min_stake is not None else int(settings.min_usdc_stake)
+    min_units = (
+        int(min_stake) if min_stake is not None else int(settings.min_usdc_stake)
+    )
 
     if amount_raw < min_units:
         log.info(
@@ -345,7 +348,7 @@ def yield_collect(
         try:
             _notify_discord(
                 "yield",
-                f"[yield] DRY-RUN deposit {amount_raw/1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
+                f"[yield] DRY-RUN deposit {amount_raw / 1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
             )
         except Exception:
             pass
@@ -365,7 +368,7 @@ def yield_collect(
         try:
             _notify_discord(
                 "yield",
-                f"[yield] deposited {amount_raw/1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
+                f"[yield] deposited {amount_raw / 1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
             )
         except Exception:
             pass
@@ -415,11 +418,12 @@ def yield_withdraw(
     except Exception:
         pass
 
-    from stake import ERC20_ABI, POOL_ABI, withdraw_usdc
     import os as _os
 
-    rpc = (getattr(settings, "rpc_url", None) or _os.getenv("RPC_URL"))
-    pk = (getattr(settings, "private_key", None) or _os.getenv("PRIVATE_KEY"))
+    from stake import ERC20_ABI, POOL_ABI, withdraw_usdc
+
+    rpc = getattr(settings, "rpc_url", None) or _os.getenv("RPC_URL")
+    pk = getattr(settings, "private_key", None) or _os.getenv("PRIVATE_KEY")
     if not rpc or not pk:
         log.error("RPC_URL and PRIVATE_KEY must be set for yield:withdraw")
         return
@@ -449,7 +453,11 @@ def yield_withdraw(
         # Withdraw down to reserve, naive approach; a full integration would read aToken balance
         # For now, withdraw the requested difference if wallet < reserve to top up
         if bal_usd >= reserve_final:
-            log.info("nothing to do: wallet >= reserve (%.2f >= %.2f)", bal_usd, reserve_final)
+            log.info(
+                "nothing to do: wallet >= reserve (%.2f >= %.2f)",
+                bal_usd,
+                reserve_final,
+            )
             return
         amount_usd = reserve_final - bal_usd
 
@@ -459,7 +467,9 @@ def yield_withdraw(
         return
 
     if bool(getattr(settings, "dry_run", True)):
-        log.info("[dry-run] would withdraw %.2f USDC from Aave", amount_raw / 1_000_000.0)
+        log.info(
+            "[dry-run] would withdraw %.2f USDC from Aave", amount_raw / 1_000_000.0
+        )
         try:
             YIELD_WITHDRAWS_TOTAL.labels("aave", "dry_run").inc()
         except Exception:
@@ -467,7 +477,7 @@ def yield_withdraw(
         try:
             _notify_discord(
                 "yield",
-                f"[yield] DRY-RUN withdraw {amount_raw/1_000_000.0:.2f} USDC from Aave",
+                f"[yield] DRY-RUN withdraw {amount_raw / 1_000_000.0:.2f} USDC from Aave",
             )
         except Exception:
             pass
@@ -482,7 +492,8 @@ def yield_withdraw(
             pass
         try:
             _notify_discord(
-                "yield", f"[yield] withdrew {amount_raw/1_000_000.0:.2f} USDC from Aave"
+                "yield",
+                f"[yield] withdrew {amount_raw / 1_000_000.0:.2f} USDC from Aave",
             )
         except Exception:
             pass
@@ -511,8 +522,8 @@ def yield_watch(
     """
 
     import json as _json
-    import urllib.request as _rq
     import os as _os
+    import urllib.request as _rq
 
     def _parse_sources(s: str | None) -> list[str]:
         if not s:
@@ -598,6 +609,8 @@ def yield_watch(
             _notify_discord("yield", msg)
 
         time.sleep(max(interval, 1.0))
+
+
 @app.command("keys:check")
 @app.command("keys_check")
 def keys_check():
@@ -1149,7 +1162,9 @@ def live(
             )
 
             # Periodic Discord heartbeat summary
-            hb_interval = float(getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0)
+            hb_interval = float(
+                getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0
+            )
             if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
                 try:
                     _notify_discord(
@@ -1157,7 +1172,7 @@ def live(
                         (
                             f"[{venue}] heartbeat dry_run={getattr(settings, 'dry_run', True)} "
                             f"attempts={attempts_total} successes={successes_total} "
-                            f"last_net={res['net_est']*100:.2f}% last_pnl={res['realized_usdt']:.2f} USDT"
+                            f"last_net={res['net_est'] * 100:.2f}% last_pnl={res['realized_usdt']:.2f} USDT"
                         ),
                     )
                 except Exception:
