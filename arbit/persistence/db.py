@@ -94,6 +94,43 @@ def create_schema(conn: Connection) -> None:
             cur.execute(f"ALTER TABLE fills ADD COLUMN {name} {typ}")
     conn.commit()
 
+    # Yield operations: deposit/withdraw events with context
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS yield_ops (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts_iso TEXT,
+            provider TEXT,
+            op TEXT,
+            asset TEXT,
+            amount_raw INTEGER,
+            mode TEXT,
+            error TEXT,
+            wallet_raw_before INTEGER,
+            atoken_raw_before INTEGER,
+            wallet_raw_after INTEGER,
+            atoken_raw_after INTEGER,
+            tx_hash TEXT
+        )
+        """
+    )
+
+    # Yield snapshots: periodic balance/APR observations
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS yield_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts_iso TEXT,
+            provider TEXT,
+            asset TEXT,
+            wallet_raw INTEGER,
+            atoken_raw INTEGER,
+            apr_percent REAL
+        )
+        """
+    )
+    conn.commit()
+
 
 def insert_triangle(conn: Connection, triangle: Triangle) -> int:
     """Insert a triangle record and return its row id."""
@@ -171,6 +208,83 @@ def insert_attempt(conn: Connection, a: TriangleAttempt) -> int:
             a.ac_bid,
             a.ac_ask,
             a.qty_base,
+        ),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def insert_yield_op(
+    conn: Connection,
+    *,
+    ts_iso: str,
+    provider: str,
+    op: str,
+    asset: str,
+    amount_raw: int,
+    mode: str,
+    error: str | None,
+    wallet_raw_before: int | None,
+    atoken_raw_before: int | None,
+    wallet_raw_after: int | None,
+    atoken_raw_after: int | None,
+    tx_hash: str | None,
+) -> int:
+    """Insert a yield operation event and return row id."""
+
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO yield_ops (
+            ts_iso, provider, op, asset, amount_raw, mode, error,
+            wallet_raw_before, atoken_raw_before, wallet_raw_after, atoken_raw_after, tx_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            ts_iso,
+            provider,
+            op,
+            asset,
+            int(amount_raw),
+            mode,
+            error,
+            wallet_raw_before if wallet_raw_before is not None else None,
+            atoken_raw_before if atoken_raw_before is not None else None,
+            wallet_raw_after if wallet_raw_after is not None else None,
+            atoken_raw_after if atoken_raw_after is not None else None,
+            tx_hash,
+        ),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def insert_yield_snapshot(
+    conn: Connection,
+    *,
+    ts_iso: str,
+    provider: str,
+    asset: str,
+    wallet_raw: int,
+    atoken_raw: int,
+    apr_percent: float | None,
+) -> int:
+    """Insert a yield balance/APR snapshot and return row id."""
+
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO yield_snapshots (
+            ts_iso, provider, asset, wallet_raw, atoken_raw, apr_percent
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            ts_iso,
+            provider,
+            asset,
+            int(wallet_raw),
+            int(atoken_raw),
+            float(apr_percent) if apr_percent is not None else None,
         ),
     )
     conn.commit()

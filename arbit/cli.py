@@ -31,8 +31,13 @@ from arbit.metrics.exporter import (
     start_metrics_server,
 )
 from arbit.models import Fill, Triangle, TriangleAttempt
-from arbit.notify import notify_discord
-from arbit.persistence.db import init_db, insert_attempt, insert_fill, insert_triangle
+from arbit.persistence.db import (
+    init_db,
+    insert_attempt,
+    insert_fill,
+    insert_triangle,
+    insert_yield_op,
+)
 from arbit.yield import AaveProvider
 
 
@@ -261,7 +266,13 @@ def yield_collect(
         pass
 
     provider = AaveProvider(settings)
+    # Open DB for persistence (best-effort)
+    try:
+        conn = init_db(settings.sqlite_path)
+    except Exception:
+        conn = None
     bal_raw = int(provider.get_wallet_balance_raw())
+    atoken_before = int(provider.get_deposit_balance_raw())
     # 6 decimals for USDC
     bal_usd = bal_raw / 1_000_000.0
 
@@ -301,6 +312,26 @@ def yield_collect(
             YIELD_DEPOSITS_TOTAL.labels("aave", "dry_run").inc()
         except Exception:
             pass
+        # Persist dry-run intention
+        try:
+            if conn is not None:
+                insert_yield_op(
+                    conn,
+                    ts_iso=datetime.now(timezone.utc).isoformat(),
+                    provider="aave",
+                    op="deposit",
+                    asset=asset,
+                    amount_raw=amount_raw,
+                    mode="dry_run",
+                    error=None,
+                    wallet_raw_before=bal_raw,
+                    atoken_raw_before=atoken_before,
+                    wallet_raw_after=bal_raw,
+                    atoken_raw_after=atoken_before,
+                    tx_hash=None,
+                )
+        except Exception:
+            pass
         try:
             notify_discord(
                 "yield",
@@ -321,6 +352,26 @@ def yield_collect(
             YIELD_DEPOSITS_TOTAL.labels("aave", "live").inc()
         except Exception:
             pass
+        # Persist live op (tx hash not returned by stake.py)
+        try:
+            if conn is not None:
+                insert_yield_op(
+                    conn,
+                    ts_iso=datetime.now(timezone.utc).isoformat(),
+                    provider="aave",
+                    op="deposit",
+                    asset=asset,
+                    amount_raw=amount_raw,
+                    mode="live",
+                    error=None,
+                    wallet_raw_before=bal_raw,
+                    atoken_raw_before=atoken_before,
+                    wallet_raw_after=int(provider.get_wallet_balance_raw()),
+                    atoken_raw_after=int(provider.get_deposit_balance_raw()),
+                    tx_hash=None,
+                )
+        except Exception:
+            pass
         try:
             notify_discord(
                 "yield",
@@ -332,6 +383,26 @@ def yield_collect(
         log.error("yield:collect deposit error: %s", e)
         try:
             YIELD_ERRORS_TOTAL.labels("deposit").inc()
+        except Exception:
+            pass
+        # Persist error
+        try:
+            if conn is not None:
+                insert_yield_op(
+                    conn,
+                    ts_iso=datetime.now(timezone.utc).isoformat(),
+                    provider="aave",
+                    op="deposit",
+                    asset=asset,
+                    amount_raw=amount_raw,
+                    mode="live",
+                    error=str(e),
+                    wallet_raw_before=bal_raw,
+                    atoken_raw_before=atoken_before,
+                    wallet_raw_after=None,
+                    atoken_raw_after=None,
+                    tx_hash=None,
+                )
         except Exception:
             pass
 
@@ -368,18 +439,7 @@ def yield_withdraw(
     except Exception:
         pass
 
-    import os as _os
-
-    from stake import ERC20_ABI, withdraw_usdc
-
-    rpc = getattr(settings, "rpc_url", None) or _os.getenv("RPC_URL")
-    pk = getattr(settings, "private_key", None) or _os.getenv("PRIVATE_KEY")
-    if not rpc or not pk:
-        log.error("RPC_URL and PRIVATE_KEY must be set for yield:withdraw")
-        return
-
-    w3 = Web3(Web3.HTTPProvider(rpc))
-    acct = w3.eth.account.from_key(pk)
+    provider = AaveProvider(settings)
 
     # If all_excess, compute based on wallet balance (assumes aToken redemption immediate)
     reserve_abs = (
@@ -389,6 +449,11 @@ def yield_withdraw(
     )
     reserve_pct = float(getattr(settings, "reserve_percent", 0.0)) / 100.0
 
+    # Open DB for persistence (best-effort)
+    try:
+        conn = init_db(settings.sqlite_path)
+    except Exception:
+        conn = None
     bal_raw = int(provider.get_wallet_balance_raw())
     bal_usd = bal_raw / 1_000_000.0
     reserve_pct_amt = bal_usd * reserve_pct if reserve_pct > 0 else 0.0
@@ -429,6 +494,26 @@ def yield_withdraw(
             YIELD_WITHDRAWS_TOTAL.labels("aave", "dry_run").inc()
         except Exception:
             pass
+        # Persist dry-run intention
+        try:
+            if conn is not None:
+                insert_yield_op(
+                    conn,
+                    ts_iso=datetime.now(timezone.utc).isoformat(),
+                    provider="aave",
+                    op="withdraw",
+                    asset=asset,
+                    amount_raw=amount_raw,
+                    mode="dry_run",
+                    error=None,
+                    wallet_raw_before=bal_raw,
+                    atoken_raw_before=int(provider.get_deposit_balance_raw()),
+                    wallet_raw_after=bal_raw,
+                    atoken_raw_after=int(provider.get_deposit_balance_raw()),
+                    tx_hash=None,
+                )
+        except Exception:
+            pass
         try:
             notify_discord(
                 "yield",
@@ -445,6 +530,26 @@ def yield_withdraw(
             YIELD_WITHDRAWS_TOTAL.labels("aave", "live").inc()
         except Exception:
             pass
+        # Persist live op
+        try:
+            if conn is not None:
+                insert_yield_op(
+                    conn,
+                    ts_iso=datetime.now(timezone.utc).isoformat(),
+                    provider="aave",
+                    op="withdraw",
+                    asset=asset,
+                    amount_raw=amount_raw,
+                    mode="live",
+                    error=None,
+                    wallet_raw_before=bal_raw,
+                    atoken_raw_before=int(provider.get_deposit_balance_raw()),
+                    wallet_raw_after=int(provider.get_wallet_balance_raw()),
+                    atoken_raw_after=int(provider.get_deposit_balance_raw()),
+                    tx_hash=None,
+                )
+        except Exception:
+            pass
         try:
             notify_discord(
                 "yield",
@@ -456,6 +561,26 @@ def yield_withdraw(
         log.error("yield:withdraw error: %s", e)
         try:
             YIELD_ERRORS_TOTAL.labels("withdraw").inc()
+        except Exception:
+            pass
+        # Persist error
+        try:
+            if conn is not None:
+                insert_yield_op(
+                    conn,
+                    ts_iso=datetime.now(timezone.utc).isoformat(),
+                    provider="aave",
+                    op="withdraw",
+                    asset=asset,
+                    amount_raw=amount_raw,
+                    mode="live",
+                    error=str(e),
+                    wallet_raw_before=bal_raw,
+                    atoken_raw_before=int(provider.get_deposit_balance_raw()),
+                    wallet_raw_after=None,
+                    atoken_raw_after=None,
+                    tx_hash=None,
+                )
         except Exception:
             pass
 

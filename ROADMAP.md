@@ -180,12 +180,12 @@ This section tracks what remains to make yield commands robust for dev/live test
 - [ ] Optional Discord heartbeat and summarised daily reports.
 
 ### Persistence
-- [ ] Add `yield_ops` table (timestamp, provider, op, amount, tx_hash, mode, error) for auditable history.
+- [x] Add `yield_ops` table (timestamp, provider, op, amount, tx_hash, mode, error) for auditable history.
 - [ ] Snapshot APR observations to SQLite for backtesting alert thresholds and realized yield.
 
 ### Testing
 - [x] Unit tests for provider balance reads with injected dummy web3.
-- [ ] Unit tests for `yield:collect` and `yield:withdraw` dry-run flows with mocked provider/web3.
+- [x] Unit tests for `yield:collect` and `yield:withdraw` dry-run flows with mocked provider/web3.
 - [ ] Tests for `yield:watch` with local JSON/CSV and alert threshold logic.
 - [ ] Property tests for reserve math and min-stake edge cases.
 - [ ] Lint/type checks for new modules.
@@ -202,7 +202,7 @@ This section tracks what remains to make yield commands robust for dev/live test
 ## What Still Needs Implementation (Yield Farming)
 
 ### Persistence + Tracking
-- [ ] Create `yield_ops` table in `arbit/persistence/db.py` and write records for deposit/withdraw actions and errors.
+- [x] Create `yield_ops` table in `arbit/persistence/db.py` and write records for deposit/withdraw actions and errors.
 - [ ] Add periodic snapshot of wallet + aToken balances and APR observations for history and reporting.
 
 ### Yield / APY Calculation
