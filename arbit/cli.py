@@ -22,7 +22,6 @@ from arbit.metrics.exporter import (
     PROFIT_TOTAL,
     SKIPS_TOTAL,
     YIELD_ALERTS_TOTAL,
-    YIELD_BEST_APR,
     YIELD_APR,
     YIELD_BEST_APR,
     YIELD_CHECKS_TOTAL,
@@ -31,8 +30,8 @@ from arbit.metrics.exporter import (
     YIELD_WITHDRAWS_TOTAL,
     start_metrics_server,
 )
-from arbit.notify import notify_discord
 from arbit.models import Fill, Triangle, TriangleAttempt
+from arbit.notify import notify_discord
 from arbit.persistence.db import init_db, insert_attempt, insert_fill, insert_triangle
 from arbit.yield import AaveProvider
 
