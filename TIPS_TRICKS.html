@@ -1,252 +1,315 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Tips & Tricks for Safe Testing and Tuning</title><style>body{font-family:Arial,sans-serif;margin:2em;column-count:2;column-gap:40px;}@media(max-width:800px){body{column-count:1;}}pre{background:#f4f4f4;padding:10px;border-radius:4px;column-span:all;overflow-x:auto;}code{font-family:monospace;}</style></head>
-<body><h1>Tips &amp; Tricks for Safe Testing and Tuning</h1>
-<p>This guide collects practical advice for configuring and operating Arbit safely, starting small, and growing confidence. It focuses on the Strategy section of <code>.env.example</code> and common pitfalls. Expect this document to evolve as features mature.</p>
-<h2>Quick Recommendations</h2>
-<ul>
-<li>Notional per trade: Start tiny. Paper: <code>$5–$25</code>. Real: <code>$1–$10</code> above venue minimums.</li>
-<li>Net threshold: Favor safety. Start <code>15–30 bps</code> (0.15–0.30%) after fees.</li>
-<li>Max slippage: Keep strict first. Start <code>5–10 bps</code> and relax if too many skips.</li>
-<li>Dry run: Keep <code>true</code> until you’ve verified end-to-end behavior and logs.</li>
-</ul>
-<h3>Forcing a Safe Execution in Fitness</h3>
-<ul>
-<li>Add <code>--simulate</code> to <code>fitness</code> to attempt dry‑run triangle executions and log
-<code>net%</code> and <code>PnL</code> when conditions are met.</li>
-<li>Add <code>--dummy-trigger</code> to inject a single synthetic profitable snapshot on the
-first loop and exercise the execution path end‑to‑end (no real orders).</li>
-</ul>
-<p>Example:</p>
-<pre><code>python -m arbit.cli fitness --venue alpaca --secs 3 --simulate --dummy-trigger
-</code></pre>
-<p>This will print one <code>[sim] Triangle(...) net=... PnL=...</code> line and update the
-database if <code>--persist</code> is also specified.</p>
-<h3>CLI Help Quick Reference</h3>
-<ul>
-<li>Global help: <code>python -m arbit.cli --help</code> (summary) or <code>--help-verbose</code> (all flags + examples)</li>
-<li>Fitness flags: <code>--venue</code>, <code>--secs</code>, <code>--simulate/--no-simulate</code>, <code>--persist/--no-persist</code>, <code>--dummy-trigger</code>, <code>--help-verbose</code></li>
-<li>Live flags: <code>--venue</code>, <code>--help-verbose</code></li>
-<li>Yield (beta): <code>yield:collect --asset USDC --reserve-usd &lt;USD&gt; [--min-stake &lt;units&gt;]</code>; requires <code>RPC_URL</code>/<code>PRIVATE_KEY</code>.</li>
-<li>Yield watch: <code>yield:watch --asset USDC --sources &lt;CSV|JSON&gt; --apr-hint &lt;percent&gt; [--interval 60]</code>.</li>
-</ul>
-<h3>Using the Yield Collector Safely</h3>
-<ul>
-<li>Start in dry-run: keep <code>DRY_RUN=true</code> to preview deposit amounts.</li>
-<li>Set a reserve: use <code>--reserve-usd</code> or <code>RESERVE_AMOUNT_USD</code> to keep cash on hand for fees.</li>
-<li>Respect minimums: deposits occur only if available balance ≥ <code>MIN_USDC_STAKE</code>.</li>
-<li>Understand risk: smart contract risk and gas spikes apply; <code>max_gas_price_gwei</code> is enforced in <code>stake.py</code>.</li>
-</ul>
-<h3>Monitoring APR for Better Yield</h3>
-<ul>
-<li>Start with a single source endpoint to validate parsing; expand to multiple.</li>
-<li>Set <code>--apr-hint</code> to your current provider’s APR; use <code>--min-delta-bps</code> to reduce alert noise.</li>
-<li>Metrics to watch: <code>yield_apr_percent</code>, <code>yield_best_apr_percent</code>, <code>yield_alerts_total</code>.</li>
-</ul>
-<h2>What To Set For Notional (Starter Amount)</h2>
-<ul>
-<li>Purpose: Caps the max quote value for a triangle attempt (derived from <code>AB</code> ask). Lower = safer losses, fewer fills; higher = larger PnL swings and more exposure.</li>
-<li>Baseline: Begin with the smallest amount that exceeds your venue’s min-notional for the traded symbols. On many venues this is around <code>$1–$10</code>, but check your market’s <code>limits.cost.min</code>.</li>
-<li>Suggested starting points:
-<ul>
-<li>Paper/sandbox: <code>$5–$25</code> to see activity without skewing logs or limits.</li>
-<li>Cautious live: <code>$1–$10</code>, aligned with exchange minimums and your risk.</li>
-<li>Increase gradually while monitoring fills, skips, and realized PnL.</li>
-</ul>
-</li>
-<li>Watch-outs:
-<ul>
-<li>If set below the venue’s minimum, triangles will skip (<code>min_notional_*</code>).</li>
-<li>Larger notionals amplify slippage and partial-fill risk.</li>
-<li>Volatile pairs need smaller notional to mitigate adverse moves during the cycle.</li>
-</ul>
-</li>
-</ul>
-<h2>Strategy Variables (from .env.example)</h2>
-<p>Below are the Strategy settings and how to think about each. Defaults are chosen to be conservative but not inert.</p>
-<h3><code>NOTIONAL_PER_TRADE_USD</code></h3>
-<ul>
-<li>Meaning: Upper bound on trade size per triangle, in the quote currency of leg <code>AB</code> (assumed USD/USDT/USDC).</li>
-<li>Implications:
-<ul>
-<li>Too low: Frequent skips due to <code>min_notional_*</code>; negligible PnL in tests.</li>
-<li>Too high: Greater slippage exposure; sharper drawdowns if execution degrades.</li>
-</ul>
-</li>
-<li>Recommendations:
-<ul>
-<li>Start small (see “What To Set For Notional”).</li>
-<li>Scale up only after observing stable simulated PnL and low slippage skips.</li>
-</ul>
-</li>
-</ul>
-<h3><code>NET_THRESHOLD_BPS</code></h3>
-<ul>
-<li>Meaning: Minimum required net profit for a triangle, in basis points, after fees. The engine computes a net estimate with <code>(1 - taker_fee) ** 3</code> included.</li>
-<li>Implications:
-<ul>
-<li>Too low: More attempts, but higher chance real execution underperforms due to slippage and book shift; risk of negative realized PnL.</li>
-<li>Too high: Fewer (or no) attempts; you may miss marginal but still positive cycles.</li>
-</ul>
-</li>
-<li>Recommendations:
-<ul>
-<li>Typical taker fee ≈ 10 bps per leg → fees are already netted in; set threshold to add buffer for slippage and latency.</li>
-<li>Start <code>15–30 bps</code> (0.15–0.30%). For very volatile markets, use <code>30–50 bps</code>.</li>
-<li>Revisit after you have empirical skip/realized PnL data.</li>
-</ul>
-</li>
-</ul>
-<h3><code>MAX_SLIPPAGE_BPS</code></h3>
-<ul>
-<li>Meaning: Per-leg guardrail. If the top-of-book moves against you beyond this threshold between checks and order placement, the leg is skipped.</li>
-<li>Implications:
-<ul>
-<li>Too tight: Many <code>slippage_*</code> skips; fewer or no full cycles.</li>
-<li>Too loose: More cycles execute, but realized PnL can degrade quickly.</li>
-</ul>
-</li>
-<li>Recommendations:
-<ul>
-<li>Start <code>5–10 bps</code>. If you see persistent slippage skips with otherwise healthy spreads, consider <code>10–15 bps</code>.</li>
-<li>Use lower values for thin books or during news; raise only with evidence.</li>
-</ul>
-</li>
-</ul>
-<h3><code>MAX_OPEN_ORDERS</code></h3>
-<ul>
-<li>Meaning: Intended concurrency cap for outstanding orders.</li>
-<li>Current state: Not heavily used by the provided <code>live</code> loop (orders are placed sequentially as IOC). Treat as a forward-looking safety valve.</li>
-<li>Recommendations:
-<ul>
-<li>Keep small (e.g., <code>1–3</code>). Increase only if/when you add parallelism.</li>
-</ul>
-</li>
-</ul>
-<h3><code>DRY_RUN</code></h3>
-<ul>
-<li>Meaning: Global simulation flag. When <code>true</code>, <code>create_order</code> synthesizes fills at top-of-book prices; no orders hit the venue.</li>
-<li>Implications:
-<ul>
-<li><code>live</code> with <code>DRY_RUN=true</code> is safe; <code>false</code> may place real orders if keys are live.</li>
-<li><code>fitness</code> is read-only; add <code>--simulate</code> to dry-run cycles without touching the venue.</li>
-</ul>
-</li>
-<li>Recommendations:
-<ul>
-<li>Keep <code>true</code> initially. Flip to <code>false</code> only after you’ve observed healthy simulated PnL and acceptable skip patterns.</li>
-</ul>
-</li>
-</ul>
-<h3><code>RESERVE_AMOUNT_USD</code> / <code>RESERVE_PERCENT</code></h3>
-<ul>
-<li>Meaning: Hold back capital so the engine never deploys the full account
-balance.</li>
-<li>Implications:
-<ul>
-<li>Ensures a cushion remains untouched for withdrawals or manual trading.</li>
-<li>If both are set, the larger resulting reserve is applied.</li>
-</ul>
-</li>
-<li>Recommendations:
-<ul>
-<li>Start with a small dollar amount (e.g., <code>20</code>) or percentage (e.g., <code>10</code>)
-to keep a safety buffer.</li>
-</ul>
-</li>
-</ul>
-<h2>Practical Workflows</h2>
-<ul>
-<li>First contact (safe):
-<ul>
-<li><code>python -m arbit.cli fitness --venue kraken --secs 10</code></li>
-<li>Adjust symbols/venue if spreads are empty or symbols unsupported.</li>
-</ul>
-</li>
-<li>Simulated cycles:
-<ul>
-<li><code>python -m arbit.cli fitness --venue alpaca --secs 10 --simulate</code></li>
-<li>Add <code>--persist</code> to save simulated fills into SQLite for post-hoc review.</li>
-<li>Add <code>--dummy-trigger</code> once to force a known-good execution for validation.</li>
-</ul>
-</li>
-<li>Cautious live:
-<ul>
-<li>Keep <code>DRY_RUN=true</code> first. Observe logs and metrics in parallel.</li>
-<li>Only after confidence: set <code>DRY_RUN=false</code>, use tiny <code>NOTIONAL_PER_TRADE_USD</code>.</li>
-</ul>
-</li>
-</ul>
-<h2>What To Watch In Logs and Metrics</h2>
-<ul>
-<li>Skips by reason: frequent <code>slippage_*</code> → lower notional or slippage; frequent <code>min_notional_*</code> → raise notional slightly or pick deeper pairs.</li>
-<li>Spread quality: small bps = deep books; large bps with low depth increase slippage risk.</li>
-<li>Realized PnL (sim/live): look for stability across time and symbols, not just single spikes.</li>
-</ul>
-<h2>Database Signals for Performance Debugging</h2>
-<p>To evaluate the quality of decisions and implementation, the database logs:</p>
-<ul>
-<li><code>triangle_attempts</code>: one row per attempt (success or skip) including
-timestamps, venue, triangle legs, decision (<code>ok</code>), estimated edge
-(<code>net_est</code>), realized PnL, threshold/slippage/notional settings used,
-latency, skip reasons, top‑of‑book snapshots, and executed base quantity.</li>
-<li><code>fills</code>: enriched with venue, leg (AB/BC/AC), fee rate, TIF/type, notional,
-dry‑run flag, and <code>attempt_id</code> linking to the parent attempt.</li>
-</ul>
-<p>These provide enough granularity to measure:</p>
-<ul>
-<li>How often triangles meet thresholds vs. are skipped (by reason)</li>
-<li>Latency distribution per venue/triangle</li>
-<li>Slippage impact (via top‑of‑book snapshots and fee rates)</li>
-<li>Realized vs. estimated outcomes across time</li>
-</ul>
-<h2>Safety &amp; Operational Tips</h2>
-<ul>
-<li>Use paper/sandbox keys first. Never commit secrets; prefer <code>.env</code> locally.</li>
-<li>Confirm triangle symbols exist on your venue (and quote assets match expectations).</li>
-<li>Mind rate limits: bursty loops can hit API limits; prefer fewer venues initially.</li>
-<li>Keep system time accurate; large drift can disrupt rate limiting and logs.</li>
-<li>Start Prometheus early (<code>PROM_PORT</code>) and capture baselines before changes.</li>
-<li>SQLite path should live in a writeable directory (e.g., <code>./data/arbit.db</code>).</li>
-<li>Discord webhook is best-effort; treat alerts as advisory, not critical.</li>
-</ul>
-<h2>Interpreting <code>markets:limits</code> Output</h2>
-<p>When you run <code>python -m arbit.cli markets:limits --venue ...</code>, you’ll see lines like:</p>
-<pre><code>ETH/USDT min_cost=0.5 maker=25 bps taker=40 bps
-ETH/BTC  min_cost=2e-05 maker=25 bps taker=40 bps
-</code></pre>
-<ul>
-<li><code>min_cost</code>: The exchange’s minimum notional (quote currency) for that market.
-<ul>
-<li>For <code>ETH/USDT</code>, the quote is USDT → <code>min_cost=0.5</code> means $0.50 minimum.</li>
-<li>For <code>ETH/BTC</code>, the quote is BTC → <code>min_cost=2e-05</code> means 0.00002 BTC.</li>
-<li>If <code>min_cost=0</code>, the adapter/venue did not expose a minimum via ccxt. There may still be other limits (min qty/step sizes). Treat <code>0</code> as “unknown” and use conservative notionals until verified.</li>
-</ul>
-</li>
-<li><code>maker</code>/<code>taker</code>: Fees in basis points (1 bps = 0.01%). Taker is relevant since market IOC legs pay taker. Example: <code>taker=40 bps</code> = 0.40% per trade leg.</li>
-</ul>
-<p>Using this to pick notional:</p>
-<ul>
-<li>Ensure your notional comfortably exceeds <code>min_cost</code> for leg <code>AB</code> (and generally for all legs). A simple rule: <code>NOTIONAL_PER_TRADE_USD &gt;= 2 × min_cost(AB)</code>.</li>
-<li>For quote assets not in USD (e.g., BTC), convert mentally to USD at current rates to sanity-check exposure.</li>
-</ul>
-<p>Aliases and Flags</p>
-<ul>
-<li>The CLI accepts both colon <code>:</code> and underscore <code>_</code> styles for helper commands:
-<ul>
-<li><code>markets:limits</code> (preferred) or <code>markets_limits</code></li>
-<li><code>config:recommend</code> (preferred) or <code>config_recommend</code></li>
-</ul>
-</li>
-<li>Flags marked in help as “optional” are not required; some only apply when specific modes are enabled (e.g., <code>--persist</code> is only relevant with <code>--simulate</code>).</li>
-</ul>
-<h2>Extending This Guide</h2>
-<p>As features grow (limit orders, partial-fill reconciliation, position hedging, multi-venue routing), add sections here with:</p>
-<ul>
-<li>New setting semantics and safe defaults.</li>
-<li>Failure modes and how to detect them in logs/metrics.</li>
-<li>Step-by-step rollout playbooks (simulate → partial live → full live).</li>
-<li>Troubleshooting checklists for common errors and bad fills.</li>
-</ul>
-<p>Contributions welcome—keep changes concise, actionable, and venue-agnostic where possible.</p>
-</body></html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tips & Tricks for Safe Testing and Tuning</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        line-height: 1.6;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+      h1, h2, h3 {
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 0.3rem;
+      }
+      pre {
+        background: #f4f4f4;
+        padding: 1rem;
+        overflow-x: auto;
+        border-radius: 4px;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        background: #f4f4f4;
+        padding: 0.2rem 0.4rem;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+        <h1>Tips &amp; Tricks for Safe Testing and Tuning</h1>
+        <p>This guide collects practical advice for configuring and operating Arbit safely, starting small, and growing confidence. It focuses on the Strategy section of <code>.env.example</code> and common pitfalls. Expect this document to evolve as features mature.</p>
+        <h2>Quick Recommendations</h2>
+        <ul>
+          <li>Notional per trade: Start tiny. Paper: <code>$5–$25</code>. Real: <code>$1–$10</code> above venue minimums.</li>
+          <li>Net threshold: Favor safety. Start <code>15–30 bps</code> (0.15–0.30%) after fees.</li>
+          <li>Max slippage: Keep strict first. Start <code>5–10 bps</code> and relax if too many skips.</li>
+          <li>Dry run: Keep <code>true</code> until you’ve verified end-to-end behavior and logs.</li>
+        </ul>
+        <h3>Forcing a Safe Execution in Fitness</h3>
+        <ul>
+          <li>Add <code>--simulate</code> to <code>fitness</code> to attempt dry‑run triangle executions and log
+          <code>net%</code> and <code>PnL</code> when conditions are met.</li>
+          <li>Add <code>--dummy-trigger</code> to inject a single synthetic profitable snapshot on the
+          first loop and exercise the execution path end‑to‑end (no real orders).</li>
+        </ul>
+        <p>Example:</p>
+        <pre>
+          <code>python -m arbit.cli fitness --venue alpaca --secs 3 --simulate --dummy-trigger
+          </code>
+        </pre>
+        <p>This will print one <code>[sim] Triangle(...) net=... PnL=...</code> line and update the
+        database if <code>--persist</code> is also specified.</p>
+        <h3>CLI Help Quick Reference</h3>
+        <ul>
+          <li>Global help: <code>python -m arbit.cli --help</code> (summary) or <code>--help-verbose</code> (all flags + examples)</li>
+          <li>Fitness flags: <code>--venue</code>, <code>--secs</code>, <code>--simulate/--no-simulate</code>, <code>--persist/--no-persist</code>, <code>--dummy-trigger</code>, <code>--help-verbose</code>
+        </li>
+        <li>Live flags: <code>--venue</code>, <code>--help-verbose</code>
+      </li>
+      <li>Yield (beta): <code>yield:collect --asset USDC --reserve-usd &lt;USD&gt; [--min-stake &lt;units&gt;]</code>; requires <code>RPC_URL</code>/<code>PRIVATE_KEY</code>.</li>
+      <li>Yield watch: <code>yield:watch --asset USDC --sources &lt;CSV|JSON&gt; --apr-hint &lt;percent&gt; [--interval 60]</code>.</li>
+    </ul>
+    <h3>Using the Yield Collector Safely</h3>
+    <ul>
+      <li>Start in dry-run: keep <code>DRY_RUN=true</code> to preview deposit amounts.</li>
+      <li>Set a reserve: use <code>--reserve-usd</code> or <code>RESERVE_AMOUNT_USD</code> to keep cash on hand for fees.</li>
+      <li>Respect minimums: deposits occur only if available balance ≥ <code>MIN_USDC_STAKE</code>.</li>
+      <li>Understand risk: smart contract risk and gas spikes apply; <code>max_gas_price_gwei</code> is enforced in <code>stake.py</code>.</li>
+    </ul>
+    <h3>Monitoring APR for Better Yield</h3>
+    <ul>
+      <li>Start with a single source endpoint to validate parsing; expand to multiple.</li>
+      <li>Set <code>--apr-hint</code> to your current provider’s APR; use <code>--min-delta-bps</code> to reduce alert noise.</li>
+      <li>Metrics to watch: <code>yield_apr_percent</code>, <code>yield_best_apr_percent</code>, <code>yield_alerts_total</code>.</li>
+    </ul>
+    <h2>What To Set For Notional (Starter Amount)</h2>
+    <ul>
+      <li>Purpose: Caps the max quote value for a triangle attempt (derived from <code>AB</code> ask). Lower = safer losses, fewer fills; higher = larger PnL swings and more exposure.</li>
+      <li>Baseline: Begin with the smallest amount that exceeds your venue’s min-notional for the traded symbols. On many venues this is around <code>$1–$10</code>, but check your market’s <code>limits.cost.min</code>.</li>
+      <li>Suggested starting points:
+        <ul>
+          <li>Paper/sandbox: <code>$5–$25</code> to see activity without skewing logs or limits.</li>
+          <li>Cautious live: <code>$1–$10</code>, aligned with exchange minimums and your risk.</li>
+          <li>Increase gradually while monitoring fills, skips, and realized PnL.</li>
+        </ul>
+      </li>
+      <li>Watch-outs:
+        <ul>
+          <li>If set below the venue’s minimum, triangles will skip (<code>min_notional_*</code>).</li>
+          <li>Larger notionals amplify slippage and partial-fill risk.</li>
+          <li>Volatile pairs need smaller notional to mitigate adverse moves during the cycle.</li>
+        </ul>
+      </li>
+    </ul>
+    <h2>Strategy Variables (from .env.example)</h2>
+    <p>Below are the Strategy settings and how to think about each. Defaults are chosen to be conservative but not inert.</p>
+    <h3>
+      <code>NOTIONAL_PER_TRADE_USD</code>
+    </h3>
+    <ul>
+      <li>Meaning: Upper bound on trade size per triangle, in the quote currency of leg <code>AB</code> (assumed USD/USDT/USDC).</li>
+      <li>Implications:
+        <ul>
+          <li>Too low: Frequent skips due to <code>min_notional_*</code>; negligible PnL in tests.</li>
+          <li>Too high: Greater slippage exposure; sharper drawdowns if execution degrades.</li>
+        </ul>
+      </li>
+      <li>Recommendations:
+        <ul>
+          <li>Start small (see “What To Set For Notional”).</li>
+          <li>Scale up only after observing stable simulated PnL and low slippage skips.</li>
+        </ul>
+      </li>
+    </ul>
+    <h3>
+      <code>NET_THRESHOLD_BPS</code>
+    </h3>
+    <ul>
+      <li>Meaning: Minimum required net profit for a triangle, in basis points, after fees. The engine computes a net estimate with <code>(1 - taker_fee) ** 3</code> included.</li>
+      <li>Implications:
+        <ul>
+          <li>Too low: More attempts, but higher chance real execution underperforms due to slippage and book shift; risk of negative realized PnL.</li>
+          <li>Too high: Fewer (or no) attempts; you may miss marginal but still positive cycles.</li>
+        </ul>
+      </li>
+      <li>Recommendations:
+        <ul>
+          <li>Typical taker fee ≈ 10 bps per leg → fees are already netted in; set threshold to add buffer for slippage and latency.</li>
+          <li>Start <code>15–30 bps</code> (0.15–0.30%). For very volatile markets, use <code>30–50 bps</code>.</li>
+          <li>Revisit after you have empirical skip/realized PnL data.</li>
+        </ul>
+      </li>
+    </ul>
+    <h3>
+      <code>MAX_SLIPPAGE_BPS</code>
+    </h3>
+    <ul>
+      <li>Meaning: Per-leg guardrail. If the top-of-book moves against you beyond this threshold between checks and order placement, the leg is skipped.</li>
+      <li>Implications:
+        <ul>
+          <li>Too tight: Many <code>slippage_*</code> skips; fewer or no full cycles.</li>
+          <li>Too loose: More cycles execute, but realized PnL can degrade quickly.</li>
+        </ul>
+      </li>
+      <li>Recommendations:
+        <ul>
+          <li>Start <code>5–10 bps</code>. If you see persistent slippage skips with otherwise healthy spreads, consider <code>10–15 bps</code>.</li>
+          <li>Use lower values for thin books or during news; raise only with evidence.</li>
+        </ul>
+      </li>
+    </ul>
+    <h3>
+      <code>MAX_OPEN_ORDERS</code>
+    </h3>
+    <ul>
+      <li>Meaning: Intended concurrency cap for outstanding orders.</li>
+      <li>Current state: Not heavily used by the provided <code>live</code> loop (orders are placed sequentially as IOC). Treat as a forward-looking safety valve.</li>
+      <li>Recommendations:
+        <ul>
+          <li>Keep small (e.g., <code>1–3</code>). Increase only if/when you add parallelism.</li>
+        </ul>
+      </li>
+    </ul>
+    <h3>
+      <code>DRY_RUN</code>
+    </h3>
+    <ul>
+      <li>Meaning: Global simulation flag. When <code>true</code>, <code>create_order</code> synthesizes fills at top-of-book prices; no orders hit the venue.</li>
+      <li>Implications:
+        <ul>
+          <li>
+            <code>live</code> with <code>DRY_RUN=true</code> is safe; <code>false</code> may place real orders if keys are live.</li>
+            <li>
+              <code>fitness</code> is read-only; add <code>--simulate</code> to dry-run cycles without touching the venue.</li>
+            </ul>
+          </li>
+          <li>Recommendations:
+            <ul>
+              <li>Keep <code>true</code> initially. Flip to <code>false</code> only after you’ve observed healthy simulated PnL and acceptable skip patterns.</li>
+            </ul>
+          </li>
+        </ul>
+        <h3>
+          <code>RESERVE_AMOUNT_USD</code> / <code>RESERVE_PERCENT</code>
+        </h3>
+        <ul>
+          <li>Meaning: Hold back capital so the engine never deploys the full account
+            balance.</li>
+            <li>Implications:
+              <ul>
+                <li>Ensures a cushion remains untouched for withdrawals or manual trading.</li>
+                <li>If both are set, the larger resulting reserve is applied.</li>
+              </ul>
+            </li>
+            <li>Recommendations:
+              <ul>
+                <li>Start with a small dollar amount (e.g., <code>20</code>) or percentage (e.g., <code>10</code>)
+                to keep a safety buffer.</li>
+              </ul>
+            </li>
+          </ul>
+          <h2>Practical Workflows</h2>
+          <ul>
+            <li>First contact (safe):
+              <ul>
+                <li>
+                  <code>python -m arbit.cli fitness --venue kraken --secs 10</code>
+                </li>
+                <li>Adjust symbols/venue if spreads are empty or symbols unsupported.</li>
+              </ul>
+            </li>
+            <li>Simulated cycles:
+              <ul>
+                <li>
+                  <code>python -m arbit.cli fitness --venue alpaca --secs 10 --simulate</code>
+                </li>
+                <li>Add <code>--persist</code> to save simulated fills into SQLite for post-hoc review.</li>
+                <li>Add <code>--dummy-trigger</code> once to force a known-good execution for validation.</li>
+              </ul>
+            </li>
+            <li>Cautious live:
+              <ul>
+                <li>Keep <code>DRY_RUN=true</code> first. Observe logs and metrics in parallel.</li>
+                <li>Only after confidence: set <code>DRY_RUN=false</code>, use tiny <code>NOTIONAL_PER_TRADE_USD</code>.</li>
+              </ul>
+            </li>
+          </ul>
+          <h2>What To Watch In Logs and Metrics</h2>
+          <ul>
+            <li>Skips by reason: frequent <code>slippage_*</code> → lower notional or slippage; frequent <code>min_notional_*</code> → raise notional slightly or pick deeper pairs.</li>
+            <li>Spread quality: small bps = deep books; large bps with low depth increase slippage risk.</li>
+            <li>Realized PnL (sim/live): look for stability across time and symbols, not just single spikes.</li>
+          </ul>
+          <h2>Database Signals for Performance Debugging</h2>
+          <p>To evaluate the quality of decisions and implementation, the database logs:</p>
+          <ul>
+            <li>
+              <code>triangle_attempts</code>: one row per attempt (success or skip) including
+              timestamps, venue, triangle legs, decision (<code>ok</code>), estimated edge
+              (<code>net_est</code>), realized PnL, threshold/slippage/notional settings used,
+              latency, skip reasons, top‑of‑book snapshots, and executed base quantity.</li>
+              <li>
+                <code>fills</code>: enriched with venue, leg (AB/BC/AC), fee rate, TIF/type, notional,
+                dry‑run flag, and <code>attempt_id</code> linking to the parent attempt.</li>
+              </ul>
+              <p>These provide enough granularity to measure:</p>
+              <ul>
+                <li>How often triangles meet thresholds vs. are skipped (by reason)</li>
+                <li>Latency distribution per venue/triangle</li>
+                <li>Slippage impact (via top‑of‑book snapshots and fee rates)</li>
+                <li>Realized vs. estimated outcomes across time</li>
+              </ul>
+              <h2>Safety &amp; Operational Tips</h2>
+              <ul>
+                <li>Use paper/sandbox keys first. Never commit secrets; prefer <code>.env</code> locally.</li>
+                <li>Confirm triangle symbols exist on your venue (and quote assets match expectations).</li>
+                <li>Mind rate limits: bursty loops can hit API limits; prefer fewer venues initially.</li>
+                <li>Keep system time accurate; large drift can disrupt rate limiting and logs.</li>
+                <li>Start Prometheus early (<code>PROM_PORT</code>) and capture baselines before changes.</li>
+                <li>SQLite path should live in a writeable directory (e.g., <code>./data/arbit.db</code>).</li>
+                <li>Discord webhook is best-effort; treat alerts as advisory, not critical.</li>
+              </ul>
+              <h2>Interpreting <code>markets:limits</code> Output</h2>
+              <p>When you run <code>python -m arbit.cli markets:limits --venue ...</code>, you’ll see lines like:</p>
+              <pre>
+                <code>ETH/USDT min_cost=0.5 maker=25 bps taker=40 bps
+                  ETH/BTC  min_cost=2e-05 maker=25 bps taker=40 bps
+                </code>
+              </pre>
+              <ul>
+                <li>
+                  <code>min_cost</code>: The exchange’s minimum notional (quote currency) for that market.
+                  <ul>
+                    <li>For <code>ETH/USDT</code>, the quote is USDT → <code>min_cost=0.5</code> means $0.50 minimum.</li>
+                    <li>For <code>ETH/BTC</code>, the quote is BTC → <code>min_cost=2e-05</code> means 0.00002 BTC.</li>
+                    <li>If <code>min_cost=0</code>, the adapter/venue did not expose a minimum via ccxt. There may still be other limits (min qty/step sizes). Treat <code>0</code> as “unknown” and use conservative notionals until verified.</li>
+                  </ul>
+                </li>
+                <li>
+                  <code>maker</code>/<code>taker</code>: Fees in basis points (1 bps = 0.01%). Taker is relevant since market IOC legs pay taker. Example: <code>taker=40 bps</code> = 0.40% per trade leg.</li>
+                </ul>
+                <p>Using this to pick notional:</p>
+                <ul>
+                  <li>Ensure your notional comfortably exceeds <code>min_cost</code> for leg <code>AB</code> (and generally for all legs). A simple rule: <code>NOTIONAL_PER_TRADE_USD &gt;= 2 × min_cost(AB)</code>.</li>
+                  <li>For quote assets not in USD (e.g., BTC), convert mentally to USD at current rates to sanity-check exposure.</li>
+                </ul>
+                <p>Aliases and Flags</p>
+                <ul>
+                  <li>The CLI accepts both colon <code>:</code> and underscore <code>_</code> styles for helper commands:
+                  <ul>
+                    <li>
+                      <code>markets:limits</code> (preferred) or <code>markets_limits</code>
+                    </li>
+                    <li>
+                      <code>config:recommend</code> (preferred) or <code>config_recommend</code>
+                    </li>
+                  </ul>
+                </li>
+                <li>Flags marked in help as “optional” are not required; some only apply when specific modes are enabled (e.g., <code>--persist</code> is only relevant with <code>--simulate</code>).</li>
+              </ul>
+              <h2>Extending This Guide</h2>
+              <p>As features grow (limit orders, partial-fill reconciliation, position hedging, multi-venue routing), add sections here with:</p>
+              <ul>
+                <li>New setting semantics and safe defaults.</li>
+                <li>Failure modes and how to detect them in logs/metrics.</li>
+                <li>Step-by-step rollout playbooks (simulate → partial live → full live).</li>
+                <li>Troubleshooting checklists for common errors and bad fills.</li>
+              </ul>
+              <p>Contributions welcome—keep changes concise, actionable, and venue-agnostic where possible.</p>
+            </body>
+          </html>
