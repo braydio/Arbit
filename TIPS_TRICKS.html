@@ -5,34 +5,65 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Tips & Tricks for Safe Testing and Tuning</title>
     <style>
+      :root {
+        --nord0: #2E3440;
+        --nord1: #3B4252;
+        --nord2: #434C5E;
+        --nord3: #4C566A;
+        --nord4: #D8DEE9;
+        --nord8: #88C0D0;
+      }
       body {
+        background-color: var(--nord0);
+        color: var(--nord4);
         font-family: system-ui, sans-serif;
         line-height: 1.6;
-        max-width: 900px;
-        margin: 0 auto;
+        margin: 0;
         padding: 2rem;
       }
-      h1, h2, h3 {
-        border-bottom: 1px solid #ddd;
+      h1 {
+        border-bottom: 1px solid var(--nord3);
+        padding-bottom: 0.3rem;
+      }
+      h2, h3 {
+        border-bottom: 1px solid var(--nord3);
         padding-bottom: 0.3rem;
       }
       pre {
-        background: #f4f4f4;
+        background: var(--nord1);
         padding: 1rem;
         overflow-x: auto;
         border-radius: 4px;
       }
       code {
         font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-        background: #f4f4f4;
+        background: var(--nord2);
+        color: var(--nord4);
         padding: 0.2rem 0.4rem;
         border-radius: 4px;
+      }
+      a {
+        color: var(--nord8);
+      }
+      .container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+      }
+      section {
+        background: var(--nord1);
+        padding: 1rem;
+        border-radius: 8px;
       }
     </style>
   </head>
   <body>
-        <h1>Tips &amp; Tricks for Safe Testing and Tuning</h1>
+    <h1>Tips &amp; Tricks for Safe Testing and Tuning</h1>
+    <main class="container">
+      <section>
         <p>This guide collects practical advice for configuring and operating Arbit safely, starting small, and growing confidence. It focuses on the Strategy section of <code>.env.example</code> and common pitfalls. Expect this document to evolve as features mature.</p>
+      </section>
+      <section>
         <h2>Quick Recommendations</h2>
         <ul>
           <li>Notional per trade: Start tiny. Paper: <code>$5–$25</code>. Real: <code>$1–$10</code> above venue minimums.</li>
@@ -77,6 +108,8 @@
       <li>Set <code>--apr-hint</code> to your current provider’s APR; use <code>--min-delta-bps</code> to reduce alert noise.</li>
       <li>Metrics to watch: <code>yield_apr_percent</code>, <code>yield_best_apr_percent</code>, <code>yield_alerts_total</code>.</li>
     </ul>
+      </section>
+      <section>
     <h2>What To Set For Notional (Starter Amount)</h2>
     <ul>
       <li>Purpose: Caps the max quote value for a triangle attempt (derived from <code>AB</code> ask). Lower = safer losses, fewer fills; higher = larger PnL swings and more exposure.</li>
@@ -92,10 +125,12 @@
         <ul>
           <li>If set below the venue’s minimum, triangles will skip (<code>min_notional_*</code>).</li>
           <li>Larger notionals amplify slippage and partial-fill risk.</li>
-          <li>Volatile pairs need smaller notional to mitigate adverse moves during the cycle.</li>
+      <li>Volatile pairs need smaller notional to mitigate adverse moves during the cycle.</li>
         </ul>
       </li>
     </ul>
+      </section>
+      <section>
     <h2>Strategy Variables (from .env.example)</h2>
     <p>Below are the Strategy settings and how to think about each. Defaults are chosen to be conservative but not inert.</p>
     <h3>
@@ -198,11 +233,13 @@
             </li>
             <li>Recommendations:
               <ul>
-                <li>Start with a small dollar amount (e.g., <code>20</code>) or percentage (e.g., <code>10</code>)
+          <li>Start with a small dollar amount (e.g., <code>20</code>) or percentage (e.g., <code>10</code>)
                 to keep a safety buffer.</li>
               </ul>
             </li>
           </ul>
+      </section>
+      <section>
           <h2>Practical Workflows</h2>
           <ul>
             <li>First contact (safe):
@@ -229,12 +266,16 @@
               </ul>
             </li>
           </ul>
+      </section>
+      <section>
           <h2>What To Watch In Logs and Metrics</h2>
           <ul>
             <li>Skips by reason: frequent <code>slippage_*</code> → lower notional or slippage; frequent <code>min_notional_*</code> → raise notional slightly or pick deeper pairs.</li>
             <li>Spread quality: small bps = deep books; large bps with low depth increase slippage risk.</li>
             <li>Realized PnL (sim/live): look for stability across time and symbols, not just single spikes.</li>
           </ul>
+      </section>
+      <section>
           <h2>Database Signals for Performance Debugging</h2>
           <p>To evaluate the quality of decisions and implementation, the database logs:</p>
           <ul>
@@ -252,18 +293,22 @@
                 <li>How often triangles meet thresholds vs. are skipped (by reason)</li>
                 <li>Latency distribution per venue/triangle</li>
                 <li>Slippage impact (via top‑of‑book snapshots and fee rates)</li>
-                <li>Realized vs. estimated outcomes across time</li>
+              <li>Realized vs. estimated outcomes across time</li>
               </ul>
+      </section>
+      <section>
               <h2>Safety &amp; Operational Tips</h2>
               <ul>
                 <li>Use paper/sandbox keys first. Never commit secrets; prefer <code>.env</code> locally.</li>
                 <li>Confirm triangle symbols exist on your venue (and quote assets match expectations).</li>
                 <li>Mind rate limits: bursty loops can hit API limits; prefer fewer venues initially.</li>
-                <li>Keep system time accurate; large drift can disrupt rate limiting and logs.</li>
-                <li>Start Prometheus early (<code>PROM_PORT</code>) and capture baselines before changes.</li>
-                <li>SQLite path should live in a writeable directory (e.g., <code>./data/arbit.db</code>).</li>
-                <li>Discord webhook is best-effort; treat alerts as advisory, not critical.</li>
+              <li>Keep system time accurate; large drift can disrupt rate limiting and logs.</li>
+              <li>Start Prometheus early (<code>PROM_PORT</code>) and capture baselines before changes.</li>
+              <li>SQLite path should live in a writeable directory (e.g., <code>./data/arbit.db</code>).</li>
+              <li>Discord webhook is best-effort; treat alerts as advisory, not critical.</li>
               </ul>
+      </section>
+      <section>
               <h2>Interpreting <code>markets:limits</code> Output</h2>
               <p>When you run <code>python -m arbit.cli markets:limits --venue ...</code>, you’ll see lines like:</p>
               <pre>
@@ -300,16 +345,20 @@
                     </li>
                   </ul>
                 </li>
-                <li>Flags marked in help as “optional” are not required; some only apply when specific modes are enabled (e.g., <code>--persist</code> is only relevant with <code>--simulate</code>).</li>
-              </ul>
-              <h2>Extending This Guide</h2>
-              <p>As features grow (limit orders, partial-fill reconciliation, position hedging, multi-venue routing), add sections here with:</p>
+                  <li>Flags marked in help as “optional” are not required; some only apply when specific modes are enabled (e.g., <code>--persist</code> is only relevant with <code>--simulate</code>).</li>
+                </ul>
+      </section>
+      <section>
+                <h2>Extending This Guide</h2>
+                <p>As features grow (limit orders, partial-fill reconciliation, position hedging, multi-venue routing), add sections here with:</p>
               <ul>
                 <li>New setting semantics and safe defaults.</li>
                 <li>Failure modes and how to detect them in logs/metrics.</li>
                 <li>Step-by-step rollout playbooks (simulate → partial live → full live).</li>
                 <li>Troubleshooting checklists for common errors and bad fills.</li>
               </ul>
-              <p>Contributions welcome—keep changes concise, actionable, and venue-agnostic where possible.</p>
-            </body>
-          </html>
+                <p>Contributions welcome—keep changes concise, actionable, and venue-agnostic where possible.</p>
+      </section>
+    </main>
+  </body>
+</html>
