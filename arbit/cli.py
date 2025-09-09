@@ -6,33 +6,31 @@ imported here so tests can easily monkeypatch them.
 """
 
 import asyncio
-import json
 import logging
 import sys
 import time
-import urllib.request
 from datetime import datetime, timezone
 
 import typer
-from arbit import try_triangle
 from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
 from arbit.metrics.exporter import (
     CYCLE_LATENCY,
-    ERRORS_TOTAL,
     FILLS_TOTAL,
     ORDERS_TOTAL,
     PROFIT_TOTAL,
     SKIPS_TOTAL,
     YIELD_ALERTS_TOTAL,
     YIELD_APR,
+    YIELD_BEST_APR,
     YIELD_CHECKS_TOTAL,
     YIELD_DEPOSITS_TOTAL,
     YIELD_ERRORS_TOTAL,
     YIELD_WITHDRAWS_TOTAL,
     start_metrics_server,
 )
+from arbit.notify import notify_discord
 from arbit.models import Fill, Triangle, TriangleAttempt
 from arbit.persistence.db import init_db, insert_attempt, insert_fill, insert_triangle
 
@@ -228,29 +226,6 @@ def _build_adapter(venue: str, _settings=settings):
     return CCXTAdapter(venue)
 
 
-def _notify_discord(venue: str, message: str) -> None:
-    """Send a simple message to Discord webhook if configured.
-
-    Errors are swallowed; this is best-effort only.
-    """
-    url = settings.discord_webhook_url
-    if not url:
-        return
-    data = json.dumps({"content": message}).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"}
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=3) as _:
-            return
-    except Exception:
-        # Avoid spamming logs; bump an error metric instead
-        try:
-            ERRORS_TOTAL.labels(venue, "discord_send").inc()
-        except Exception:
-            pass
-
-
 @app.command("yield:collect")
 @app.command("yield_collect")
 def yield_collect(
@@ -346,7 +321,7 @@ def yield_collect(
         except Exception:
             pass
         try:
-            _notify_discord(
+            notify_discord(
                 "yield",
                 f"[yield] DRY-RUN deposit {amount_raw / 1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
             )
@@ -366,7 +341,7 @@ def yield_collect(
         except Exception:
             pass
         try:
-            _notify_discord(
+            notify_discord(
                 "yield",
                 f"[yield] deposited {amount_raw / 1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
             )
@@ -420,7 +395,7 @@ def yield_withdraw(
 
     import os as _os
 
-    from stake import ERC20_ABI, POOL_ABI, withdraw_usdc
+    from stake import ERC20_ABI, withdraw_usdc
 
     rpc = getattr(settings, "rpc_url", None) or _os.getenv("RPC_URL")
     pk = getattr(settings, "private_key", None) or _os.getenv("PRIVATE_KEY")
@@ -475,7 +450,7 @@ def yield_withdraw(
         except Exception:
             pass
         try:
-            _notify_discord(
+            notify_discord(
                 "yield",
                 f"[yield] DRY-RUN withdraw {amount_raw / 1_000_000.0:.2f} USDC from Aave",
             )
@@ -491,7 +466,7 @@ def yield_withdraw(
         except Exception:
             pass
         try:
-            _notify_discord(
+            notify_discord(
                 "yield",
                 f"[yield] withdrew {amount_raw / 1_000_000.0:.2f} USDC from Aave",
             )
@@ -606,7 +581,7 @@ def yield_watch(
                 YIELD_ALERTS_TOTAL.labels(asset_u).inc()
             except Exception:
                 pass
-            _notify_discord("yield", msg)
+            notify_discord("yield", msg)
 
         time.sleep(max(interval, 1.0))
 
@@ -622,9 +597,7 @@ def keys_check():
             symbol = (
                 "BTC/USDT"
                 if "BTC/USDT" in ms
-                else "BTC/USD"
-                if "BTC/USD" in ms
-                else next(iter(ms))
+                else "BTC/USD" if "BTC/USD" in ms else next(iter(ms))
             )
             ob = a.fetch_orderbook(symbol, 1)
             bid = ob.get("bids", [])
@@ -844,7 +817,7 @@ def fitness(
                     }
                     books_cache.update(injected)
                     try:
-                        _notify_discord(
+                        notify_discord(
                             venue,
                             f"[{venue}] dummy_trigger: injected synthetic profitable triangle for {tri0}",
                         )
@@ -1109,7 +1082,7 @@ def live(
                         if r.startswith("slippage") or r.startswith("min_notional")
                     ]
                     if actionable and time.time() - last_alert_at > 10:
-                        _notify_discord(
+                        notify_discord(
                             venue,
                             f"[{venue}] skipped {tri} reasons: {', '.join(actionable)}",
                         )
@@ -1167,7 +1140,7 @@ def live(
             )
             if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
                 try:
-                    _notify_discord(
+                    notify_discord(
                         venue,
                         (
                             f"[{venue}] heartbeat dry_run={getattr(settings, 'dry_run', True)} "
