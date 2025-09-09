@@ -1,6 +1,5 @@
 """Yield provider abstractions and helpers."""
 
-from .providers import YieldProvider, AaveProvider
+from .providers import AaveProvider, YieldProvider
 
 __all__ = ["YieldProvider", "AaveProvider"]
-

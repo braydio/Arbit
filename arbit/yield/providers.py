@@ -45,7 +45,9 @@ class AaveProvider(YieldProvider):
     safety checks.
     """
 
-    def __init__(self, settings, w3: Optional[object] = None, acct: Optional[object] = None):
+    def __init__(
+        self, settings, w3: Optional[object] = None, acct: Optional[object] = None
+    ):
         self.settings = settings
         self._w3 = None
         self._acct = None
@@ -59,8 +61,12 @@ class AaveProvider(YieldProvider):
             if w3 is None or acct is None:
                 from web3 import Web3  # type: ignore
 
-                rpc = getattr(settings, "rpc_url", None) or __import__("os").getenv("RPC_URL")
-                pk = getattr(settings, "private_key", None) or __import__("os").getenv("PRIVATE_KEY")
+                rpc = getattr(settings, "rpc_url", None) or __import__("os").getenv(
+                    "RPC_URL"
+                )
+                pk = getattr(settings, "private_key", None) or __import__("os").getenv(
+                    "PRIVATE_KEY"
+                )
                 if not rpc or not pk:
                     # Defer failure to method use; allow dry-run paths to proceed.
                     return
@@ -68,7 +74,9 @@ class AaveProvider(YieldProvider):
                 acct = w3.eth.account.from_key(pk)
             self._w3 = w3
             self._acct = acct
-            self._usdc = self._w3.eth.contract(address=settings.usdc_address, abi=ERC20_ABI)
+            self._usdc = self._w3.eth.contract(
+                address=settings.usdc_address, abi=ERC20_ABI
+            )
             atok_addr = getattr(settings, "atoken_address", None)
             if atok_addr:
                 self._atoken = self._w3.eth.contract(address=atok_addr, abi=ERC20_ABI)
@@ -101,4 +109,3 @@ class AaveProvider(YieldProvider):
         from stake import withdraw_usdc  # type: ignore
 
         withdraw_usdc(int(amount))
-
