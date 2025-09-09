@@ -22,6 +22,7 @@ from arbit.metrics.exporter import (
     PROFIT_TOTAL,
     SKIPS_TOTAL,
     YIELD_ALERTS_TOTAL,
+    YIELD_BEST_APR,
     YIELD_APR,
     YIELD_BEST_APR,
     YIELD_CHECKS_TOTAL,
@@ -33,6 +34,7 @@ from arbit.metrics.exporter import (
 from arbit.notify import notify_discord
 from arbit.models import Fill, Triangle, TriangleAttempt
 from arbit.persistence.db import init_db, insert_attempt, insert_fill, insert_triangle
+from arbit.yield import AaveProvider
 
 
 class CLIApp(typer.Typer):
@@ -253,34 +255,14 @@ def yield_collect(
         log.error("yield:collect supports USDC only for now")
         return
 
-    try:
-        from web3 import Web3  # type: ignore
-    except Exception:
-        log.error("web3 not installed; cannot perform yield:collect")
-        return
-
-    from stake import ERC20_ABI, stake_usdc
-
-    rpc = getattr(settings, "rpc_url", None) or __import__("os").getenv("RPC_URL")
-    pk = getattr(settings, "private_key", None) or __import__("os").getenv(
-        "PRIVATE_KEY"
-    )
-    if not rpc or not pk:
-        log.error("RPC_URL and PRIVATE_KEY must be set for yield:collect")
-        return
-
     # Start metrics server if not already running
     try:
         start_metrics_server(settings.prom_port)
     except Exception:
         pass
 
-    w3 = Web3(Web3.HTTPProvider(rpc))
-    acct = w3.eth.account.from_key(pk)
-
-    usdc_addr = settings.usdc_address
-    usdc = w3.eth.contract(address=usdc_addr, abi=ERC20_ABI)
-    bal_raw = int(usdc.functions.balanceOf(acct.address).call())
+    provider = AaveProvider(settings)
+    bal_raw = int(provider.get_wallet_balance_raw())
     # 6 decimals for USDC
     bal_usd = bal_raw / 1_000_000.0
 
@@ -330,7 +312,7 @@ def yield_collect(
         return
 
     try:
-        stake_usdc(amount_raw)
+        provider.deposit_raw(amount_raw)
         log.info(
             "deposited %.2f USDC to Aave (kept reserve=%.2f)",
             amount_raw / 1_000_000.0,
@@ -381,12 +363,6 @@ def yield_withdraw(
         log.error("yield:withdraw supports USDC only for now")
         return
 
-    try:
-        from web3 import Web3  # type: ignore
-    except Exception:
-        log.error("web3 not installed; cannot perform yield:withdraw")
-        return
-
     # Start metrics server if not already running
     try:
         start_metrics_server(settings.prom_port)
@@ -414,8 +390,7 @@ def yield_withdraw(
     )
     reserve_pct = float(getattr(settings, "reserve_percent", 0.0)) / 100.0
 
-    usdc = w3.eth.contract(address=settings.usdc_address, abi=ERC20_ABI)
-    bal_raw = int(usdc.functions.balanceOf(acct.address).call())
+    bal_raw = int(provider.get_wallet_balance_raw())
     bal_usd = bal_raw / 1_000_000.0
     reserve_pct_amt = bal_usd * reserve_pct if reserve_pct > 0 else 0.0
     reserve_final = max(reserve_abs, reserve_pct_amt)
@@ -425,8 +400,9 @@ def yield_withdraw(
         return
 
     if all_excess:
-        # Withdraw down to reserve, naive approach; a full integration would read aToken balance
-        # For now, withdraw the requested difference if wallet < reserve to top up
+        # Withdraw down to reserve. Prefer aToken balance if configured; else top-up if below reserve.
+        atoken_raw = provider.get_deposit_balance_raw()
+        atoken_usd = atoken_raw / 1_000_000.0
         if bal_usd >= reserve_final:
             log.info(
                 "nothing to do: wallet >= reserve (%.2f >= %.2f)",
@@ -434,7 +410,12 @@ def yield_withdraw(
                 reserve_final,
             )
             return
-        amount_usd = reserve_final - bal_usd
+        # Target top-up = reserve - wallet; cap by aToken balance when available
+        target = reserve_final - bal_usd
+        if atoken_raw > 0:
+            amount_usd = min(target, atoken_usd)
+        else:
+            amount_usd = target
 
     amount_raw = int(max(float(amount_usd or 0.0), 0.0) * 1_000_000)
     if amount_raw <= 0:
@@ -459,7 +440,7 @@ def yield_withdraw(
         return
 
     try:
-        withdraw_usdc(amount_raw)
+        provider.withdraw_raw(amount_raw)
         log.info("withdrew %.2f USDC from Aave", amount_raw / 1_000_000.0)
         try:
             YIELD_WITHDRAWS_TOTAL.labels("aave", "live").inc()
@@ -524,6 +505,12 @@ def yield_watch(
         len(urls),
         min_delta,
     )
+
+    # Expose Prometheus metrics if a collector is scraping
+    try:
+        start_metrics_server(settings.prom_port)
+    except Exception:
+        pass
 
     while True:
         try:

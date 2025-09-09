@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     # Aave staking defaults
     usdc_address: str = "0xff970A61a04b1Ca14834A43F5de4533eBDDB5CC8"
     pool_address: str = "0xE0fBa4Fc209b4948668006B2Be61711b7f465bAf"
+    atoken_address: str | None = None  # Optional: aToken address for interest-bearing USDC
     min_usdc_stake: int = 100 * 10**6  # 100 USDC (6 decimals)
     min_eth_balance_wei: int = int(0.005 * 10**18)  # 0.005 ETH for gas
     max_gas_price_gwei: int = 5  # Ceiling for gas price to ensure low fees

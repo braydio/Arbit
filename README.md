@@ -300,7 +300,9 @@ python -m arbit.cli yield:collect --asset USDC --reserve-usd 50
 Requirements:
 - Env: `RPC_URL`, `PRIVATE_KEY`
 - Settings: `usdc_address`, `pool_address`, `min_usdc_stake`, `max_gas_price_gwei`, `reserve_amount_usd`, `reserve_percent`
+- Optional: `atoken_address` (aToken for USDC) enables precise aToken balance reads for withdrawals.
 - Asset: USDC (6 decimals) only for now
+- Dependency: `web3` (install with `pip install web3` or via `requirements.txt`)
 
 ### Yield Watch (APR Monitoring)
 
@@ -318,6 +320,7 @@ Metrics:
 - `yield_apr_percent{provider,asset}` and `yield_best_apr_percent{asset}`
 - `yield_checks_total`, `yield_alerts_total{asset}`
 - Deposit counters: `yield_deposits_total{provider,mode}`; errors: `yield_errors_total{stage}`
+- The metrics server runs on `PROM_PORT` (default `9109`).
 
 ## Troubleshooting
 

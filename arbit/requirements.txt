@@ -2,3 +2,4 @@ ccxt==4.5.1
 prometheus_client==0.22.1
 pydantic==2.11.7
 typer==0.16.1
+web3==6.20.1

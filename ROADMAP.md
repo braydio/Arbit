@@ -136,7 +136,91 @@ net   = gross * (1 - fee)^3 - 1
  - [ ] Robust error handling and recovery
  - [ ] Idempotent operations with client IDs
  - [ ] Production alerting and monitoring
- - [ ] Full containerization and deployment automation
+- [ ] Full containerization and deployment automation
+
+## Yield (DeFi) Readiness Roadmap
+
+This section tracks what remains to make yield commands robust for dev/live testing.
+
+### Dependencies & Packaging
+- [ ] Unify dependency versions (root vs `arbit/requirements.txt`) for `pydantic`, `typer`, `prometheus-client`.
+- [x] Add `web3` runtime dependency for yield features.
+- [ ] Ensure Docker images include `web3` and required build deps.
+
+### Configuration & Settings
+- [ ] Chain config abstraction: network selection (`ARBIT_CHAIN=arbitrum|mainnet|...`), per-chain `usdc_address`, `pool_address`, decimals.
+- [ ] Safer defaults: `DRY_RUN=true`, conservative `max_gas_price_gwei`, `reserve_amount_usd`.
+- [ ] Optional: provider selector for yield (`AAVE`, `...`), and `YIELD_SOURCES` default for watch.
+- [ ] Secrets handling: document `.env` keys; ensure PRIVATE_KEY never logs.
+
+### Modules & Abstractions
+- [x] Provider interface for yield (`arbit/yield/providers.py`) with AaveProvider wrapper.
+- [ ] APR source clients with schema validation, retries, and jitter backoff.
+- [x] Wallet accounting hook to read aToken balance when `atoken_address` is configured.
+- [ ] Gas strategy (EIP-1559) and chain-specific fee modeling.
+
+### CLI Commands
+- [x] `yield:collect` basic USDC deposit with reserves and dry-run (now via provider).
+- [x] `yield:watch` APR polling with metrics and Discord alerts.
+- [x] `yield:withdraw` targeted withdrawals and `--all-excess` top-up logic; uses aToken balance if configured.
+- [ ] Add `--provider` flag and support multiple providers; surface chain/asset decimals.
+- [ ] Add `yield:rebalance` to move between providers when `yield:watch` signals improvement.
+- [ ] Robust argument validation and `--help-verbose` examples for all yield commands.
+
+### Safety & Risk Controls
+- [ ] End-to-end dry-run simulation for on-chain txs with printed calldata and gas estimates.
+- [ ] Inventory limits and per-tx caps; enforce `min_usdc_stake` everywhere.
+- [ ] Error taxonomy with retries/backoff and circuit breakers for repeated failures.
+- [ ] Explicit kill switch via env/flag to pause on-chain operations.
+
+### Metrics & Observability
+- [x] Start Prometheus server in `yield:watch`.
+- [ ] Set `YIELD_CAPITAL_USD` based on wallet + aToken balances after ops.
+- [ ] Structured logging for tx hashes, nonces, and provider decisions (without secrets).
+- [ ] Optional Discord heartbeat and summarised daily reports.
+
+### Persistence
+- [ ] Add `yield_ops` table (timestamp, provider, op, amount, tx_hash, mode, error) for auditable history.
+- [ ] Snapshot APR observations to SQLite for backtesting alert thresholds and realized yield.
+
+### Testing
+- [x] Unit tests for provider balance reads with injected dummy web3.
+- [ ] Unit tests for `yield:collect` and `yield:withdraw` dry-run flows with mocked provider/web3.
+- [ ] Tests for `yield:watch` with local JSON/CSV and alert threshold logic.
+- [ ] Property tests for reserve math and min-stake edge cases.
+- [ ] Lint/type checks for new modules.
+
+### Documentation
+- [ ] Expand README/WARP with chain setup, safety checklist, and provider details.
+- [ ] Provide sample APR files and schemas; examples for Docker usage with RPC URLs.
+
+### Stretch
+- [ ] Support permit (EIP-2612) flow to skip explicit `approve` when possible.
+- [ ] Multi-asset support beyond USDC (USDT/DAI) with decimal awareness.
+- [ ] Strategy to auto-rotate capital across providers based on moving average APRs.
+
+## What Still Needs Implementation (Yield Farming)
+
+### Persistence + Tracking
+- [ ] Create `yield_ops` table in `arbit/persistence/db.py` and write records for deposit/withdraw actions and errors.
+- [ ] Add periodic snapshot of wallet + aToken balances and APR observations for history and reporting.
+
+### Yield / APY Calculation
+- [ ] Query aToken balances periodically and compute realized yield vs principal.
+- [ ] Add reporting loop (CLI or background task) to persist yield over time.
+
+### Strategy Layer
+- [ ] Allocation strategy to determine capital split between arbitrage and yield based on thresholds.
+- [ ] Auto-compound: periodic withdraw/redeposit of accrued rewards if thresholds met.
+
+### Testing / Dev Mode
+- [ ] Add yield CLI tests under `tests/` using mocked provider or eth-tester.
+- [ ] Optional: local chain integration (eth-tester/Ganache) for end-to-end dry-run.
+
+### RPC and APIs
+- [ ] RPC endpoint (HTTPS/WSS) set via `RPC_URL` for web3.py.
+- [ ] Aave v3 Pool and ERC20 ABIs/addresses (present) + optional aToken address via settings.
+- [ ] (Optional) Price feed (Chainlink/CEX/Uniswap) to value balances in USD.
 
 ## Safety and Risk Management
 
