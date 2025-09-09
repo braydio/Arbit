@@ -1,6 +1,19 @@
 # Tips & Tricks for Safe Testing and Tuning
 
 This guide collects practical advice for configuring and operating Arbit safely, starting small, and growing confidence. It focuses on the Strategy section of `.env.example` and common pitfalls. Expect this document to evolve as features mature.
+## Index
+
+- [Quick Recommendations](#quick-recommendations)
+- [Using the Yield Collector Safely](#using-the-yield-collector-safely)
+- [Monitoring APR for Better Yield](#monitoring-apr-for-better-yield)
+- [What To Set For Notional (Starter Amount)](#what-to-set-for-notional-starter-amount)
+- [Strategy Variables (from .env.example)](#strategy-variables-from-envexample)
+- [Practical Workflows](#practical-workflows)
+- [What To Watch In Logs and Metrics](#what-to-watch-in-logs-and-metrics)
+- [Database Signals for Performance Debugging](#database-signals-for-performance-debugging)
+- [Safety & Operational Tips](#safety--operational-tips)
+- [Interpreting `markets:limits` Output](#interpreting-marketslimits-output)
+- [Extending This Guide](#extending-this-guide)
 
 ## Quick Recommendations
 
@@ -32,6 +45,7 @@ database if `--persist` is also specified.
 - Live flags: `--venue`, `--help-verbose`
 - Yield (beta): `yield:collect --asset USDC --reserve-usd <USD> [--min-stake <units>]`; requires `RPC_URL`/`PRIVATE_KEY`.
 - Yield watch: `yield:watch --asset USDC --sources <CSV|JSON> --apr-hint <percent> [--interval 60]`.
+- Yield withdraw: `yield:withdraw --asset USDC --amount-usd <USD>` or `--all-excess`.
 
 ### Using the Yield Collector Safely
 
@@ -39,6 +53,14 @@ database if `--persist` is also specified.
 - Set a reserve: use `--reserve-usd` or `RESERVE_AMOUNT_USD` to keep cash on hand for fees.
 - Respect minimums: deposits occur only if available balance ≥ `MIN_USDC_STAKE`.
 - Understand risk: smart contract risk and gas spikes apply; `max_gas_price_gwei` is enforced in `stake.py`.
+
+#### Recommended Yield Settings
+
+- `--reserve-usd`: start with `$20–$50` to cover fees.
+- `--min-stake`: default `100 USDC`; raise only after verifying deposits.
+- `max_gas_price_gwei`: keep `<=5` to avoid excessive gas costs.
+- `--apr-hint`: use your current provider's APR (e.g., `4.5`).
+- `--min-delta-bps`: begin with `50` to limit alert noise.
 
 ### Monitoring APR for Better Yield
 

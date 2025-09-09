@@ -59,6 +59,20 @@ a {
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         gap: 1.5rem;
       }
+      nav#index {
+        margin: 1rem 0 2rem;
+      }
+      nav#index ul {
+        list-style: none;
+        padding: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+      nav#index a {
+        color: var(--nord8);
+        text-decoration: none;
+      }
       section {
         background: var(--nord1);
         padding: 1rem;
@@ -68,12 +82,27 @@ a {
   </head>
   <body>
     <h1>Tips &amp; Tricks for Safe Testing and Tuning</h1>
+    <nav id="index">
+      <ul>
+        <li><a href="#quick-recommendations">Quick Recommendations</a></li>
+        <li><a href="#using-the-yield-collector-safely">Using the Yield Collector Safely</a></li>
+        <li><a href="#monitoring-apr-for-better-yield">Monitoring APR for Better Yield</a></li>
+        <li><a href="#what-to-set-for-notional-starter-amount">What To Set For Notional</a></li>
+        <li><a href="#strategy-variables-from-envexample">Strategy Variables</a></li>
+        <li><a href="#practical-workflows">Practical Workflows</a></li>
+        <li><a href="#what-to-watch-in-logs-and-metrics">Logs &amp; Metrics</a></li>
+        <li><a href="#database-signals-for-performance-debugging">Database Signals</a></li>
+        <li><a href="#safety-operational-tips">Safety &amp; Operational Tips</a></li>
+        <li><a href="#interpreting-marketslimits-output">Interpreting markets:limits</a></li>
+        <li><a href="#extending-this-guide">Extending This Guide</a></li>
+      </ul>
+    </nav>
     <main class="container">
       <section>
         <p>This guide collects practical advice for configuring and operating Arbit safely, starting small, and growing confidence. It focuses on the Strategy section of <code>.env.example</code> and common pitfalls. Expect this document to evolve as features mature.</p>
       </section>
       <section>
-        <h2>Quick Recommendations</h2>
+        <h2 id="quick-recommendations">Quick Recommendations</h2>
         <ul>
           <li>Notional per trade: Start tiny. Paper: <code>$5–$25</code>. Real: <code>$1–$10</code> above venue minimums.</li>
           <li>Net threshold: Favor safety. Start <code>15–30 bps</code> (0.15–0.30%) after fees.</li>
@@ -103,15 +132,24 @@ a {
       </li>
       <li>Yield (beta): <code>yield:collect --asset USDC --reserve-usd &lt;USD&gt; [--min-stake &lt;units&gt;]</code>; requires <code>RPC_URL</code>/<code>PRIVATE_KEY</code>.</li>
       <li>Yield watch: <code>yield:watch --asset USDC --sources &lt;CSV|JSON&gt; --apr-hint &lt;percent&gt; [--interval 60]</code>.</li>
+      <li>Yield withdraw: <code>yield:withdraw --asset USDC --amount-usd &lt;USD&gt;</code> or <code>--all-excess</code>.</li>
     </ul>
-    <h3>Using the Yield Collector Safely</h3>
+    <h3 id="using-the-yield-collector-safely">Using the Yield Collector Safely</h3>
     <ul>
       <li>Start in dry-run: keep <code>DRY_RUN=true</code> to preview deposit amounts.</li>
       <li>Set a reserve: use <code>--reserve-usd</code> or <code>RESERVE_AMOUNT_USD</code> to keep cash on hand for fees.</li>
       <li>Respect minimums: deposits occur only if available balance ≥ <code>MIN_USDC_STAKE</code>.</li>
       <li>Understand risk: smart contract risk and gas spikes apply; <code>max_gas_price_gwei</code> is enforced in <code>stake.py</code>.</li>
     </ul>
-    <h3>Monitoring APR for Better Yield</h3>
+    <h4>Recommended Yield Settings</h4>
+    <ul>
+      <li><code>--reserve-usd</code>: start with <code>$20–$50</code> to cover fees.</li>
+      <li><code>--min-stake</code>: default <code>100 USDC</code>; raise only after verifying deposits.</li>
+      <li><code>max_gas_price_gwei</code>: keep <code>&lt;=5</code> to avoid excessive gas costs.</li>
+      <li><code>--apr-hint</code>: use your current provider's APR (e.g., <code>4.5</code>).</li>
+      <li><code>--min-delta-bps</code>: begin with <code>50</code> to limit alert noise.</li>
+    </ul>
+    <h3 id="monitoring-apr-for-better-yield">Monitoring APR for Better Yield</h3>
     <ul>
       <li>Start with a single source endpoint to validate parsing; expand to multiple.</li>
       <li>Set <code>--apr-hint</code> to your current provider’s APR; use <code>--min-delta-bps</code> to reduce alert noise.</li>
@@ -119,7 +157,7 @@ a {
     </ul>
       </section>
       <section>
-    <h2>What To Set For Notional (Starter Amount)</h2>
+    <h2 id="what-to-set-for-notional-starter-amount">What To Set For Notional (Starter Amount)</h2>
     <ul>
       <li>Purpose: Caps the max quote value for a triangle attempt (derived from <code>AB</code> ask). Lower = safer losses, fewer fills; higher = larger PnL swings and more exposure.</li>
       <li>Baseline: Begin with the smallest amount that exceeds your venue’s min-notional for the traded symbols. On many venues this is around <code>$1–$10</code>, but check your market’s <code>limits.cost.min</code>.</li>
@@ -140,7 +178,7 @@ a {
     </ul>
       </section>
       <section>
-    <h2>Strategy Variables (from .env.example)</h2>
+    <h2 id="strategy-variables-from-envexample">Strategy Variables (from .env.example)</h2>
     <p>Below are the Strategy settings and how to think about each. Defaults are chosen to be conservative but not inert.</p>
     <h3>
       <code>NOTIONAL_PER_TRADE_USD</code>
@@ -249,7 +287,7 @@ a {
           </ul>
       </section>
       <section>
-          <h2>Practical Workflows</h2>
+          <h2 id="practical-workflows">Practical Workflows</h2>
           <ul>
             <li>First contact (safe):
               <ul>
@@ -277,7 +315,7 @@ a {
           </ul>
       </section>
       <section>
-          <h2>What To Watch In Logs and Metrics</h2>
+          <h2 id="what-to-watch-in-logs-and-metrics">What To Watch In Logs and Metrics</h2>
           <ul>
             <li>Skips by reason: frequent <code>slippage_*</code> → lower notional or slippage; frequent <code>min_notional_*</code> → raise notional slightly or pick deeper pairs.</li>
             <li>Spread quality: small bps = deep books; large bps with low depth increase slippage risk.</li>
@@ -285,7 +323,7 @@ a {
           </ul>
       </section>
       <section>
-          <h2>Database Signals for Performance Debugging</h2>
+          <h2 id="database-signals-for-performance-debugging">Database Signals for Performance Debugging</h2>
           <p>To evaluate the quality of decisions and implementation, the database logs:</p>
           <ul>
             <li>
@@ -306,7 +344,7 @@ a {
               </ul>
       </section>
       <section>
-              <h2>Safety &amp; Operational Tips</h2>
+              <h2 id="safety-operational-tips">Safety &amp; Operational Tips</h2>
               <ul>
                 <li>Use paper/sandbox keys first. Never commit secrets; prefer <code>.env</code> locally.</li>
                 <li>Confirm triangle symbols exist on your venue (and quote assets match expectations).</li>
@@ -318,7 +356,7 @@ a {
               </ul>
       </section>
       <section>
-              <h2>Interpreting <code>markets:limits</code> Output</h2>
+              <h2 id="interpreting-marketslimits-output">Interpreting <code>markets:limits</code> Output</h2>
               <p>When you run <code>python -m arbit.cli markets:limits --venue ...</code>, you’ll see lines like:</p>
               <pre>
                 <code>ETH/USDT min_cost=0.5 maker=25 bps taker=40 bps
@@ -358,7 +396,7 @@ a {
                 </ul>
       </section>
       <section>
-                <h2>Extending This Guide</h2>
+                <h2 id="extending-this-guide">Extending This Guide</h2>
                 <p>As features grow (limit orders, partial-fill reconciliation, position hedging, multi-venue routing), add sections here with:</p>
               <ul>
                 <li>New setting semantics and safe defaults.</li>
