@@ -30,8 +30,8 @@ from arbit.metrics.exporter import (
     YIELD_WITHDRAWS_TOTAL,
     start_metrics_server,
 )
-from arbit.notify import notify_discord
 from arbit.models import Fill, Triangle, TriangleAttempt
+from arbit.notify import notify_discord
 from arbit.persistence.db import init_db, insert_attempt, insert_fill, insert_triangle
 
 
@@ -597,7 +597,9 @@ def keys_check():
             symbol = (
                 "BTC/USDT"
                 if "BTC/USDT" in ms
-                else "BTC/USD" if "BTC/USD" in ms else next(iter(ms))
+                else "BTC/USD"
+                if "BTC/USD" in ms
+                else next(iter(ms))
             )
             ob = a.fetch_orderbook(symbol, 1)
             bid = ob.get("bids", [])
