@@ -10,10 +10,11 @@ import logging
 import sys
 import time
 from datetime import datetime, timezone
+from importlib import import_module as _import_module
 
 import typer
-from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.adapters.base import ExchangeAdapter
+from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
 from arbit.metrics.exporter import (
@@ -32,6 +33,7 @@ from arbit.metrics.exporter import (
     start_metrics_server,
 )
 from arbit.models import Fill, Triangle, TriangleAttempt
+from arbit.notify import notify_discord
 from arbit.persistence.db import (
     init_db,
     insert_attempt,
@@ -39,8 +41,6 @@ from arbit.persistence.db import (
     insert_triangle,
     insert_yield_op,
 )
-from arbit.notify import notify_discord
-from importlib import import_module as _import_module
 
 # Expose AaveProvider at module scope for tests to monkeypatch.
 try:
@@ -750,7 +750,9 @@ def keys_check():
             symbol = (
                 "BTC/USDT"
                 if "BTC/USDT" in ms
-                else "BTC/USD" if "BTC/USD" in ms else next(iter(ms))
+                else "BTC/USD"
+                if "BTC/USD" in ms
+                else next(iter(ms))
             )
             ob = a.fetch_orderbook(symbol, 1)
             bid = ob.get("bids", [])
@@ -1410,7 +1412,7 @@ def live(
             ):
                 try:
                     msg = (
-                        f"[{venue}] TRADE {tri} net={res['net_est']*100:.2f}% "
+                        f"[{venue}] TRADE {tri} net={res['net_est'] * 100:.2f}% "
                         f"pnl={res['realized_usdt']:.4f} USDT "
                     )
                     if attempt_id is not None:
