@@ -101,11 +101,9 @@ class Settings(BaseSettings):
     # Per-venue triangle definitions (override via JSON in env if desired)
     # Format: { venue: [[leg_ab, leg_bc, leg_ac], ...], ... }
     triangles_by_venue: dict[str, list[list[str]]] = {
-        "alpaca": [
-            ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
-            ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
-            # Note: Alpaca typically lacks BTC-quoted alts like SOL/BTC; omit SOL triangle here.
-        ],
+        # Alpaca crypto typically lacks crypto-to-crypto crosses like ETH/BTC.
+        # Leave empty by default to avoid unsupported-symbol errors.
+        "alpaca": [],
         "kraken": [
             ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
             ["ETH/USDC", "ETH/BTC", "BTC/USDC"],

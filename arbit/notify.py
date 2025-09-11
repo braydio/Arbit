@@ -42,7 +42,7 @@ def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
 
     webhook = url or getattr(settings, "discord_webhook_url", None)
     if not webhook:
-        log.debug("notify_discord: webhook not configured; skipping")
+        log.info("notify_discord: webhook not configured; skipping")
         return
 
     # Ensure webhook uses wait=true so Discord returns a response body
