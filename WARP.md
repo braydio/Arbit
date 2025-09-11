@@ -1,117 +1,8 @@
-# WARP.md
+# ROADMAP
 
-This file provides guidance to WARP (warp.dev) when working with code in this repository.
+This document outlines current capabilities and future development for the Arbit triangular arbitrage system.
 
-# Arbit Triangular Arbitrage System
-
-This repository contains a modular Python package for triangular arbitrage trading on cryptocurrency exchanges, with CLI interface, metrics, SQLite persistence, Docker support, and optional DeFi integration.
-
-## TLDR Quickstart
-
-```bash
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-python -m pip install -U pip
-pip install ccxt pydantic typer prometheus-client orjson websockets pytest
-
-# Set credentials for your chosen venue
-export ARBIT_API_KEY=your_venue_specific_key
-export ARBIT_API_SECRET=your_venue_specific_secret
-
-# Read-only connectivity test
-python -m arbit.cli fitness --venue kraken --secs 10
-
-# Live trading loop with metrics (⚠️  places real orders)
-python -m arbit.cli live --venue alpaca --cycles 1 --metrics-port 9109
-
-# Check metrics
-curl http://localhost:9109/metrics
-```
-
-**Notes:**
-- Use `fitness` command for safe read-only testing.
-- The `live` command can place real orders - use with caution.
- - Deprecated legacy TUI script in `deprecated/legacy_arbit.py` (prefer `arbit.cli`).
-
-## Development Workflow
-
-### Virtual Environment
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install ccxt pydantic typer prometheus-client orjson websockets pytest
-# Optional for DeFi integration:
-pip install web3
-```
-
-### Running Tests
-```bash
-pytest -q
-```
-
-### CLI Commands
-
-| Mode        | Purpose                                                         | Example log line                             |
-|-------------|-----------------------------------------------------------------|----------------------------------------------|
-| `fitness`   | Read-only spread sampling; optional dry-run simulation          | `kraken ETH/USDT spread=0.5 bps`             |
-| `live`      | Execute trades when triangles meet profit thresholds            | `alpaca Triangle(...) net=0.15% PnL=0.05`    |
-| `keys:check`| Validate exchange keys and permissions                          | `[alpaca] markets=123 BTC/USDT 60000/60010`  |
-| `markets:limits` | List min-notional and fees for symbols                   | `BTC/USDT min_cost=5 maker=10bps taker=10bps`|
-| `config:recommend` | Suggest starter Strategy settings                      | `Recommend: NOTIONAL=10 NET=25 ...`          |
-
-Run `python -m arbit.cli --help-verbose` for command flags and additional output samples.
-
-- Deprecated legacy TUI (monitor-only): `python deprecated/legacy_arbit.py --tui` (use `python -m arbit.cli` instead)
-
-### Configuration
-The system uses Pydantic Settings with environment prefix `ARBIT_`:
-- `ARBIT_API_KEY`, `ARBIT_API_SECRET`: Exchange credentials
-- `ARBIT_NET_THRESHOLD`: Minimum net return threshold (default: 0.001)
-- `ARBIT_DATA_DIR`: Data directory (default: ./data)
-- `ARBIT_LOG_PATH`: Log file path (default: ./arbit.log)
-
-### Platform-Specific Notes
-- Ensure data directory exists: `mkdir -p data`
-- Windows legacy TUI dependency: `pip install windows-curses`
-- Deactivate venv: `deactivate`
-
-## Configuration and Environment
-
-### Modern CLI Configuration
-The system uses `arbit.config.Settings` (Pydantic) with environment prefix `ARBIT_` and `.env` support.
-
-**Core Environment Variables:**
-```bash
-# Exchange credentials (used by CCXT)
-ARBIT_API_KEY=your_venue_api_key
-ARBIT_API_SECRET=your_venue_api_secret
-
-# Trading parameters
-ARBIT_NET_THRESHOLD=0.001  # minimum net return threshold
-ARBIT_DATA_DIR=./data      # directory for SQLite and logs
-ARBIT_LOG_PATH=./arbit.log # log file path
-ARBIT_RESERVE_AMOUNT_USD=0 # funds to keep in reserve
-ARBIT_RESERVE_PERCENT=0    # percentage of balance to reserve
-```
-
-**DeFi Integration (Aave) Environment Variables:**
-```bash
-# Required for stake.py
-RPC_URL=https://your-rpc-endpoint
-PRIVATE_KEY=0x...
-ARBIT_USDC_ADDRESS=0x...   # chain-specific USDC contract
-ARBIT_POOL_ADDRESS=0x...   # Aave v3 Pool contract
-ARBIT_USDC_ABI_PATH=erc20.json      # default
-ARBIT_POOL_ABI_PATH=aave_pool.json  # default
-```
-
-**Docker Environment Mapping:**
-In `docker-compose.yml`, per-venue keys are mapped:
-- Alpaca service: `ARBIT_API_KEY=${ARBIT_ALPACA_API_KEY}`
-- Kraken service: `ARBIT_API_KEY=${ARBIT_KRAKEN_API_KEY}`
-
-Refer to `.env.example` for complete configuration template.
+For installation and configuration guidance, see the [README](README.md).
 
 ## What Ships Today
 
@@ -226,26 +117,26 @@ net   = gross * (1 - fee)^3 - 1
 ## Development Roadmap
 
 ### Phase 1 (MVP Weekend)
-- ✅ ccxt REST monitor with TUI
-- ✅ Single triangle, single exchange
-- ✅ Estimates only, no execution
-- 🔄 Optional: Aave USDC deposit utility
+- [x] ccxt REST monitor with TUI
+- [x] Single triangle, single exchange
+- [x] Estimates only, no execution
+- [ ] Optional Aave USDC deposit utility
 
 ### Phase 2 (Production Ready)
-- WebSocket order books for reduced latency
-- Multi-symbol rotation and inventory rebalancing  
-- Prometheus metrics and monitoring
-- Dry-run execution mode → controlled live trading
-- Strict notional caps and IOC-only orders
-- Automated stablecoin allocator with thresholds
+- [ ] WebSocket order books for reduced latency
+- [ ] Multi-symbol rotation and inventory rebalancing
+- [ ] Prometheus metrics and monitoring
+- [ ] Dry-run execution mode → controlled live trading
+- [ ] Strict notional caps and IOC-only orders
+- [ ] Automated stablecoin allocator with thresholds
 
 ### Phase 3 (Multi-Exchange)
-- Cross-exchange arbitrage routing
-- Hedger logic for risk management
-- Robust error handling and recovery
-- Idempotent operations with client IDs
-- Production alerting and monitoring
-- Full containerization and deployment automation
+- [ ] Cross-exchange arbitrage routing
+- [ ] Hedger logic for risk management
+- [ ] Robust error handling and recovery
+- [ ] Idempotent operations with client IDs
+- [ ] Production alerting and monitoring
+- [ ] Full containerization and deployment automation
 
 ## Safety and Risk Management
 
