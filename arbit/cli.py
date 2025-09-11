@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 import typer
 from arbit.adapters.ccxt_adapter import CCXTAdapter
+from arbit.adapters.base import ExchangeAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
 from arbit.metrics.exporter import (
@@ -238,6 +239,29 @@ def _build_adapter(venue: str, _settings=settings):
     """
 
     return CCXTAdapter(venue)
+
+
+def _log_balances(venue: str, adapter: ExchangeAdapter) -> None:
+    """Log non-zero asset balances for *adapter* at run start.
+
+    Parameters
+    ----------
+    venue:
+        Exchange identifier used for logging context.
+    adapter:
+        Exchange adapter queried for balances.
+    """
+
+    try:
+        bals = adapter.balances()
+    except Exception as exc:  # pragma: no cover - defensive
+        log.warning("%s balance fetch failed: %s", venue, exc)
+        return
+    if bals:
+        bal_str = ", ".join(f"{k}={v}" for k, v in bals.items())
+        log.info("%s starting balances %s", venue, bal_str)
+    else:
+        log.info("%s starting balances none", venue)
 
 
 @app.command("yield:collect")
@@ -805,6 +829,7 @@ def config_recommend(
     """
 
     a = _build_adapter(venue, settings)
+    _log_balances(venue, a)
     tris = _triangles_for(venue)
     tri = tris[0]
     legs = [tri.leg_ab, tri.leg_bc, tri.leg_ac]
@@ -863,7 +888,8 @@ def fitness(
 
     When ``--simulate`` is provided, attempt dry-run triangle executions using
     current order books and log simulated PnL. Use ``--persist`` to store
-    simulated fills in SQLite for later analysis.
+    simulated fills in SQLite for later analysis. Current account balances are
+    logged at startup for supported venues.
     """
 
     if help_verbose:
@@ -878,13 +904,16 @@ def fitness(
             "Use --dummy-trigger to inject one synthetic profitable triangle in fitness"
             " mode to exercise the execution path without placing real orders."
         )
-        typer.echo("Use --symbols 'A/B,C/D,...' to restrict triangles by legs (all legs must match).")
+        typer.echo(
+            "Use --symbols 'A/B,C/D,...' to restrict triangles by legs (all legs must match)."
+        )
         typer.echo(
             "Use --discord-heartbeat-secs to send periodic summaries to Discord (0=off)."
         )
         raise SystemExit(0)
 
     a = _build_adapter(venue, settings)
+    _log_balances(venue, a)
     tris = _triangles_for(venue)
     # Optional: filter triangles by CSV of symbols (must include all three legs)
     allowed: set[str] | None = None
@@ -1128,7 +1157,8 @@ def fitness(
             loop_idx += 1
             # Optional Discord heartbeat during fitness
             if (
-                discord_heartbeat_secs and discord_heartbeat_secs > 0
+                discord_heartbeat_secs
+                and discord_heartbeat_secs > 0
                 and (time.time() - last_hb_at) > float(discord_heartbeat_secs)
             ):
                 try:
@@ -1169,7 +1199,10 @@ def live(
     symbols: str | None = None,
     help_verbose: bool = False,
 ):
-    """Continuously scan for profitable triangles and execute trades."""
+    """Continuously scan for profitable triangles and execute trades.
+
+    Logs current account balances at startup for supported venues.
+    """
 
     if help_verbose:
         typer.echo(
@@ -1180,6 +1213,7 @@ def live(
 
     async def _run() -> None:
         a = _build_adapter(venue, settings)
+        _log_balances(venue, a)
         start_metrics_server(settings.prom_port)
         conn = init_db(settings.sqlite_path)
         tris = _triangles_for(venue)
@@ -1217,7 +1251,9 @@ def live(
         # Discord notify controls
         last_alert_at = 0.0
         last_trade_notify_at = 0.0
-        min_interval = float(getattr(settings, "discord_min_notify_interval_secs", 10) or 10)
+        min_interval = float(
+            getattr(settings, "discord_min_notify_interval_secs", 10) or 10
+        )
         # Live start notice
         if bool(getattr(settings, "discord_live_start_notify", True)):
             try:
@@ -1238,6 +1274,7 @@ def live(
         successes_total = 0
         # Aggregate skip reasons for visibility in periodic summaries
         from collections import defaultdict
+
         skip_counts: dict[str, int] = defaultdict(int)
         async for tri, res, skip_reasons, latency in stream_triangles(
             a, tris, settings.net_threshold_bps / 10000.0
@@ -1379,8 +1416,9 @@ def live(
                     if attempt_id is not None:
                         msg += f"attempt_id={attempt_id} "
                     qty = (
-                        float(res['fills'][0]['qty'])
-                        if res and res.get('fills') else None
+                        float(res["fills"][0]["qty"])
+                        if res and res.get("fills")
+                        else None
                     )
                     if qty is not None:
                         msg += f"qty={qty:.6g} "
@@ -1397,7 +1435,11 @@ def live(
             if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
                 # Console heartbeat for local visibility
                 try:
-                    succ_rate = (successes_total / attempts_total * 100.0) if attempts_total else 0.0
+                    succ_rate = (
+                        (successes_total / attempts_total * 100.0)
+                        if attempts_total
+                        else 0.0
+                    )
                     log.info(
                         (
                             "live@%s hb: dry_run=%s attempts=%d successes=%d (%.2f%%) "
@@ -1413,7 +1455,9 @@ def live(
                     )
                     if skip_counts:
                         # Show top 3 skip reasons by count for quick diagnosis
-                        top = sorted(skip_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+                        top = sorted(
+                            skip_counts.items(), key=lambda kv: kv[1], reverse=True
+                        )[:3]
                         log.info(
                             "live@%s hb: top_skips=%s",
                             venue,
