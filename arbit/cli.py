@@ -10,6 +10,7 @@ import logging
 import sys
 import time
 from datetime import datetime, timezone
+from importlib import import_module as _import_module
 
 import typer
 from arbit.adapters.ccxt_adapter import CCXTAdapter
@@ -31,6 +32,7 @@ from arbit.metrics.exporter import (
     start_metrics_server,
 )
 from arbit.models import Fill, Triangle, TriangleAttempt
+from arbit.notify import notify_discord
 from arbit.persistence.db import (
     init_db,
     insert_attempt,
@@ -38,8 +40,6 @@ from arbit.persistence.db import (
     insert_triangle,
     insert_yield_op,
 )
-from arbit.notify import notify_discord
-from importlib import import_module as _import_module
 
 # Expose AaveProvider at module scope for tests to monkeypatch.
 try:
@@ -726,7 +726,9 @@ def keys_check():
             symbol = (
                 "BTC/USDT"
                 if "BTC/USDT" in ms
-                else "BTC/USD" if "BTC/USD" in ms else next(iter(ms))
+                else "BTC/USD"
+                if "BTC/USD" in ms
+                else next(iter(ms))
             )
             ob = a.fetch_orderbook(symbol, 1)
             bid = ob.get("bids", [])
@@ -878,7 +880,9 @@ def fitness(
             "Use --dummy-trigger to inject one synthetic profitable triangle in fitness"
             " mode to exercise the execution path without placing real orders."
         )
-        typer.echo("Use --symbols 'A/B,C/D,...' to restrict triangles by legs (all legs must match).")
+        typer.echo(
+            "Use --symbols 'A/B,C/D,...' to restrict triangles by legs (all legs must match)."
+        )
         typer.echo(
             "Use --discord-heartbeat-secs to send periodic summaries to Discord (0=off)."
         )
@@ -1128,7 +1132,8 @@ def fitness(
             loop_idx += 1
             # Optional Discord heartbeat during fitness
             if (
-                discord_heartbeat_secs and discord_heartbeat_secs > 0
+                discord_heartbeat_secs
+                and discord_heartbeat_secs > 0
                 and (time.time() - last_hb_at) > float(discord_heartbeat_secs)
             ):
                 try:
@@ -1217,7 +1222,9 @@ def live(
         # Discord notify controls
         last_alert_at = 0.0
         last_trade_notify_at = 0.0
-        min_interval = float(getattr(settings, "discord_min_notify_interval_secs", 10) or 10)
+        min_interval = float(
+            getattr(settings, "discord_min_notify_interval_secs", 10) or 10
+        )
         # Live start notice
         if bool(getattr(settings, "discord_live_start_notify", True)):
             try:
@@ -1238,6 +1245,7 @@ def live(
         successes_total = 0
         # Aggregate skip reasons for visibility in periodic summaries
         from collections import defaultdict
+
         skip_counts: dict[str, int] = defaultdict(int)
         async for tri, res, skip_reasons, latency in stream_triangles(
             a, tris, settings.net_threshold_bps / 10000.0
@@ -1373,14 +1381,15 @@ def live(
             ):
                 try:
                     msg = (
-                        f"[{venue}] TRADE {tri} net={res['net_est']*100:.2f}% "
+                        f"[{venue}] TRADE {tri} net={res['net_est'] * 100:.2f}% "
                         f"pnl={res['realized_usdt']:.4f} USDT "
                     )
                     if attempt_id is not None:
                         msg += f"attempt_id={attempt_id} "
                     qty = (
-                        float(res['fills'][0]['qty'])
-                        if res and res.get('fills') else None
+                        float(res["fills"][0]["qty"])
+                        if res and res.get("fills")
+                        else None
                     )
                     if qty is not None:
                         msg += f"qty={qty:.6g} "
@@ -1397,7 +1406,11 @@ def live(
             if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
                 # Console heartbeat for local visibility
                 try:
-                    succ_rate = (successes_total / attempts_total * 100.0) if attempts_total else 0.0
+                    succ_rate = (
+                        (successes_total / attempts_total * 100.0)
+                        if attempts_total
+                        else 0.0
+                    )
                     log.info(
                         (
                             "live@%s hb: dry_run=%s attempts=%d successes=%d (%.2f%%) "
@@ -1413,7 +1426,9 @@ def live(
                     )
                     if skip_counts:
                         # Show top 3 skip reasons by count for quick diagnosis
-                        top = sorted(skip_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+                        top = sorted(
+                            skip_counts.items(), key=lambda kv: kv[1], reverse=True
+                        )[:3]
                         log.info(
                             "live@%s hb: top_skips=%s",
                             venue,
