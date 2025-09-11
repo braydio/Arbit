@@ -10,6 +10,7 @@ import logging
 import sys
 import time
 from datetime import datetime, timezone
+from importlib import import_module
 
 import typer
 from arbit.adapters.ccxt_adapter import CCXTAdapter
@@ -31,6 +32,7 @@ from arbit.metrics.exporter import (
     start_metrics_server,
 )
 from arbit.models import Fill, Triangle, TriangleAttempt
+from arbit.notify import fmt_usd, notify_discord
 from arbit.persistence.db import (
     init_db,
     insert_attempt,
@@ -38,7 +40,8 @@ from arbit.persistence.db import (
     insert_triangle,
     insert_yield_op,
 )
-from arbit.yield import AaveProvider
+
+AaveProvider = import_module("arbit.yield").AaveProvider
 
 
 class CLIApp(typer.Typer):
@@ -335,7 +338,10 @@ def yield_collect(
         try:
             notify_discord(
                 "yield",
-                f"[yield] DRY-RUN deposit {amount_raw / 1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
+                (
+                    "[yield] DRY-RUN deposit "
+                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC to Aave | reserve {fmt_usd(reserve_final)} USDC"
+                ),
             )
         except Exception:
             pass
@@ -375,7 +381,10 @@ def yield_collect(
         try:
             notify_discord(
                 "yield",
-                f"[yield] deposited {amount_raw / 1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
+                (
+                    "[yield] deposited "
+                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC to Aave | reserve {fmt_usd(reserve_final)} USDC"
+                ),
             )
         except Exception:
             pass
@@ -517,7 +526,10 @@ def yield_withdraw(
         try:
             notify_discord(
                 "yield",
-                f"[yield] DRY-RUN withdraw {amount_raw / 1_000_000.0:.2f} USDC from Aave",
+                (
+                    "[yield] DRY-RUN withdraw "
+                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC from Aave"
+                ),
             )
         except Exception:
             pass
@@ -553,7 +565,10 @@ def yield_withdraw(
         try:
             notify_discord(
                 "yield",
-                f"[yield] withdrew {amount_raw / 1_000_000.0:.2f} USDC from Aave",
+                (
+                    "[yield] withdrew "
+                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC from Aave"
+                ),
             )
         except Exception:
             pass
@@ -684,8 +699,8 @@ def yield_watch(
 
         if target_apr is not None and best_apr >= target_apr + min_delta:
             msg = (
-                f"Better yield available for {asset_u}: {best_provider} {best_apr:.2f}% "
-                f">= current {target_apr:.2f}% + {min_delta:.2f}%"
+                f"Better {asset_u} yield: {best_provider} {best_apr:.2f}% "
+                f"(current {target_apr:.2f}% +{min_delta:.2f}% threshold)"
             )
             log.info(msg)
             try:
@@ -930,7 +945,7 @@ def fitness(
                     try:
                         notify_discord(
                             venue,
-                            f"[{venue}] dummy_trigger: injected synthetic profitable triangle for {tri0}",
+                            f"[{venue}] dummy_trigger: injected synthetic profitable triangle {tri0}",
                         )
                     except Exception:
                         pass
@@ -1195,7 +1210,7 @@ def live(
                     if actionable and time.time() - last_alert_at > 10:
                         notify_discord(
                             venue,
-                            f"[{venue}] skipped {tri} reasons: {', '.join(actionable)}",
+                            f"[{venue}] skipped {tri} - reasons: {', '.join(actionable)}",
                         )
                         last_alert_at = time.time()
                 else:
@@ -1254,9 +1269,11 @@ def live(
                     notify_discord(
                         venue,
                         (
-                            f"[{venue}] heartbeat dry_run={getattr(settings, 'dry_run', True)} "
-                            f"attempts={attempts_total} successes={successes_total} "
-                            f"last_net={res['net_est'] * 100:.2f}% last_pnl={res['realized_usdt']:.2f} USDT"
+                            f"[{venue}] heartbeat: "
+                            f"dry_run={getattr(settings, 'dry_run', True)}, "
+                            f"attempts={attempts_total}, successes={successes_total}, "
+                            f"last_net={res['net_est'] * 100:.2f}%, "
+                            f"last_pnl={fmt_usd(res['realized_usdt'])} USDT"
                         ),
                     )
                 except Exception:

@@ -15,6 +15,24 @@ from .config import settings
 from .metrics.exporter import ERRORS_TOTAL
 
 
+def fmt_usd(amount: float) -> str:
+    """Return *amount* formatted as a USD string.
+
+    Parameters
+    ----------
+    amount:
+        Numeric dollar amount to format.
+
+    Returns
+    -------
+    str
+        Dollar amount with thousands separator and two decimals, prefixed
+        by ``$``.
+    """
+
+    return f"${amount:,.2f}"
+
+
 def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
     """Send *message* to a Discord webhook.
 

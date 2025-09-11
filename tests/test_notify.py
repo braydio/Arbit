@@ -27,3 +27,8 @@ def test_notify_discord_sends_with_url(monkeypatch):
         assert mock_open.call_count == 1
         req = mock_open.call_args.args[0]
         assert req.full_url == "https://example.com"
+
+
+def test_fmt_usd_formats_with_separator():
+    """fmt_usd should include separators and dollar sign."""
+    assert notify.fmt_usd(1234.5) == "$1,234.50"
