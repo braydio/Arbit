@@ -10,9 +10,13 @@ from __future__ import annotations
 import json
 import urllib.request
 from typing import Optional
+import logging
 
 from .config import settings
 from .metrics.exporter import ERRORS_TOTAL
+
+
+log = logging.getLogger("arbit")
 
 
 def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
@@ -38,16 +42,57 @@ def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
 
     webhook = url or getattr(settings, "discord_webhook_url", None)
     if not webhook:
+        log.debug("notify_discord: webhook not configured; skipping")
         return
 
-    data = json.dumps({"content": message}).encode("utf-8")
+    # Ensure webhook uses wait=true so Discord returns a response body
+    url = webhook
+    try:
+        from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
+
+        pr = urlparse(webhook)
+        if pr.netloc.endswith("discord.com") or pr.netloc.endswith("discordapp.com"):
+            qs = dict(parse_qsl(pr.query, keep_blank_values=True))
+            if "wait" not in qs:
+                qs["wait"] = "true"
+                pr = pr._replace(query=urlencode(qs))
+                url = urlunparse(pr)
+    except Exception:
+        url = webhook
+
+    payload = json.dumps({"content": message}).encode("utf-8")
     req = urllib.request.Request(
-        webhook, data=data, headers={"Content-Type": "application/json"}
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "arbit-cli/1.0 (+https://github.com/)",
+        },
+        method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=3):
+            log.info("notify_discord: sent message (%d chars)", len(message or ""))
             return
-    except Exception:
+    except Exception as e:
+        detail = None
+        try:  # include response body when available (e.g., HTTPError)
+            detail = getattr(e, "read", lambda: b"")()  # type: ignore[attr-defined]
+            if detail:
+                detail = detail.decode("utf-8", errors="ignore")
+        except Exception:
+            detail = None
+        if hasattr(e, "code"):
+            code = getattr(e, "code")
+            if int(code) == 403:
+                log.error(
+                    "notify_discord: 403 Forbidden. Check webhook is valid and has access. (%s)",
+                    detail or e,
+                )
+            else:
+                log.error("notify_discord: HTTP %s error: %s", code, detail or e)
+        else:
+            log.error("notify_discord: send failed: %s", e)
         try:
             ERRORS_TOTAL.labels(venue, "discord_send").inc()
         except Exception:

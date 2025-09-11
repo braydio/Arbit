@@ -33,6 +33,13 @@ USDT → ETH → BTC → USDT via symbols:
 - BC = ETH/BTC (sell ETH for BTC)
 - AC = BTC/USDT (sell BTC for USDT)
 
+### New Triangle Candidate: SOL → BTC → USDT
+- AB = SOL/USDT (buy SOL with USDT)
+- BC = SOL/BTC (sell SOL for BTC)
+- AC = BTC/USDT (sell BTC for USDT)
+
+Rationale: SOL has strong liquidity and an active BTC cross on Alpaca and Kraken, increasing the odds of small, frequent inefficiencies. This triangle is added to default configs for both venues. Rollout steps below help validate safely.
+
 ### Profit Calculation
 **Current Implementation:**
 ```text
@@ -125,7 +132,15 @@ net   = gross * (1 - fee)^3 - 1
 ### Phase 2 (Production Ready)
  - [ ] WebSocket order books for reduced latency
  - [ ] Multi-symbol rotation and inventory rebalancing
- - [ ] Prometheus metrics and monitoring
+- [ ] Prometheus metrics and monitoring
+
+### Triangle Expansion (Ongoing)
+- [x] Add SOL/USDT–SOL/BTC–BTC/USDT to default triangles (alpaca, kraken)
+- [ ] Verify symbol availability per venue with `keys:check` in docs/examples
+- [ ] Paper test in `fitness --simulate` and persist to SQLite for sizing review
+- [ ] Tune `NET_THRESHOLD_BPS` and `MAX_SLIPPAGE_BPS` per venue for SOL triangle
+- [ ] Monitor `min_notional` and taker fees per leg; document venue-specific quirks
+- [ ] Consider adding XRP/BTC/USDT as a next candidate pending liquidity checks
  - [ ] Dry-run execution mode for controlled live trading
  - [ ] Strict notional caps and IOC-only orders
  - [ ] Automated stablecoin allocator with thresholds

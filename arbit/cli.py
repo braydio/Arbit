@@ -38,7 +38,14 @@ from arbit.persistence.db import (
     insert_triangle,
     insert_yield_op,
 )
-from arbit.yield import AaveProvider
+from arbit.notify import notify_discord
+from importlib import import_module as _import_module
+
+# Expose AaveProvider at module scope for tests to monkeypatch.
+try:
+    AaveProvider = getattr(_import_module("arbit.yield"), "AaveProvider")
+except Exception:
+    AaveProvider = None
 
 
 class CLIApp(typer.Typer):
@@ -144,7 +151,8 @@ class CLIApp(typer.Typer):
             "live\n"
             "  Continuously scan for profitable triangles and execute trades.\n"
             "  Flags (optional):\n"
-            "    --venue TEXT   Exchange to trade on (default: alpaca)\n"
+            "    --venue TEXT     Exchange to trade on (default: alpaca)\n"
+            "    --symbols TEXT   CSV filter; only triangles whose three legs are all included are traded\n"
             "    --help-verbose Print extra context about live output semantics\n"
             "  Sample output:\n"
             "    alpaca ETH/BTC net=0.5% PnL=0.10 USDT\n"
@@ -282,7 +290,11 @@ def yield_collect(
         if reserve_usd is not None
         else float(getattr(settings, "reserve_amount_usd", 0.0))
     )
-    reserve_pct = float(getattr(settings, "reserve_percent", 0.0)) / 100.0
+    _rp = getattr(settings, "reserve_percent", 0.0)
+    try:
+        reserve_pct = float(_rp) / 100.0
+    except Exception:
+        reserve_pct = 0.0
     reserve_pct_amt = bal_usd * reserve_pct if reserve_pct > 0 else 0.0
     reserve_final = max(reserve_abs, reserve_pct_amt)
 
@@ -290,7 +302,9 @@ def yield_collect(
     amount_raw = int(available_usd * 1_000_000)
     # Default minimum stake from settings
     min_units = (
-        int(min_stake) if min_stake is not None else int(settings.min_usdc_stake)
+        int(min_stake)
+        if min_stake is not None
+        else int(getattr(settings, "min_usdc_stake", 1_000_000))
     )
 
     if amount_raw < min_units:
@@ -447,7 +461,11 @@ def yield_withdraw(
         if reserve_usd is not None
         else float(getattr(settings, "reserve_amount_usd", 0.0))
     )
-    reserve_pct = float(getattr(settings, "reserve_percent", 0.0)) / 100.0
+    _rp = getattr(settings, "reserve_percent", 0.0)
+    try:
+        reserve_pct = float(_rp) / 100.0
+    except Exception:
+        reserve_pct = 0.0
 
     # Open DB for persistence (best-effort)
     try:
@@ -837,6 +855,8 @@ def fitness(
     simulate: bool = False,
     persist: bool = False,
     dummy_trigger: bool = False,
+    symbols: str | None = None,
+    discord_heartbeat_secs: float = 0.0,
     help_verbose: bool = False,
 ):
     """Read-only sanity check that prints bid/ask spreads.
@@ -858,12 +878,36 @@ def fitness(
             "Use --dummy-trigger to inject one synthetic profitable triangle in fitness"
             " mode to exercise the execution path without placing real orders."
         )
+        typer.echo("Use --symbols 'A/B,C/D,...' to restrict triangles by legs (all legs must match).")
+        typer.echo(
+            "Use --discord-heartbeat-secs to send periodic summaries to Discord (0=off)."
+        )
         raise SystemExit(0)
 
     a = _build_adapter(venue, settings)
     tris = _triangles_for(venue)
+    # Optional: filter triangles by CSV of symbols (must include all three legs)
+    allowed: set[str] | None = None
+    if symbols:
+        allowed = {s.strip() for s in symbols.split(",") if s.strip()}
+        if allowed:
+            tris = [
+                t
+                for t in tris
+                if all(leg in allowed for leg in (t.leg_ab, t.leg_bc, t.leg_ac))
+            ]
     t0 = time.time()
     syms = {s for t in tris for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
+    # Status banner: show active triangles and legs after filters
+    if tris:
+        tri_list = ", ".join(f"{t.leg_ab}|{t.leg_bc}|{t.leg_ac}" for t in tris)
+        log.info(
+            "fitness@%s active triangles=%d symbols=%d -> %s",
+            venue,
+            len(tris),
+            len(syms),
+            tri_list,
+        )
 
     # Optional persistence for simulated fills
     conn = None
@@ -886,12 +930,17 @@ def fitness(
     sim_count = 0
     sim_pnl = 0.0
     loop_idx = 0
+    last_hb_at = 0.0
     try:
         while time.time() - t0 < secs:
             books_cache: dict[str, dict] = {}
             # Spread sampling per symbol
             for s in syms:
-                ob = a.fetch_orderbook(s, 5)
+                try:
+                    ob = a.fetch_orderbook(s, 5)
+                except Exception as e:
+                    log.warning("%s fetch_orderbook skip %s: %s", venue, s, e)
+                    continue
                 books_cache[s] = ob
                 if ob.get("bids") and ob.get("asks"):
                     spread = (
@@ -1077,6 +1126,22 @@ def fitness(
                     )
             time.sleep(0.25)
             loop_idx += 1
+            # Optional Discord heartbeat during fitness
+            if (
+                discord_heartbeat_secs and discord_heartbeat_secs > 0
+                and (time.time() - last_hb_at) > float(discord_heartbeat_secs)
+            ):
+                try:
+                    notify_discord(
+                        venue,
+                        (
+                            f"[fitness@{venue}] heartbeat simulate={simulate} symbols={len(syms)} "
+                            f"loops={loop_idx} sim_trades={sim_count} sim_total_pnl={sim_pnl:.2f} USDT"
+                        ),
+                    )
+                except Exception:
+                    pass
+                last_hb_at = time.time()
     finally:
         if simulate:
             try:
@@ -1101,6 +1166,7 @@ def fitness(
 @app.command()
 def live(
     venue: str = "alpaca",
+    symbols: str | None = None,
     help_verbose: bool = False,
 ):
     """Continuously scan for profitable triangles and execute trades."""
@@ -1117,13 +1183,62 @@ def live(
         start_metrics_server(settings.prom_port)
         conn = init_db(settings.sqlite_path)
         tris = _triangles_for(venue)
+        # Optional: filter triangles by CSV of symbols (must include all three legs)
+        if symbols:
+            allowed = {s.strip() for s in symbols.split(",") if s.strip()}
+            if allowed:
+                tris = [
+                    t
+                    for t in tris
+                    if all(leg in allowed for leg in (t.leg_ab, t.leg_bc, t.leg_ac))
+                ]
+        # Filter out triangles with legs not listed by the venue (defensive)
+        try:
+            ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
+            tris = [
+                t
+                for t in tris
+                if all(leg in ms for leg in (t.leg_ab, t.leg_bc, t.leg_ac))
+            ]
+        except Exception:
+            pass
+        # Status banner: show active triangles after filtering and market check
+        if tris:
+            tri_list = ", ".join(f"{t.leg_ab}|{t.leg_bc}|{t.leg_ac}" for t in tris)
+            log.info(
+                "live@%s active triangles=%d -> %s",
+                venue,
+                len(tris),
+                tri_list,
+            )
         for tri in tris:
             insert_triangle(conn, tri)
         log.info("live@%s dry_run=%s", venue, settings.dry_run)
+        # Discord notify controls
         last_alert_at = 0.0
+        last_trade_notify_at = 0.0
+        min_interval = float(getattr(settings, "discord_min_notify_interval_secs", 10) or 10)
+        # Live start notice
+        if bool(getattr(settings, "discord_live_start_notify", True)):
+            try:
+                notify_discord(
+                    venue,
+                    (
+                        f"[live@{venue}] start dry_run={getattr(settings, 'dry_run', True)} "
+                        f"threshold_bps={getattr(settings, 'net_threshold_bps', 0)} "
+                        f"notional=${getattr(settings, 'notional_per_trade_usd', 0)} "
+                        f"slippage_bps={getattr(settings, 'max_slippage_bps', 0)} "
+                        f"triangles={len(tris)}"
+                    ),
+                )
+            except Exception:
+                pass
         last_hb_at = 0.0
         attempts_total = 0
         successes_total = 0
+        # Aggregate skip reasons for visibility in periodic summaries
+        from collections import defaultdict
+        skip_counts: dict[str, int] = defaultdict(int)
         async for tri, res, skip_reasons, latency in stream_triangles(
             a, tris, settings.net_threshold_bps / 10000.0
         ):
@@ -1187,16 +1302,24 @@ def live(
                             SKIPS_TOTAL.labels(venue, r).inc()
                         except Exception:
                             pass
+                        skip_counts[r] = skip_counts.get(r, 0) + 1
                     actionable = [
                         r
                         for r in skip_reasons
                         if r.startswith("slippage") or r.startswith("min_notional")
                     ]
-                    if actionable and time.time() - last_alert_at > 10:
-                        notify_discord(
-                            venue,
-                            f"[{venue}] skipped {tri} reasons: {', '.join(actionable)}",
-                        )
+                    if (
+                        actionable
+                        and bool(getattr(settings, "discord_skip_notify", True))
+                        and time.time() - last_alert_at > min_interval
+                    ):
+                        try:
+                            notify_discord(
+                                venue,
+                                f"[{venue}] skipped {tri} reasons: {', '.join(actionable)}",
+                            )
+                        except Exception:
+                            pass
                         last_alert_at = time.time()
                 else:
                     try:
@@ -1244,12 +1367,60 @@ def live(
                 res["net_est"] * 100,
                 res["realized_usdt"],
             )
+            # Trade executed notification
+            if bool(getattr(settings, "discord_trade_notify", False)) and (
+                time.time() - last_trade_notify_at > min_interval
+            ):
+                try:
+                    msg = (
+                        f"[{venue}] TRADE {tri} net={res['net_est']*100:.2f}% "
+                        f"pnl={res['realized_usdt']:.4f} USDT "
+                    )
+                    if attempt_id is not None:
+                        msg += f"attempt_id={attempt_id} "
+                    qty = (
+                        float(res['fills'][0]['qty'])
+                        if res and res.get('fills') else None
+                    )
+                    if qty is not None:
+                        msg += f"qty={qty:.6g} "
+                    msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)}"
+                    notify_discord(venue, msg)
+                except Exception:
+                    pass
+                last_trade_notify_at = time.time()
 
             # Periodic Discord heartbeat summary
             hb_interval = float(
                 getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0
             )
             if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
+                # Console heartbeat for local visibility
+                try:
+                    succ_rate = (successes_total / attempts_total * 100.0) if attempts_total else 0.0
+                    log.info(
+                        (
+                            "live@%s hb: dry_run=%s attempts=%d successes=%d (%.2f%%) "
+                            "last_net=%.2f%% last_pnl=%.4f USDT"
+                        ),
+                        venue,
+                        getattr(settings, "dry_run", True),
+                        attempts_total,
+                        successes_total,
+                        succ_rate,
+                        (res["net_est"] * 100.0 if res else 0.0),
+                        (res["realized_usdt"] if res else 0.0),
+                    )
+                    if skip_counts:
+                        # Show top 3 skip reasons by count for quick diagnosis
+                        top = sorted(skip_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+                        log.info(
+                            "live@%s hb: top_skips=%s",
+                            venue,
+                            ", ".join(f"{k}={v}" for k, v in top),
+                        )
+                except Exception:
+                    pass
                 try:
                     notify_discord(
                         venue,
@@ -1263,7 +1434,15 @@ def live(
                     pass
                 last_hb_at = time.time()
 
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    finally:
+        # On shutdown, send a stop summary (best-effort)
+        if bool(getattr(settings, "discord_live_stop_notify", True)):
+            try:
+                notify_discord(venue, f"[live@{venue}] stop")
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

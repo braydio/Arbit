@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     sqlite_path: str = "arbit.db"
     discord_webhook_url: str | None = None
     discord_heartbeat_secs: int = 60
+    # Discord notifications toggles and rate limits
+    discord_trade_notify: bool = False
+    discord_skip_notify: bool = True
+    discord_error_notify: bool = False
+    discord_live_start_notify: bool = True
+    discord_live_stop_notify: bool = True
+    discord_min_notify_interval_secs: int = 10
 
     # Optional RPC configuration for on-chain yield ops
     rpc_url: str | None = None
@@ -97,10 +104,13 @@ class Settings(BaseSettings):
         "alpaca": [
             ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
             ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
+            # Note: Alpaca typically lacks BTC-quoted alts like SOL/BTC; omit SOL triangle here.
         ],
         "kraken": [
             ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
             ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
+            # Added SOL triangle candidate
+            ["SOL/USDT", "SOL/BTC", "BTC/USDT"],
         ],
     }
 
@@ -152,7 +162,15 @@ class Settings(BaseSettings):
             "max_gas_price_gwei",
         ):
             _coerce_int(f)
-        _coerce_bool("dry_run")
+        for b in (
+            "dry_run",
+            "discord_trade_notify",
+            "discord_skip_notify",
+            "discord_error_notify",
+            "discord_live_start_notify",
+            "discord_live_stop_notify",
+        ):
+            _coerce_bool(b)
 
         if isinstance(self.exchanges, str):
             try:
