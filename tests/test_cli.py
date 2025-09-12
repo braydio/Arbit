@@ -30,6 +30,7 @@ class DummyAdapter:
 
     def __init__(self) -> None:
         self.books_calls: list[str] = []
+        self.balance_calls = 0
 
     def fetch_orderbook(self, symbol: str, depth: int = 10) -> dict:
         self.books_calls.append(symbol)
@@ -39,6 +40,10 @@ class DummyAdapter:
             "BTC/USDT": {"bids": [(60000.0, 1.0)], "asks": []},
         }
         return books.get(symbol, {"bids": [], "asks": []})
+
+    def balances(self) -> dict[str, float]:
+        self.balance_calls += 1
+        return {"USDT": 100.0}
 
     @staticmethod
     def create_order(*args, **kwargs):  # pragma: no cover - not used
@@ -80,6 +85,7 @@ def test_fitness(monkeypatch):
     runner = CliRunner()
     result = runner.invoke(cli.app, ["fitness", "--secs", "1"])
     assert result.exit_code == 0
+    assert adapter.balance_calls == 1
 
 
 def test_fitness_simulate(monkeypatch):
@@ -110,6 +116,7 @@ def test_fitness_simulate(monkeypatch):
                 "ETH/BTC": {"bids": [(0.05, 1.0)], "asks": [(0.049, 1.0)]},
                 "BTC/USDT": {"bids": [(41000.0, 1.0)], "asks": [(41010.0, 1.0)]},
             }
+            self.balance_calls = 0
 
         def fetch_orderbook(self, symbol: str, depth: int = 10) -> dict:
             ob = self._books.get(symbol)
@@ -136,6 +143,10 @@ def test_fitness_simulate(monkeypatch):
                 "price": price,
                 "fee": fee,
             }
+
+        def balances(self) -> dict[str, float]:
+            self.balance_calls += 1
+            return {"USDT": 500.0}
 
     adapter = DummySimAdapter()
     monkeypatch.setattr(cli, "_build_adapter", lambda venue, _settings: adapter)

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from importlib import import_module as _import_module
 
 import typer
+from arbit.adapters.base import ExchangeAdapter
 from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
@@ -41,11 +42,7 @@ from arbit.persistence.db import (
     insert_yield_op,
 )
 
-# Expose AaveProvider at module scope for tests to monkeypatch.
-try:
-    AaveProvider = getattr(_import_module("arbit.yield"), "AaveProvider")
-except Exception:
-    AaveProvider = None
+AaveProvider = import_module("arbit.yield").AaveProvider
 
 
 class CLIApp(typer.Typer):
@@ -151,9 +148,10 @@ class CLIApp(typer.Typer):
             "live\n"
             "  Continuously scan for profitable triangles and execute trades.\n"
             "  Flags (optional):\n"
-            "    --venue TEXT     Exchange to trade on (default: alpaca)\n"
-            "    --symbols TEXT   CSV filter; only triangles whose three legs are all included are traded\n"
-            "    --help-verbose Print extra context about live output semantics\n"
+            "    --venue TEXT           Exchange to trade on (default: alpaca)\n"
+            "    --symbols TEXT         CSV filter; only triangles whose three legs are all included are traded\n"
+            "    --auto-suggest-top INT Use top N discovered triangles if none configured/supported (session only)\n"
+            "    --help-verbose         Print extra context about live output semantics\n"
             "  Sample output:\n"
             "    alpaca ETH/BTC net=0.5% PnL=0.10 USDT\n"
         )
@@ -177,6 +175,29 @@ class CLIApp(typer.Typer):
             "    --venue TEXT   Exchange to query (default: alpaca)\n"
             "  Sample output:\n"
             "    Recommend: NOTIONAL_PER_TRADE_USD=10 NET_THRESHOLD_BPS=25 MAX_SLIPPAGE_BPS=8 DRY_RUN=true\n"
+        )
+
+        typer.echo(
+            "fitness:hybrid\n"
+            "  Read-only multi-venue check: compute net% using legs sourced from different exchanges.\n"
+            "  Aliases: fitness:hybrid, fitness_hybrid\n"
+            "  Flags (optional):\n"
+            "    --legs TEXT     CSV of legs (default: ETH/USDT,ETH/BTC,BTC/USDT)\n"
+            "    --venues TEXT   CSV mapping of symbol=venue (e.g., 'ETH/USDT=kraken,ETH/BTC=kraken,BTC/USDT=alpaca')\n"
+            "    --secs INTEGER  Seconds to run sampling (default: 10)\n"
+            "  Notes: estimates only; no order placement or simulation across venues.\n"
+        )
+
+        typer.echo(
+            "config:discover\n"
+            "  Discover supported triangles for a venue from load_markets().\n"
+            "  Aliases: config:discover, config_discover\n"
+            "  Flags (optional):\n"
+            "    --venue TEXT     Exchange to query (default: kraken)\n"
+            "    --write-env      Write TRIANGLES_BY_VENUE to .env for venue\n"
+            "    --env-path TEXT  Path to .env (default: .env)\n"
+            "  Sample output:\n"
+            "    kraken triangles=15 first=ETH/USDT|ETH/BTC|BTC/USDT\n"
         )
 
         typer.echo(
@@ -215,15 +236,40 @@ logging.basicConfig(level=settings.log_level)
 
 
 def _triangles_for(venue: str) -> list[Triangle]:
-    data = getattr(settings, "triangles_by_venue", {}) or {}
+    data_raw = getattr(settings, "triangles_by_venue", {}) or {}
+    data = data_raw
+    # Be robust if env provided value as a JSON string or invalid type
+    if isinstance(data_raw, str):
+        try:
+            import json as _json
+
+            parsed = _json.loads(data_raw)
+            if isinstance(parsed, dict):
+                data = parsed
+            else:
+                log.warning(
+                    "TRIANGLES_BY_VENUE provided but is not an object; ignoring"
+                )
+                data = {}
+        except Exception as e:
+            log.warning("failed to parse TRIANGLES_BY_VENUE; using defaults: %s", e)
+            data = {}
+    if not isinstance(data, dict):
+        data = {}
+
     triples = data.get(venue)
-    if not triples:
+    if not isinstance(triples, list) or not triples:
         # Fallback defaults if config missing or tests stub settings
         triples = [
-            ["ETH/USDT", "BTC/ETH", "BTC/USDT"],
-            ["ETH/USDC", "BTC/ETH", "BTC/USDC"],
+            ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
+            ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
         ]
-    return [Triangle(*t) for t in triples]
+    # Sanitize and coerce to Triangle list
+    out: list[Triangle] = []
+    for t in triples:
+        if isinstance(t, (list, tuple)) and len(t) == 3:
+            out.append(Triangle(str(t[0]), str(t[1]), str(t[2])))
+    return out
 
 
 def _build_adapter(venue: str, _settings=settings):
@@ -238,6 +284,29 @@ def _build_adapter(venue: str, _settings=settings):
     """
 
     return CCXTAdapter(venue)
+
+
+def _log_balances(venue: str, adapter: ExchangeAdapter) -> None:
+    """Log non-zero asset balances for *adapter* at run start.
+
+    Parameters
+    ----------
+    venue:
+        Exchange identifier used for logging context.
+    adapter:
+        Exchange adapter queried for balances.
+    """
+
+    try:
+        bals = adapter.balances()
+    except Exception as exc:  # pragma: no cover - defensive
+        log.warning("%s balance fetch failed: %s", venue, exc)
+        return
+    if bals:
+        bal_str = ", ".join(f"{k}={v}" for k, v in bals.items())
+        log.info("%s starting balances %s", venue, bal_str)
+    else:
+        log.info("%s starting balances none", venue)
 
 
 @app.command("yield:collect")
@@ -349,7 +418,10 @@ def yield_collect(
         try:
             notify_discord(
                 "yield",
-                f"[yield] DRY-RUN deposit {amount_raw / 1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
+                (
+                    "[yield] DRY-RUN deposit "
+                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC to Aave | reserve {fmt_usd(reserve_final)} USDC"
+                ),
             )
         except Exception:
             pass
@@ -389,7 +461,10 @@ def yield_collect(
         try:
             notify_discord(
                 "yield",
-                f"[yield] deposited {amount_raw / 1_000_000.0:.2f} USDC to Aave (reserve={reserve_final:.2f})",
+                (
+                    "[yield] deposited "
+                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC to Aave | reserve {fmt_usd(reserve_final)} USDC"
+                ),
             )
         except Exception:
             pass
@@ -535,7 +610,10 @@ def yield_withdraw(
         try:
             notify_discord(
                 "yield",
-                f"[yield] DRY-RUN withdraw {amount_raw / 1_000_000.0:.2f} USDC from Aave",
+                (
+                    "[yield] DRY-RUN withdraw "
+                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC from Aave"
+                ),
             )
         except Exception:
             pass
@@ -571,7 +649,10 @@ def yield_withdraw(
         try:
             notify_discord(
                 "yield",
-                f"[yield] withdrew {amount_raw / 1_000_000.0:.2f} USDC from Aave",
+                (
+                    "[yield] withdrew "
+                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC from Aave"
+                ),
             )
         except Exception:
             pass
@@ -702,8 +783,8 @@ def yield_watch(
 
         if target_apr is not None and best_apr >= target_apr + min_delta:
             msg = (
-                f"Better yield available for {asset_u}: {best_provider} {best_apr:.2f}% "
-                f">= current {target_apr:.2f}% + {min_delta:.2f}%"
+                f"Better {asset_u} yield: {best_provider} {best_apr:.2f}% "
+                f"(current {target_apr:.2f}% +{min_delta:.2f}% threshold)"
             )
             log.info(msg)
             try:
@@ -807,6 +888,7 @@ def config_recommend(
     """
 
     a = _build_adapter(venue, settings)
+    _log_balances(venue, a)
     tris = _triangles_for(venue)
     tri = tris[0]
     legs = [tri.leg_ab, tri.leg_bc, tri.leg_ac]
@@ -850,6 +932,166 @@ def config_recommend(
     )
 
 
+@app.command("hybrid")
+def fitness_hybrid(
+    legs: str = "ETH/USDT,ETH/BTC,BTC/USDT",
+    venues: str | None = None,
+    secs: int = 10,
+):
+    """Read-only multi-venue net% estimate using per-leg venue mapping.
+
+    Example:
+      --legs "SOL/USDT,SOL/BTC,BTC/USDT" \
+      --venues "SOL/USDT=kraken,SOL/BTC=kraken,BTC/USDT=alpaca"
+
+    Notes:
+    - Estimates only; does not place orders or run dry-run simulation.
+    - Uses taker fee per leg when available and compounds fees across legs.
+    """
+
+    def _parse_csv(s: str | None) -> list[str]:
+        if not s:
+            return []
+        return [i.strip() for i in s.split(",") if i.strip()]
+
+    def _parse_map(s: str | None) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for item in _parse_csv(s):
+            if "=" in item:
+                sym, ven = item.split("=", 1)
+                sym = sym.strip()
+                ven = ven.strip()
+                if sym and ven:
+                    out[sym] = ven
+        return out
+
+    legs_list = _parse_csv(legs)
+    if len(legs_list) != 3:
+        log.error("--legs must provide exactly three symbols (AB,BC,AC)")
+        raise SystemExit(2)
+    leg_ab, leg_bc, leg_ac = legs_list
+    vmap = _parse_map(venues)
+    used_venues = {vmap.get(leg_ab, ""), vmap.get(leg_bc, ""), vmap.get(leg_ac, "")}
+    used_venues = {v for v in used_venues if v}
+
+    # Build adapters for venues referenced; default to 'kraken' if none provided
+    adapters: dict[str, CCXTAdapter] = {}
+    for ven in used_venues or {"kraken"}:
+        adapters[ven] = _build_adapter(ven, settings)
+
+    def _best(ob: dict) -> tuple[float | None, float | None]:
+        try:
+            bid = ob.get("bids", [[None]])[0][0]
+        except Exception:
+            bid = None
+        try:
+            ask = ob.get("asks", [[None]])[0][0]
+        except Exception:
+            ask = None
+        return bid, ask
+
+    def _taker(ven: str, sym: str) -> float:
+        try:
+            return adapters[ven].fetch_fees(sym)[1]
+        except Exception:
+            return 0.001
+
+    import time as _time
+
+    t0 = _time.time()
+    while _time.time() - t0 < secs:
+        # Fetch books per leg from mapped venues (default to the only adapter if single-venue)
+        ven_ab = vmap.get(leg_ab) or next(iter(adapters))
+        ven_bc = vmap.get(leg_bc) or next(iter(adapters))
+        ven_ac = vmap.get(leg_ac) or next(iter(adapters))
+        try:
+            ob_ab = adapters[ven_ab].fetch_orderbook(leg_ab, 1)
+            ob_bc = adapters[ven_bc].fetch_orderbook(leg_bc, 1)
+            ob_ac = adapters[ven_ac].fetch_orderbook(leg_ac, 1)
+        except Exception as e:
+            log.warning("fitness:hybrid fetch error: %s", e)
+            _time.sleep(1.0)
+            continue
+        bid_ab, ask_ab = _best(ob_ab)
+        bid_bc, ask_bc = _best(ob_bc)
+        bid_ac, ask_ac = _best(ob_ac)
+        if None in (ask_ab, bid_bc, bid_ac):
+            log.info(
+                "fitness:hybrid %s@%s %s@%s %s@%s incomplete books",
+                leg_ab,
+                ven_ab,
+                leg_bc,
+                ven_bc,
+                leg_ac,
+                ven_ac,
+            )
+            _time.sleep(1.0)
+            continue
+        # Compute gross and per-leg taker compounding
+        gross = (1.0 / float(ask_ab)) * float(bid_bc) * float(bid_ac)
+        f_ab = _taker(ven_ab, leg_ab)
+        f_bc = _taker(ven_bc, leg_bc)
+        f_ac = _taker(ven_ac, leg_ac)
+        net = gross * (1 - f_ab) * (1 - f_bc) * (1 - f_ac) - 1.0
+        log.info(
+            "fitness:hybrid %s@%s %s@%s %s@%s net=%.3f%% (fees ab/bc/ac=%.1f/%.1f/%.1f bps)",
+            leg_ab,
+            ven_ab,
+            leg_bc,
+            ven_bc,
+            leg_ac,
+            ven_ac,
+            net * 100.0,
+            f_ab * 1e4,
+            f_bc * 1e4,
+            f_ac * 1e4,
+        )
+        _time.sleep(1.0)
+    # end of hybrid
+
+
+@app.command("notify:test")
+@app.command("notify_test")
+def notify_test(message: str = "[notify] test message from arbit.cli"):
+    """Send a test message to the configured Discord webhook."""
+
+    if not getattr(settings, "discord_webhook_url", None):
+        log.error("notify:test no webhook configured (set DISCORD_WEBHOOK_URL)")
+        return
+    try:
+        notify_discord("notify", message)
+    except Exception as e:  # defensive; notify_discord already swallows errors
+        log.error("notify:test error: %s", e)
+
+
+@app.command("config:discover")
+@app.command("config_discover")
+def config_discover(
+    venue: str = "kraken",
+    write_env: bool = False,
+    env_path: str = ".env",
+):
+    """Discover supported triangles for a venue and optionally write to .env."""
+
+    a = _build_adapter(venue, settings)
+    try:
+        ms = a.ex.load_markets()
+    except Exception as e:
+        log.error("load_markets failed for %s: %s", venue, e)
+        raise SystemExit(1)
+    triples = _discover_triangles_from_markets(ms)
+    typer.echo(
+        f"{venue} triangles={len(triples)} "
+        + (f"first={'|'.join(triples[0])}" if triples else "")
+    )
+    if write_env:
+        ok = _update_env_triangles(venue, triples, env_path)
+        if ok:
+            typer.echo(f"wrote TRIANGLES_BY_VENUE for {venue} to {env_path}")
+        else:
+            typer.echo(f"failed to write {env_path}")
+
+
 @app.command()
 def fitness(
     venue: str = "alpaca",
@@ -865,7 +1107,8 @@ def fitness(
 
     When ``--simulate`` is provided, attempt dry-run triangle executions using
     current order books and log simulated PnL. Use ``--persist`` to store
-    simulated fills in SQLite for later analysis.
+    simulated fills in SQLite for later analysis. Current account balances are
+    logged at startup for supported venues.
     """
 
     if help_verbose:
@@ -889,6 +1132,7 @@ def fitness(
         raise SystemExit(0)
 
     a = _build_adapter(venue, settings)
+    _log_balances(venue, a)
     tris = _triangles_for(venue)
     # Optional: filter triangles by CSV of symbols (must include all three legs)
     allowed: set[str] | None = None
@@ -933,6 +1177,10 @@ def fitness(
 
     sim_count = 0
     sim_pnl = 0.0
+    attempts_total = 0
+    from collections import defaultdict
+
+    skip_counts: dict[str, int] = defaultdict(int)
     loop_idx = 0
     last_hb_at = 0.0
     try:
@@ -983,7 +1231,7 @@ def fitness(
                     try:
                         notify_discord(
                             venue,
-                            f"[{venue}] dummy_trigger: injected synthetic profitable triangle for {tri0}",
+                            f"[{venue}] dummy_trigger: injected synthetic profitable triangle {tri0}",
                         )
                     except Exception:
                         pass
@@ -1012,6 +1260,7 @@ def fitness(
 
                             a.fetch_orderbook = _patched_fetch  # type: ignore[assignment]
 
+                        attempts_total += 1
                         res = try_triangle(
                             a,
                             tri,
@@ -1084,6 +1333,13 @@ def fitness(
                         attempt_id = insert_attempt(conn, attempt)
                     if not res:
                         # Count skips by reason (no metrics emission in fitness)
+                        if skip_reasons:
+                            for r in skip_reasons:
+                                skip_counts[r] = skip_counts.get(r, 0) + 1
+                        else:
+                            skip_counts["unprofitable"] = (
+                                skip_counts.get("unprofitable", 0) + 1
+                            )
                         continue
                     sim_count += 1
                     sim_pnl += float(res.get("realized_usdt", 0.0))
@@ -1137,11 +1393,18 @@ def fitness(
                 and (time.time() - last_hb_at) > float(discord_heartbeat_secs)
             ):
                 try:
+                    top = ", ".join(
+                        f"{k}={v}"
+                        for k, v in sorted(
+                            skip_counts.items(), key=lambda kv: kv[1], reverse=True
+                        )[:3]
+                    )
                     notify_discord(
                         venue,
                         (
                             f"[fitness@{venue}] heartbeat simulate={simulate} symbols={len(syms)} "
-                            f"loops={loop_idx} sim_trades={sim_count} sim_total_pnl={sim_pnl:.2f} USDT"
+                            f"attempts={attempts_total} sim_trades={sim_count} "
+                            f"sim_total_pnl={sim_pnl:.2f} USDT top_skips={top or 'n/a'}"
                         ),
                     )
                 except Exception:
@@ -1159,22 +1422,44 @@ def fitness(
             except Exception:
                 pass
 
+    # Final end-of-run summary (console + Discord best-effort)
     if simulate:
         log.info(
-            "%s [sim] summary: trades=%d total_pnl=%.2f USDT",
+            "%s [sim] summary: attempts=%d trades=%d total_pnl=%.2f USDT",
             venue,
+            attempts_total,
             sim_count,
             sim_pnl,
         )
+    try:
+        top = ", ".join(
+            f"{k}={v}"
+            for k, v in sorted(skip_counts.items(), key=lambda kv: kv[1], reverse=True)[
+                :3
+            ]
+        )
+        notify_discord(
+            venue,
+            (
+                f"[fitness@{venue}] summary simulate={simulate} attempts={attempts_total} "
+                f"trades={sim_count} pnl={sim_pnl:.2f} USDT top_skips={top or 'n/a'}"
+            ),
+        )
+    except Exception:
+        pass
 
 
 @app.command()
 def live(
     venue: str = "alpaca",
     symbols: str | None = None,
+    auto_suggest_top: int = 0,
     help_verbose: bool = False,
 ):
-    """Continuously scan for profitable triangles and execute trades."""
+    """Continuously scan for profitable triangles and execute trades.
+
+    Logs current account balances at startup for supported venues.
+    """
 
     if help_verbose:
         typer.echo(
@@ -1185,6 +1470,7 @@ def live(
 
     async def _run() -> None:
         a = _build_adapter(venue, settings)
+        _log_balances(venue, a)
         start_metrics_server(settings.prom_port)
         conn = init_db(settings.sqlite_path)
         tris = _triangles_for(venue)
@@ -1200,13 +1486,73 @@ def live(
         # Filter out triangles with legs not listed by the venue (defensive)
         try:
             ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
-            tris = [
-                t
-                for t in tris
-                if all(leg in ms for leg in (t.leg_ab, t.leg_bc, t.leg_ac))
-            ]
+            missing: list[tuple[Triangle, list[str]]] = []
+            kept: list[Triangle] = []
+            for t in tris:
+                legs = [t.leg_ab, t.leg_bc, t.leg_ac]
+                miss = [leg for leg in legs if leg not in ms]
+                if miss:
+                    missing.append((t, miss))
+                else:
+                    kept.append(t)
+            tris = kept
         except Exception:
             pass
+        if not tris:
+            # Try suggest triangles programmatically
+            suggestions: list[list[str]] = []
+            try:
+                ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
+                suggestions = _discover_triangles_from_markets(ms)[:3]
+            except Exception:
+                suggestions = []
+            # If requested, auto-use top-N suggestions for this session only
+            use_count = int(auto_suggest_top or 0)
+            if use_count > 0 and suggestions:
+                chosen = suggestions[:use_count]
+                tris = [Triangle(*t) for t in chosen]
+                try:
+                    notify_discord(
+                        venue,
+                        (
+                            f"[live@{venue}] using auto-suggested triangles for session: "
+                            f"{'; '.join('|'.join(t) for t in chosen)}"
+                        ),
+                    )
+                except Exception:
+                    pass
+            else:
+                log.error(
+                    (
+                        "live@%s no supported triangles after filtering; missing=%s "
+                        "suggestions=%s"
+                    ),
+                    venue,
+                    (
+                        "; ".join(
+                            f"{x.leg_ab}|{x.leg_bc}|{x.leg_ac} -> missing {','.join(m)}"
+                            for x, m in (missing if "missing" in locals() else [])
+                        )
+                        if "missing" in locals() and missing
+                        else "n/a"
+                    ),
+                    (
+                        "; ".join("|".join(t) for t in suggestions)
+                        if suggestions
+                        else "n/a"
+                    ),
+                )
+                try:
+                    notify_discord(
+                        venue,
+                        (
+                            f"[live@{venue}] no supported triangles; "
+                            f"suggestions={('; '.join('|'.join(t) for t in suggestions)) if suggestions else 'n/a'}"
+                        ),
+                    )
+                except Exception:
+                    pass
+                return
         # Status banner: show active triangles after filtering and market check
         if tris:
             tri_list = ", ".join(f"{t.leg_ab}|{t.leg_bc}|{t.leg_ac}" for t in tris)
@@ -1216,6 +1562,14 @@ def live(
                 len(tris),
                 tri_list,
             )
+            # Send a one-time Discord notice of active triangles for visibility
+            try:
+                notify_discord(
+                    venue,
+                    f"[live@{venue}] active triangles={len(tris)} -> {tri_list}",
+                )
+            except Exception:
+                pass
         for tri in tris:
             insert_triangle(conn, tri)
         log.info("live@%s dry_run=%s", venue, settings.dry_run)
@@ -1316,6 +1670,11 @@ def live(
                         for r in skip_reasons
                         if r.startswith("slippage") or r.startswith("min_notional")
                     ]
+                    if actionable and time.time() - last_alert_at > 10:
+                        notify_discord(
+                            venue,
+                            f"[{venue}] skipped {tri} - reasons: {', '.join(actionable)}",
+                        )
                     if (
                         actionable
                         and bool(getattr(settings, "discord_skip_notify", True))
@@ -1437,12 +1796,20 @@ def live(
                 except Exception:
                     pass
                 try:
+                    top_txt = ", ".join(
+                        f"{k}={v}"
+                        for k, v in sorted(
+                            skip_counts.items(), key=lambda kv: kv[1], reverse=True
+                        )[:3]
+                    )
                     notify_discord(
                         venue,
                         (
-                            f"[{venue}] heartbeat dry_run={getattr(settings, 'dry_run', True)} "
-                            f"attempts={attempts_total} successes={successes_total} "
-                            f"last_net={res['net_est'] * 100:.2f}% last_pnl={res['realized_usdt']:.2f} USDT"
+                            f"[{venue}] heartbeat: "
+                            f"dry_run={getattr(settings, 'dry_run', True)}, "
+                            f"attempts={attempts_total}, successes={successes_total}, "
+                            f"last_net={res['net_est'] * 100:.2f}%, "
+                            f"last_pnl={fmt_usd(res['realized_usdt'])} USDT"
                         ),
                     )
                 except Exception:

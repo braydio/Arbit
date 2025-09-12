@@ -4,11 +4,11 @@ Uses Typer's CliRunner and a temporary SQLite file for persistence checks.
 """
 
 import sqlite3
+import sys
 from types import SimpleNamespace
 
-from typer.testing import CliRunner
 from arbit import config as cfg
-import sys
+from typer.testing import CliRunner
 
 
 class DummyProvider:
@@ -45,7 +45,9 @@ def test_yield_collect_dry_run_persists_op(monkeypatch, tmp_path):
     from arbit.cli import app as cli_app  # import after stubbing ccxt
 
     runner = CliRunner()
-    res = runner.invoke(cli_app, ["yield:collect", "--reserve-usd", "50"])  # deposit 250
+    res = runner.invoke(
+        cli_app, ["yield:collect", "--reserve-usd", "50"]
+    )  # deposit 250
     assert res.exit_code == 0
 
     # Verify yield_ops row written
@@ -65,14 +67,17 @@ def test_yield_withdraw_all_excess_dry_run_persists(monkeypatch, tmp_path):
     cfg.settings.dry_run = True
     # Wallet: 10 USDC, aToken: 200 USDC
     monkeypatch.setattr(
-        "arbit.cli.AaveProvider", lambda *_args, **_kw: DummyProvider(10_000_000, 200_000_000)
+        "arbit.cli.AaveProvider",
+        lambda *_args, **_kw: DummyProvider(10_000_000, 200_000_000),
     )
 
     sys.modules.setdefault("ccxt", SimpleNamespace())
     from arbit.cli import app as cli_app
 
     runner = CliRunner()
-    res = runner.invoke(cli_app, ["yield:withdraw", "--all-excess", "--reserve-usd", "50"])
+    res = runner.invoke(
+        cli_app, ["yield:withdraw", "--all-excess", "--reserve-usd", "50"]
+    )
     assert res.exit_code == 0
 
     # Verify yield_ops row
