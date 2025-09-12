@@ -33,7 +33,7 @@ from arbit.metrics.exporter import (
     start_metrics_server,
 )
 from arbit.models import Fill, Triangle, TriangleAttempt
-from arbit.notify import notify_discord
+from arbit.notify import fmt_usd, notify_discord
 from arbit.persistence.db import (
     init_db,
     insert_attempt,
@@ -42,7 +42,61 @@ from arbit.persistence.db import (
     insert_yield_op,
 )
 
-AaveProvider = import_module("arbit.yield").AaveProvider
+AaveProvider = _import_module("arbit.yield").AaveProvider
+
+
+def format_live_heartbeat(
+    venue: str,
+    dry_run: bool,
+    attempts: int,
+    successes: int,
+    last_net: float,
+    last_pnl: float,
+    net_total: float,
+    latency_total: float,
+    start_time: float,
+) -> str:
+    """Build a Discord heartbeat summary for live trading.
+
+    Parameters
+    ----------
+    venue:
+        Exchange venue name.
+    dry_run:
+        Whether trades are simulated.
+    attempts:
+        Total triangles evaluated.
+    successes:
+        Number of profitable hits.
+    last_net:
+        Net spread fraction from the last attempt.
+    last_pnl:
+        Realized PnL from the last attempt in USDT.
+    net_total:
+        Sum of net spreads from successful attempts.
+    latency_total:
+        Sum of latencies across attempts in seconds.
+    start_time:
+        Epoch when the loop began.
+
+    Returns
+    -------
+    str
+        Formatted heartbeat message.
+    """
+
+    hit_rate = (successes / attempts * 100.0) if attempts else 0.0
+    avg_spread = (net_total / successes * 100.0) if successes else 0.0
+    avg_latency_ms = (latency_total / attempts * 1000.0) if attempts else 0.0
+    elapsed = max(time.time() - start_time, 1e-6)
+    attempts_per_sec = attempts / elapsed
+    return (
+        f"[{venue}] heartbeat: dry_run={dry_run}, attempts={attempts}, "
+        f"successes={successes}, hit_rate={hit_rate:.2f}%, "
+        f"avg_spread={avg_spread:.2f}%, avg_latency_ms={avg_latency_ms:.1f}, "
+        f"last_net={last_net * 100:.2f}%, last_pnl={fmt_usd(last_pnl)} USDT, "
+        f"attempts_per_sec={attempts_per_sec:.2f}"
+    )
 
 
 class CLIApp(typer.Typer):
@@ -1079,13 +1133,13 @@ def config_discover(
     except Exception as e:
         log.error("load_markets failed for %s: %s", venue, e)
         raise SystemExit(1)
-    triples = _discover_triangles_from_markets(ms)
+    triples = _discover_triangles_from_markets(ms)  # noqa: F821
     typer.echo(
         f"{venue} triangles={len(triples)} "
         + (f"first={'|'.join(triples[0])}" if triples else "")
     )
     if write_env:
-        ok = _update_env_triangles(venue, triples, env_path)
+        ok = _update_env_triangles(venue, triples, env_path)  # noqa: F821
         if ok:
             typer.echo(f"wrote TRIANGLES_BY_VENUE for {venue} to {env_path}")
         else:
@@ -1503,7 +1557,7 @@ def live(
             suggestions: list[list[str]] = []
             try:
                 ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
-                suggestions = _discover_triangles_from_markets(ms)[:3]
+                suggestions = _discover_triangles_from_markets(ms)[:3]  # noqa: F821
             except Exception:
                 suggestions = []
             # If requested, auto-use top-N suggestions for this session only
@@ -1595,8 +1649,11 @@ def live(
             except Exception:
                 pass
         last_hb_at = 0.0
+        start_time = time.time()
         attempts_total = 0
         successes_total = 0
+        latency_total = 0.0
+        net_total = 0.0
         # Aggregate skip reasons for visibility in periodic summaries
         from collections import defaultdict
 
@@ -1605,6 +1662,7 @@ def live(
             a, tris, settings.net_threshold_bps / 10000.0
         ):
             attempts_total += 1
+            latency_total += latency
             try:
                 CYCLE_LATENCY.labels(venue).observe(latency)
             except Exception:
@@ -1695,6 +1753,7 @@ def live(
                         pass
                 continue
             successes_total += 1
+            net_total += res["net_est"]
             PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
             ORDERS_TOTAL.labels(venue, "ok").inc()
             for f in res.get("fills", []):
@@ -1796,20 +1855,18 @@ def live(
                 except Exception:
                     pass
                 try:
-                    top_txt = ", ".join(
-                        f"{k}={v}"
-                        for k, v in sorted(
-                            skip_counts.items(), key=lambda kv: kv[1], reverse=True
-                        )[:3]
-                    )
                     notify_discord(
                         venue,
-                        (
-                            f"[{venue}] heartbeat: "
-                            f"dry_run={getattr(settings, 'dry_run', True)}, "
-                            f"attempts={attempts_total}, successes={successes_total}, "
-                            f"last_net={res['net_est'] * 100:.2f}%, "
-                            f"last_pnl={fmt_usd(res['realized_usdt'])} USDT"
+                        format_live_heartbeat(
+                            venue,
+                            getattr(settings, "dry_run", True),
+                            attempts_total,
+                            successes_total,
+                            res["net_est"] if res else 0.0,
+                            res["realized_usdt"] if res else 0.0,
+                            net_total,
+                            latency_total,
+                            start_time,
                         ),
                     )
                 except Exception:
