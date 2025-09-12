@@ -10,7 +10,7 @@ import logging
 import sys
 import time
 from datetime import datetime, timezone
-from importlib import import_module
+from importlib import import_module as _import_module
 
 import typer
 from arbit.adapters.base import ExchangeAdapter
@@ -33,7 +33,7 @@ from arbit.metrics.exporter import (
     start_metrics_server,
 )
 from arbit.models import Fill, Triangle, TriangleAttempt
-from arbit.notify import fmt_usd, notify_discord
+from arbit.notify import notify_discord
 from arbit.persistence.db import (
     init_db,
     insert_attempt,

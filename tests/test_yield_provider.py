@@ -3,9 +3,8 @@
 These tests focus on balance-reading helpers with injected dummy web3.
 """
 
-from types import SimpleNamespace
-
 import importlib
+from types import SimpleNamespace
 
 # Import provider via importlib because `yield` is a Python keyword
 AaveProvider = importlib.import_module("arbit.yield.providers").AaveProvider
