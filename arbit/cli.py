@@ -612,7 +612,7 @@ async def _live_run_for_venue(
                 )
                 if qty is not None:
                     msg += f"qty={qty:.6g} "
-                msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)}"
+                msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(a)}"
                 notify_discord(venue, msg)
             except Exception:
                 pass
@@ -663,7 +663,8 @@ async def _live_run_for_venue(
                         f"dry_run={getattr(settings, 'dry_run', True)}, "
                         f"attempts={attempts_total}, successes={successes_total}, "
                         f"last_net={res['net_est'] * 100:.2f}%, "
-                        f"last_pnl={fmt_usd(res['realized_usdt'])} USDT"
+                        f"last_pnl={fmt_usd(res['realized_usdt'])} USDT | "
+                        f"{_balances_brief(a)}"
                     ),
                 )
             except Exception:
