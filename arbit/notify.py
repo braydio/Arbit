@@ -8,9 +8,9 @@ rewriting webhook logic.
 from __future__ import annotations
 
 import json
+import logging
 import urllib.request
 from typing import Optional
-import logging
 
 from .config import settings
 from .metrics.exporter import ERRORS_TOTAL
@@ -32,6 +32,7 @@ def fmt_usd(amount: float) -> str:
     """
 
     return f"${amount:,.2f}"
+
 
 def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
     """Send *message* to a Discord webhook.
@@ -62,7 +63,7 @@ def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
     # Ensure webhook uses wait=true so Discord returns a response body
     url = webhook
     try:
-        from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
+        from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
         pr = urlparse(webhook)
         if pr.netloc.endswith("discord.com") or pr.netloc.endswith("discordapp.com"):

@@ -44,6 +44,7 @@ from arbit.persistence.db import (
 
 AaveProvider = import_module("arbit.yield").AaveProvider
 
+
 class CLIApp(typer.Typer):
     """Custom Typer application that prints usage on bad invocation."""
 
@@ -251,9 +252,7 @@ def _triangles_for(venue: str) -> list[Triangle]:
                 )
                 data = {}
         except Exception as e:
-            log.warning(
-                "failed to parse TRIANGLES_BY_VENUE; using defaults: %s", e
-            )
+            log.warning("failed to parse TRIANGLES_BY_VENUE; using defaults: %s", e)
             data = {}
     if not isinstance(data, dict):
         data = {}
@@ -977,7 +976,7 @@ def fitness_hybrid(
 
     # Build adapters for venues referenced; default to 'kraken' if none provided
     adapters: dict[str, CCXTAdapter] = {}
-    for ven in (used_venues or {"kraken"}):
+    for ven in used_venues or {"kraken"}:
         adapters[ven] = _build_adapter(ven, settings)
 
     def _best(ob: dict) -> tuple[float | None, float | None]:
@@ -1064,6 +1063,7 @@ def notify_test(message: str = "[notify] test message from arbit.cli"):
     except Exception as e:  # defensive; notify_discord already swallows errors
         log.error("notify:test error: %s", e)
 
+
 @app.command("config:discover")
 @app.command("config_discover")
 def config_discover(
@@ -1090,6 +1090,8 @@ def config_discover(
             typer.echo(f"wrote TRIANGLES_BY_VENUE for {venue} to {env_path}")
         else:
             typer.echo(f"failed to write {env_path}")
+
+
 @app.command()
 def fitness(
     venue: str = "alpaca",
@@ -1177,6 +1179,7 @@ def fitness(
     sim_pnl = 0.0
     attempts_total = 0
     from collections import defaultdict
+
     skip_counts: dict[str, int] = defaultdict(int)
     loop_idx = 0
     last_hb_at = 0.0
@@ -1334,9 +1337,9 @@ def fitness(
                             for r in skip_reasons:
                                 skip_counts[r] = skip_counts.get(r, 0) + 1
                         else:
-                            skip_counts["unprofitable"] = skip_counts.get(
-                                "unprofitable", 0
-                            ) + 1
+                            skip_counts["unprofitable"] = (
+                                skip_counts.get("unprofitable", 0) + 1
+                            )
                         continue
                     sim_count += 1
                     sim_pnl += float(res.get("realized_usdt", 0.0))
@@ -1431,7 +1434,9 @@ def fitness(
     try:
         top = ", ".join(
             f"{k}={v}"
-            for k, v in sorted(skip_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+            for k, v in sorted(skip_counts.items(), key=lambda kv: kv[1], reverse=True)[
+                :3
+            ]
         )
         notify_discord(
             venue,
@@ -1526,19 +1531,23 @@ def live(
                     (
                         "; ".join(
                             f"{x.leg_ab}|{x.leg_bc}|{x.leg_ac} -> missing {','.join(m)}"
-                            for x, m in (missing if 'missing' in locals() else [])
+                            for x, m in (missing if "missing" in locals() else [])
                         )
-                        if 'missing' in locals() and missing
+                        if "missing" in locals() and missing
                         else "n/a"
                     ),
-                    "; ".join("|".join(t) for t in suggestions) if suggestions else "n/a",
+                    (
+                        "; ".join("|".join(t) for t in suggestions)
+                        if suggestions
+                        else "n/a"
+                    ),
                 )
                 try:
                     notify_discord(
                         venue,
                         (
                             f"[live@{venue}] no supported triangles; "
-                            f"suggestions={( '; '.join('|'.join(t) for t in suggestions) ) if suggestions else 'n/a'}"
+                            f"suggestions={('; '.join('|'.join(t) for t in suggestions)) if suggestions else 'n/a'}"
                         ),
                     )
                 except Exception:
@@ -1801,7 +1810,6 @@ def live(
                             f"attempts={attempts_total}, successes={successes_total}, "
                             f"last_net={res['net_est'] * 100:.2f}%, "
                             f"last_pnl={fmt_usd(res['realized_usdt'])} USDT"
-
                         ),
                     )
                 except Exception:
