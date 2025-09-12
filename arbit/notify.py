@@ -17,6 +17,24 @@ from .metrics.exporter import ERRORS_TOTAL
 
 log = logging.getLogger("arbit")
 
+
+def fmt_usd(amount: float) -> str:
+    """Return *amount* formatted as a USD string.
+
+    Parameters
+    ----------
+    amount:
+        Numeric amount in USD.
+
+    Returns
+    -------
+    str
+        Dollar-formatted string with thousands separator and two decimals.
+    """
+
+    return f"${amount:,.2f}"
+
+
 def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
     """Send *message* to a Discord webhook.
 
