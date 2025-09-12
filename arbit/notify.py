@@ -17,6 +17,7 @@ from .metrics.exporter import ERRORS_TOTAL
 
 log = logging.getLogger("arbit")
 
+
 def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
     """Send *message* to a Discord webhook.
 
