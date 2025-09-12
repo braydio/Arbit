@@ -142,6 +142,10 @@ USDT → ETH → BTC → USDT via symbols:
 - BC = ETH/BTC (sell ETH for BTC)
 - AC = BTC/USDT (sell BTC for USDT)
 
+Additional default candidate:
+- USDT → SOL → BTC → USDT via `SOL/USDT`, `SOL/BTC`, `BTC/USDT`.
+  Rationale: high liquidity and active BTC cross tend to create frequent small dislocations. Validate symbol availability per venue with `keys:check`.
+
 ### Profit Calculation
 **Current Implementation:**
 ```text

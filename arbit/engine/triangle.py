@@ -56,18 +56,38 @@ def net_edge(ask_AB: float, bid_BC: float, bid_AC: float, fee: float) -> float:
     return net_edge_cycle([1.0 / ask_AB, bid_BC, bid_AC, (1 - fee) ** 3])
 
 
-def size_from_depth(levels: List[Tuple[float, float]]) -> float:
+def size_from_depth(levels: List[Tuple[float, float] | list | dict]) -> float:
     """Return the smallest available quantity across depth levels.
 
-    Args:
-        levels: A list of ``(price, quantity)`` tuples.
-
-    Returns:
-        The minimum quantity among ``levels`` or ``0.0`` if ``levels`` is
-        empty.
+    Accepts flexible level formats commonly returned by exchange clients:
+    - ``(price, amount)`` tuples or lists (only first two fields used)
+    - dicts with ``price``/``amount`` keys
+    Unparseable entries are ignored.
     """
 
     if not levels:
         return 0.0
 
-    return min(qty for _, qty in levels)
+    qtys: list[float] = []
+    for lvl in levels:
+        price = None
+        qty = None
+        # Sequence-like: [price, amount, ...]
+        if isinstance(lvl, (list, tuple)) and len(lvl) >= 2:
+            try:
+                price = float(lvl[0])
+                qty = float(lvl[1])
+            except Exception:
+                price = None
+                qty = None
+        # Mapping-like: {"price": x, "amount": y}
+        elif isinstance(lvl, dict):
+            try:
+                price = float(lvl.get("price"))  # type: ignore[arg-type]
+                qty = float(lvl.get("amount"))  # type: ignore[arg-type]
+            except Exception:
+                price = None
+                qty = None
+        if qty is not None:
+            qtys.append(qty)
+    return min(qtys) if qtys else 0.0
