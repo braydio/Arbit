@@ -2193,7 +2193,8 @@ def live(
         # On shutdown, send a stop summary (best-effort)
         if bool(getattr(settings, "discord_live_stop_notify", True)):
             try:
-                notify_discord(venue, f"[live@{venue}] stop")
+                a = _build_adapter(venue, settings)
+                notify_discord(venue, f"[live@{venue}] stop | {_balances_brief(a)}")
             except Exception:
                 pass
 
@@ -2253,7 +2254,8 @@ def live_multi(
         if bool(getattr(settings, "discord_live_stop_notify", True)):
             for v in vlist:
                 try:
-                    notify_discord(v, f"[live@{v}] stop")
+                    a = _build_adapter(v, settings)
+                    notify_discord(v, f"[live@{v}] stop | {_balances_brief(a)}")
                 except Exception:
                     pass
 
