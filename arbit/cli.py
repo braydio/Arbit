@@ -211,6 +211,18 @@ class CLIApp(typer.Typer):
         )
 
         typer.echo(
+            "live:multi\n"
+            "  Run live loops concurrently across multiple venues.\n"
+            "  Aliases: live:multi, live_multi\n"
+            "  Flags (optional):\n"
+            "    --venues TEXT         CSV of venues (default: settings.exchanges)\n"
+            "    --symbols TEXT        CSV filter applied per venue\n"
+            "    --auto-suggest-top INT Use top N discovered triangles if none configured/supported\n"
+            "  Sample usage:\n"
+            "    python -m arbit.cli live:multi --venues alpaca,kraken\n"
+        )
+
+        typer.echo(
             "markets:limits\n"
             "  List market min-notional and fees to help size trades.\n"
             "  Aliases: markets:limits, markets_limits\n"
@@ -361,6 +373,302 @@ def _log_balances(venue: str, adapter: ExchangeAdapter) -> None:
         log.info("%s starting balances %s", venue, bal_str)
     else:
         log.info("%s starting balances none", venue)
+
+
+def _balances_brief(adapter: ExchangeAdapter, max_items: int = 4) -> str:
+    """Return a compact string of non-zero balances for Discord/log lines.
+
+    Example: "bal USDT=120.0, BTC=0.01" or "bal none".
+    """
+
+    try:
+        bals = adapter.balances() or {}
+    except Exception:
+        return "bal n/a"
+    if not bals:
+        return "bal none"
+    # Prefer common assets first, then by value desc
+    priority = {"USDT": 100, "USDC": 90, "BTC": 80, "ETH": 70}
+    items = sorted(
+        bals.items(), key=lambda kv: (-(priority.get(kv[0], 0)), -float(kv[1]))
+    )[:max_items]
+    return "bal " + ", ".join(f"{k}={float(v):.6g}" for k, v in items)
+
+
+async def _live_run_for_venue(
+    venue: str,
+    *,
+    symbols: str | None = None,
+    auto_suggest_top: int = 0,
+):
+    """Run the continuous live loop for a single venue (async)."""
+
+    a = _build_adapter(venue, settings)
+    _log_balances(venue, a)
+    conn = init_db(settings.sqlite_path)
+    tris = _triangles_for(venue)
+    # Optional: filter triangles by CSV of symbols (must include all three legs)
+    if symbols:
+        allowed = {s.strip() for s in symbols.split(",") if s.strip()}
+        if allowed:
+            tris = [
+                t
+                for t in tris
+                if all(leg in allowed for leg in (t.leg_ab, t.leg_bc, t.leg_ac))
+            ]
+    # Filter out triangles with legs not listed by the venue (defensive)
+    try:
+        ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
+        missing: list[tuple[Triangle, list[str]]] = []
+        kept: list[Triangle] = []
+        for t in tris:
+            legs = [t.leg_ab, t.leg_bc, t.leg_ac]
+            miss = [leg for leg in legs if leg not in ms]
+            if miss:
+                missing.append((t, miss))
+            else:
+                kept.append(t)
+        tris = kept
+    except Exception:
+        pass
+    if not tris:
+        # Try suggest triangles programmatically
+        suggestions: list[list[str]] = []
+        try:
+            ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
+            suggestions = _discover_triangles_from_markets(ms)[:3]
+        except Exception:
+            suggestions = []
+        # If requested, auto-use top-N suggestions for this session only
+        use_count = int(auto_suggest_top or 0)
+        if use_count > 0 and suggestions:
+            chosen = suggestions[:use_count]
+            tris = [Triangle(*t) for t in chosen]
+            try:
+                notify_discord(
+                    venue,
+                    (
+                        f"[live@{venue}] using auto-suggested triangles for session: "
+                        f"{'; '.join('|'.join(t) for t in chosen)} | {_balances_brief(a)}"
+                    ),
+                )
+            except Exception:
+                pass
+        else:
+            log.error(
+                (
+                    "live@%s no supported triangles after filtering; missing=%s "
+                    "suggestions=%s"
+                ),
+                venue,
+                (
+                    "; ".join(
+                        f"{x.leg_ab}|{x.leg_bc}|{x.leg_ac} -> missing {','.join(m)}"
+                        for x, m in (missing if "missing" in locals() else [])
+                    )
+                    if "missing" in locals() and missing
+                    else "n/a"
+                ),
+                (
+                    "; ".join("|".join(t) for t in suggestions)
+                    if suggestions
+                    else "n/a"
+                ),
+            )
+            try:
+                notify_discord(
+                    venue,
+                    (
+                        f"[live@{venue}] no supported triangles; "
+                        f"suggestions={('; '.join('|'.join(t) for t in suggestions)) if suggestions else 'n/a'} | {_balances_brief(a)}"
+                    ),
+                )
+            except Exception:
+                pass
+            return
+    # Status banner: show active triangles after filtering and market check
+    if tris:
+        tri_list = ", ".join(f"{t.leg_ab}|{t.leg_bc}|{t.leg_ac}" for t in tris)
+        log.info(
+            "live@%s active triangles=%d -> %s",
+            venue,
+            len(tris),
+            tri_list,
+        )
+        # Send a one-time Discord notice of active triangles for visibility
+        try:
+            notify_discord(
+                venue,
+                f"[live@{venue}] active triangles={len(tris)} -> {tri_list} | {_balances_brief(a)}",
+            )
+        except Exception:
+            pass
+    for tri in tris:
+        insert_triangle(conn, tri)
+    log.info("live@%s dry_run=%s", venue, settings.dry_run)
+    # Discord notify controls
+    last_alert_at = 0.0
+    last_hb_at = time.time()
+    last_trade_notify_at = 0.0
+    min_interval = float(getattr(settings, "discord_trade_min_interval", 10.0) or 10.0)
+    # Streaming execution loop
+    attempts_total = 0
+    successes_total = 0
+    skip_counts: dict[str, int] = {}
+    async for tri, res, reasons, latency in stream_triangles(
+        a, tris, float(getattr(settings, "net_threshold_bps", 0) or 0) / 10000.0
+    ):
+        CYCLE_LATENCY.labels(venue).observe(latency)
+        attempts_total += 1
+        if res is None:
+            # Collect skip reasons for periodic summary/diagnosis
+            for r in (reasons or ["unknown"]):
+                skip_counts[r] = skip_counts.get(r, 0) + 1
+            continue
+        # Record attempt
+        try:
+            attempt_id = insert_attempt(
+                conn,
+                TriangleAttempt(
+                    ts_iso=datetime.now(timezone.utc).isoformat(),
+                    venue=venue,
+                    leg_ab=tri.leg_ab,
+                    leg_bc=tri.leg_bc,
+                    leg_ac=tri.leg_ac,
+                    ok=True,
+                    net_est=res["net_est"],
+                    realized_usdt=res["realized_usdt"],
+                    threshold_bps=float(getattr(settings, "net_threshold_bps", 0.0) or 0.0),
+                    notional_usd=float(getattr(settings, "notional_per_trade_usd", 0.0) or 0.0),
+                    slippage_bps=float(getattr(settings, "max_slippage_bps", 0.0) or 0.0),
+                    dry_run=bool(getattr(settings, "dry_run", True)),
+                    latency_ms=latency * 1000.0,
+                    skip_reasons=None,
+                    ab_bid=None,
+                    ab_ask=None,
+                    bc_bid=None,
+                    bc_ask=None,
+                    ac_bid=None,
+                    ac_ask=None,
+                    qty_base=float(res["fills"][0]["qty"]) if res.get("fills") else None,
+                ),
+            )
+        except Exception:
+            attempt_id = None
+        successes_total += 1
+        # Persist fills and log
+        try:
+            PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
+            ORDERS_TOTAL.labels(venue, "ok").inc()
+        except Exception:
+            pass
+        for f in res["fills"]:
+            try:
+                insert_fill(
+                    conn,
+                    Fill(
+                        order_id=str(f.get("id", "")),
+                        symbol=str(f.get("symbol", "")),
+                        side=str(f.get("side", "")),
+                        price=float(f.get("price", 0.0)),
+                        quantity=float(f.get("qty", 0.0)),
+                        fee=float(f.get("fee", 0.0)),
+                        timestamp=None,
+                        venue=venue,
+                        leg=str(f.get("leg") or ""),
+                        tif=str(f.get("tif") or ""),
+                        order_type=str(f.get("type") or ""),
+                        fee_rate=(
+                            float(f.get("fee_rate")) if f.get("fee_rate") is not None else None
+                        ),
+                        notional=float(f.get("price", 0.0)) * float(f.get("qty", 0.0)),
+                        dry_run=bool(getattr(settings, "dry_run", True)),
+                        attempt_id=attempt_id,
+                    ),
+                )
+                FILLS_TOTAL.labels(venue).inc()
+            except Exception as e:
+                log.error("persist fill error: %s", e)
+        log.info(
+            "%s %s net=%.3f%% (est. profit after fees) PnL=%.2f USDT",
+            venue,
+            tri,
+            res["net_est"] * 100,
+            res["realized_usdt"],
+        )
+        # Trade executed notification
+        if bool(getattr(settings, "discord_trade_notify", False)) and (
+            time.time() - last_trade_notify_at > min_interval
+        ):
+            try:
+                msg = (
+                    f"[{venue}] TRADE {tri} net={res['net_est'] * 100:.2f}% "
+                    f"pnl={res['realized_usdt']:.4f} USDT "
+                )
+                if attempt_id is not None:
+                    msg += f"attempt_id={attempt_id} "
+                qty = (
+                    float(res["fills"][0]["qty"]) if res and res.get("fills") else None
+                )
+                if qty is not None:
+                    msg += f"qty={qty:.6g} "
+                msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)}"
+                notify_discord(venue, msg)
+            except Exception:
+                pass
+            last_trade_notify_at = time.time()
+
+        # Periodic Discord heartbeat summary
+        hb_interval = float(getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0)
+        if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
+            # Console heartbeat for local visibility
+            try:
+                succ_rate = (
+                    (successes_total / attempts_total * 100.0) if attempts_total else 0.0
+                )
+                log.info(
+                    (
+                        "live@%s hb: dry_run=%s attempts=%d successes=%d (%.2f%%) "
+                        "last_net=%.2f%% last_pnl=%.4f USDT"
+                    ),
+                    venue,
+                    getattr(settings, "dry_run", True),
+                    attempts_total,
+                    successes_total,
+                    succ_rate,
+                    (res["net_est"] * 100.0 if res else 0.0),
+                    (res["realized_usdt"] if res else 0.0),
+                )
+                if skip_counts:
+                    # Show top 3 skip reasons by count for quick diagnosis
+                    top = sorted(skip_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+                    log.info(
+                        "live@%s hb: top_skips=%s",
+                        venue,
+                        ", ".join(f"{k}={v}" for k, v in top),
+                    )
+            except Exception:
+                pass
+            try:
+                top_txt = ", ".join(
+                    f"{k}={v}"
+                    for k, v in sorted(
+                        skip_counts.items(), key=lambda kv: kv[1], reverse=True
+                    )[:3]
+                )
+                notify_discord(
+                    venue,
+                    (
+                        f"[{venue}] heartbeat: "
+                        f"dry_run={getattr(settings, 'dry_run', True)}, "
+                        f"attempts={attempts_total}, successes={successes_total}, "
+                        f"last_net={res['net_est'] * 100:.2f}%, "
+                        f"last_pnl={fmt_usd(res['realized_usdt'])} USDT"
+                    ),
+                )
+            except Exception:
+                pass
+            last_hb_at = time.time()
 
 
 @app.command("yield:collect")
@@ -1522,9 +1830,8 @@ def live(
         )
         raise SystemExit(0)
 
-    async def _run() -> None:
-        a = _build_adapter(venue, settings)
-        _log_balances(venue, a)
+    # Start metrics server once per process
+    try:
         start_metrics_server(settings.prom_port)
         conn = init_db(settings.sqlite_path)
         tris = _triangles_for(venue)
@@ -1874,7 +2181,13 @@ def live(
                 last_hb_at = time.time()
 
     try:
-        asyncio.run(_run())
+        asyncio.run(
+            _live_run_for_venue(
+                venue, symbols=symbols, auto_suggest_top=auto_suggest_top
+            )
+        )
+    except KeyboardInterrupt:
+        pass
     finally:
         # On shutdown, send a stop summary (best-effort)
         if bool(getattr(settings, "discord_live_stop_notify", True)):
@@ -1882,6 +2195,66 @@ def live(
                 notify_discord(venue, f"[live@{venue}] stop")
             except Exception:
                 pass
+
+@app.command("live:multi")
+@app.command("live_multi")
+def live_multi(
+    venues: str | None = None,
+    symbols: str | None = None,
+    auto_suggest_top: int = 0,
+    help_verbose: bool = False,
+):
+    """Run live trading loops concurrently across multiple venues.
+
+    Provide a CSV via --venues (default: settings.exchanges). Uses same flags as `live` per venue.
+    """
+
+    if help_verbose:
+        typer.echo(
+            "Runs multiple venue loops concurrently. Example:\n"
+            "  python -m arbit.cli live:multi --venues alpaca,kraken\n"
+            "Flags: --symbols, --auto-suggest-top mirror `live` and apply per venue."
+        )
+        raise SystemExit(0)
+
+    vlist = (
+        [v.strip() for v in (venues or ",".join(settings.exchanges)).split(",") if v.strip()]
+        or ["alpaca", "kraken"]
+    )
+
+    # Start metrics server once per process
+    try:
+        start_metrics_server(settings.prom_port)
+    except Exception:
+        pass
+
+    async def _run_all():
+        tasks = [
+            asyncio.create_task(
+                _live_run_for_venue(v, symbols=symbols, auto_suggest_top=auto_suggest_top)
+            )
+            for v in vlist
+        ]
+        try:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:  # pragma: no cover - ctrl+c handling
+            for t in tasks:
+                t.cancel()
+        except KeyboardInterrupt:  # pragma: no cover
+            for t in tasks:
+                t.cancel()
+
+    try:
+        asyncio.run(_run_all())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if bool(getattr(settings, "discord_live_stop_notify", True)):
+            for v in vlist:
+                try:
+                    notify_discord(v, f"[live@{v}] stop")
+                except Exception:
+                    pass
 
 
 if __name__ == "__main__":

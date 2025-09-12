@@ -123,16 +123,27 @@ net   = gross * (1 - fee)^3 - 1
 
 ## Development Roadmap
 
-### Phase 1 (MVP Weekend)
- - [x] ccxt REST monitor with TUI
- - [x] Single triangle, single exchange
- - [x] Estimates only, no execution
- - [ ] Optional: Aave USDC deposit utility
+### Phase 1 (MVP Weekend) — Status
+ - [x] CCXT REST monitor with TUI — Complete
+ - [x] Single triangle, single exchange — Complete
+ - [x] Estimates only, no execution — Complete (initial MVP; now superseded by basic executor listed in "What Ships Today")
+ - [ ] Optional: Aave USDC deposit utility — Pending
+
+#### Hardening/Improvements (post‑MVP)
+- Execution safety: enforce IOC/timeouts, explicit dry‑run, and strict notional/slippage caps.
+- Fees/slippage modeling: include taker fees and spread impact in `net_edge_cycle` and sizing.
+- Partial fills handling: detect partials, cancel remainders, and reconcile inventory.
+- Resilience: idempotent client IDs, retries with backoff, circuit breakers on repeated failures.
+- Observability: enrich Prometheus metrics (latency histograms, error counters) and structured logs.
+- Persistence: add schema migrations and more frequent snapshots for auditability.
+- Docs: expand safety checklist and examples for paper/live flows; clarify venue quirks.
 
 ### Phase 2 (Production Ready)
  - [ ] WebSocket order books for reduced latency
  - [ ] Multi-symbol rotation and inventory rebalancing
 - [ ] Prometheus metrics and monitoring
+
+See `ROADMAP_PHASE_II.md` for detailed Phase II deliverables, acceptance criteria, and test plan.
 
 ### Triangle Expansion (Ongoing)
 - [x] Add SOL/USDT–SOL/BTC–BTC/USDT to default triangles (alpaca, kraken)
