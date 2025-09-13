@@ -560,49 +560,160 @@ async def _live_run_for_venue(
         async for tri, res, reasons, latency in stream_triangles(
             a, tris, float(getattr(settings, "net_threshold_bps", 0) or 0) / 10000.0
         ):
-        CYCLE_LATENCY.labels(venue).observe(latency)
-        attempts_total += 1
-        latency_total += float(latency or 0.0)
-        if res is None:
-            # Collect skip reasons for periodic summary/diagnosis
-            for r in (reasons or ["unknown"]):
-                skip_counts[r] = skip_counts.get(r, 0) + 1
-            continue
-        # Record attempt
-        try:
-            attempt_id = insert_attempt(
-                conn,
-                TriangleAttempt(
-                    ts_iso=datetime.now(timezone.utc).isoformat(),
-                    venue=venue,
-                    leg_ab=tri.leg_ab,
-                    leg_bc=tri.leg_bc,
-                    leg_ac=tri.leg_ac,
-                    ok=True,
-                    net_est=res["net_est"],
-                    realized_usdt=res["realized_usdt"],
-                    threshold_bps=float(getattr(settings, "net_threshold_bps", 0.0) or 0.0),
-                    notional_usd=float(getattr(settings, "notional_per_trade_usd", 0.0) or 0.0),
-                    slippage_bps=float(getattr(settings, "max_slippage_bps", 0.0) or 0.0),
-                    dry_run=bool(getattr(settings, "dry_run", True)),
-                    latency_ms=latency * 1000.0,
-                    skip_reasons=None,
-                    ab_bid=None,
-                    ab_ask=None,
-                    bc_bid=None,
-                    bc_ask=None,
-                    ac_bid=None,
-                    ac_ask=None,
-                    qty_base=float(res["fills"][0]["qty"]) if res.get("fills") else None,
-                ),
+            CYCLE_LATENCY.labels(venue).observe(latency)
+            attempts_total += 1
+            latency_total += float(latency or 0.0)
+            if res is None:
+                # Collect skip reasons for periodic summary/diagnosis
+                for r in (reasons or ["unknown"]):
+                    skip_counts[r] = skip_counts.get(r, 0) + 1
+                continue
+            # Record attempt
+            try:
+                attempt_id = insert_attempt(
+                    conn,
+                    TriangleAttempt(
+                        ts_iso=datetime.now(timezone.utc).isoformat(),
+                        venue=venue,
+                        leg_ab=tri.leg_ab,
+                        leg_bc=tri.leg_bc,
+                        leg_ac=tri.leg_ac,
+                        ok=True,
+                        net_est=res["net_est"],
+                        realized_usdt=res["realized_usdt"],
+                        threshold_bps=float(getattr(settings, "net_threshold_bps", 0.0) or 0.0),
+                        notional_usd=float(getattr(settings, "notional_per_trade_usd", 0.0) or 0.0),
+                        slippage_bps=float(getattr(settings, "max_slippage_bps", 0.0) or 0.0),
+                        dry_run=bool(getattr(settings, "dry_run", True)),
+                        latency_ms=latency * 1000.0,
+                        skip_reasons=None,
+                        ab_bid=None,
+                        ab_ask=None,
+                        bc_bid=None,
+                        bc_ask=None,
+                        ac_bid=None,
+                        ac_ask=None,
+                        qty_base=float(res["fills"][0]["qty"]) if res.get("fills") else None,
+                    ),
+                )
+            except Exception:
+                attempt_id = None
+            successes_total += 1
+            try:
+                net_total += float(res.get("net_est", 0.0) or 0.0)
+            except Exception:
+                pass
+            # Persist fills and log
+            try:
+                PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
+                ORDERS_TOTAL.labels(venue, "ok").inc()
+            except Exception:
+                pass
+            for f in (res.get("fills") or []):
+                try:
+                    insert_fill(
+                        conn,
+                        Fill(
+                            order_id=str(f.get("id", "")),
+                            symbol=str(f.get("symbol", "")),
+                            side=str(f.get("side", "")),
+                            price=float(f.get("price", 0.0)),
+                            quantity=float(f.get("qty", 0.0)),
+                            fee=float(f.get("fee", 0.0)),
+                            timestamp=None,
+                            venue=venue,
+                            leg=str(f.get("leg") or ""),
+                            tif=str(f.get("tif") or ""),
+                            order_type=str(f.get("type") or ""),
+                            fee_rate=(
+                                float(f.get("fee_rate")) if f.get("fee_rate") is not None else None
+                            ),
+                            notional=float(f.get("price", 0.0)) * float(f.get("qty", 0.0)),
+                            dry_run=bool(getattr(settings, "dry_run", True)),
+                            attempt_id=attempt_id,
+                        ),
+                    )
+                    FILLS_TOTAL.labels(venue).inc()
+                except Exception as e:
+                    log.error("persist fill error: %s", e)
+            log.info(
+                "%s %s net=%.3f%% (est. profit after fees) PnL=%.2f USDT",
+                venue,
+                tri,
+                res["net_est"] * 100,
+                res["realized_usdt"],
             )
-        except Exception:
-            attempt_id = None
-        successes_total += 1
-        try:
-            net_total += float(res.get("net_est", 0.0) or 0.0)
-        except Exception:
-            pass
+            # Trade executed notification
+            if bool(getattr(settings, "discord_trade_notify", False)) and (
+                time.time() - last_trade_notify_at > min_interval
+            ):
+                try:
+                    msg = (
+                        f"[{venue}] TRADE {tri} net={res['net_est'] * 100:.2f}% "
+                        f"pnl={res['realized_usdt']:.4f} USDT "
+                    )
+                    if attempt_id is not None:
+                        msg += f"attempt_id={attempt_id} "
+                    qty = (
+                        float(res["fills"][0]["qty"]) if res and res.get("fills") else None
+                    )
+                    if qty is not None:
+                        msg += f"qty={qty:.6g} "
+                    msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(a)}"
+                    notify_discord(venue, msg)
+                except Exception:
+                    pass
+                last_trade_notify_at = time.time()
+
+            # Periodic Discord heartbeat summary
+            hb_interval = float(getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0)
+            if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
+                # Console heartbeat for local visibility
+                try:
+                    succ_rate = (
+                        (successes_total / attempts_total * 100.0) if attempts_total else 0.0
+                    )
+                    log.info(
+                        (
+                            "live@%s hb: dry_run=%s attempts=%d successes=%d (%.2f%%) "
+                            "last_net=%.2f%% last_pnl=%.4f USDT"
+                        ),
+                        venue,
+                        getattr(settings, "dry_run", True),
+                        attempts_total,
+                        successes_total,
+                        succ_rate,
+                        (res["net_est"] * 100.0 if res else 0.0),
+                        (res["realized_usdt"] if res else 0.0),
+                    )
+                    if skip_counts:
+                        # Show top 3 skip reasons by count for quick diagnosis
+                        top = sorted(skip_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+                        log.info(
+                            "live@%s hb: top_skips=%s",
+                            venue,
+                            ", ".join(f"{k}={v}" for k, v in top),
+                        )
+                except Exception:
+                    pass
+                try:
+                    notify_discord(
+                        venue,
+                        format_live_heartbeat(
+                            venue,
+                            getattr(settings, "dry_run", True),
+                            attempts_total,
+                            successes_total,
+                            res["net_est"] if res else 0.0,
+                            res["realized_usdt"] if res else 0.0,
+                            net_total,
+                            latency_total,
+                            start_time,
+                        ),
+                    )
+                except Exception:
+                    pass
+                last_hb_at = time.time()
     finally:
         try:
             await a.close()
@@ -612,120 +723,6 @@ async def _live_run_for_venue(
             conn.close()
         except Exception:
             pass
-        # Persist fills and log
-        try:
-            PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
-            ORDERS_TOTAL.labels(venue, "ok").inc()
-        except Exception:
-            pass
-        for f in res["fills"]:
-            try:
-                insert_fill(
-                    conn,
-                    Fill(
-                        order_id=str(f.get("id", "")),
-                        symbol=str(f.get("symbol", "")),
-                        side=str(f.get("side", "")),
-                        price=float(f.get("price", 0.0)),
-                        quantity=float(f.get("qty", 0.0)),
-                        fee=float(f.get("fee", 0.0)),
-                        timestamp=None,
-                        venue=venue,
-                        leg=str(f.get("leg") or ""),
-                        tif=str(f.get("tif") or ""),
-                        order_type=str(f.get("type") or ""),
-                        fee_rate=(
-                            float(f.get("fee_rate")) if f.get("fee_rate") is not None else None
-                        ),
-                        notional=float(f.get("price", 0.0)) * float(f.get("qty", 0.0)),
-                        dry_run=bool(getattr(settings, "dry_run", True)),
-                        attempt_id=attempt_id,
-                    ),
-                )
-                FILLS_TOTAL.labels(venue).inc()
-            except Exception as e:
-                log.error("persist fill error: %s", e)
-        log.info(
-            "%s %s net=%.3f%% (est. profit after fees) PnL=%.2f USDT",
-            venue,
-            tri,
-            res["net_est"] * 100,
-            res["realized_usdt"],
-        )
-        # Trade executed notification
-        if bool(getattr(settings, "discord_trade_notify", False)) and (
-            time.time() - last_trade_notify_at > min_interval
-        ):
-            try:
-                msg = (
-                    f"[{venue}] TRADE {tri} net={res['net_est'] * 100:.2f}% "
-                    f"pnl={res['realized_usdt']:.4f} USDT "
-                )
-                if attempt_id is not None:
-                    msg += f"attempt_id={attempt_id} "
-                qty = (
-                    float(res["fills"][0]["qty"]) if res and res.get("fills") else None
-                )
-                if qty is not None:
-                    msg += f"qty={qty:.6g} "
-                msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(a)}"
-                notify_discord(venue, msg)
-            except Exception:
-                pass
-            last_trade_notify_at = time.time()
-
-        # Periodic Discord heartbeat summary
-        hb_interval = float(getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0)
-        if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
-            # Console heartbeat for local visibility
-            try:
-                succ_rate = (
-                    (successes_total / attempts_total * 100.0) if attempts_total else 0.0
-                )
-                log.info(
-                    (
-                        "live@%s hb: dry_run=%s attempts=%d successes=%d (%.2f%%) "
-                        "last_net=%.2f%% last_pnl=%.4f USDT"
-                    ),
-                    venue,
-                    getattr(settings, "dry_run", True),
-                    attempts_total,
-                    successes_total,
-                    succ_rate,
-                    (res["net_est"] * 100.0 if res else 0.0),
-                    (res["realized_usdt"] if res else 0.0),
-                )
-                if skip_counts:
-                    # Show top 3 skip reasons by count for quick diagnosis
-                    top = sorted(skip_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
-                    log.info(
-                        "live@%s hb: top_skips=%s",
-                        venue,
-                        ", ".join(f"{k}={v}" for k, v in top),
-                    )
-            except Exception:
-                pass
-            try:
-                top_txt = ", ".join(
-                    f"{k}={v}"
-                    for k, v in sorted(
-                        skip_counts.items(), key=lambda kv: kv[1], reverse=True
-                    )[:3]
-                )
-                notify_discord(
-                    venue,
-                    (
-                        f"[{venue}] heartbeat: "
-                        f"dry_run={getattr(settings, 'dry_run', True)}, "
-                        f"attempts={attempts_total}, successes={successes_total}, "
-                        f"last_net={res['net_est'] * 100:.2f}%, "
-                        f"last_pnl={fmt_usd(res['realized_usdt'])} USDT | "
-                        f"{_balances_brief(a)}"
-                    ),
-                )
-            except Exception:
-                pass
-            last_hb_at = time.time()
 
 
 @app.command("yield:collect")
@@ -1895,7 +1892,7 @@ def live(
     except Exception:
         pass
 
-    # Delegate to async runner; keep legacy block below unreachable
+    # Delegate to async runner
     try:
         asyncio.run(
             _live_run_for_venue(
@@ -1913,6 +1910,7 @@ def live(
             except Exception:
                 pass
     return
+    '''
         # Filter out triangles with legs not listed by the venue (defensive)
         try:
             ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
@@ -2267,6 +2265,7 @@ def live(
             except Exception:
                 pass
 
+    '''
 @app.command("live:multi")
 @app.command("live_multi")
 def live_multi(
