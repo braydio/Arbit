@@ -17,17 +17,30 @@ from arbit.adapters.base import ExchangeAdapter
 from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
-from arbit.metrics.exporter import (CYCLE_LATENCY, FILLS_TOTAL, ORDERS_TOTAL,
-                                    PROFIT_TOTAL, SKIPS_TOTAL,
-                                    YIELD_ALERTS_TOTAL, YIELD_APR,
-                                    YIELD_BEST_APR, YIELD_CHECKS_TOTAL,
-                                    YIELD_DEPOSITS_TOTAL, YIELD_ERRORS_TOTAL,
-                                    YIELD_WITHDRAWS_TOTAL,
-                                    start_metrics_server)
+from arbit.metrics.exporter import (
+    CYCLE_LATENCY,
+    FILLS_TOTAL,
+    ORDERS_TOTAL,
+    PROFIT_TOTAL,
+    SKIPS_TOTAL,
+    YIELD_ALERTS_TOTAL,
+    YIELD_APR,
+    YIELD_BEST_APR,
+    YIELD_CHECKS_TOTAL,
+    YIELD_DEPOSITS_TOTAL,
+    YIELD_ERRORS_TOTAL,
+    YIELD_WITHDRAWS_TOTAL,
+    start_metrics_server,
+)
 from arbit.models import Fill, Triangle, TriangleAttempt
 from arbit.notify import fmt_usd, notify_discord
-from arbit.persistence.db import (init_db, insert_attempt, insert_fill,
-                                  insert_triangle, insert_yield_op)
+from arbit.persistence.db import (
+    init_db,
+    insert_attempt,
+    insert_fill,
+    insert_triangle,
+    insert_yield_op,
+)
 
 AaveProvider = _import_module("arbit.yield").AaveProvider
 
