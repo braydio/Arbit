@@ -17,30 +17,17 @@ from arbit.adapters.base import ExchangeAdapter
 from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
-from arbit.metrics.exporter import (
-    CYCLE_LATENCY,
-    FILLS_TOTAL,
-    ORDERS_TOTAL,
-    PROFIT_TOTAL,
-    SKIPS_TOTAL,
-    YIELD_ALERTS_TOTAL,
-    YIELD_APR,
-    YIELD_BEST_APR,
-    YIELD_CHECKS_TOTAL,
-    YIELD_DEPOSITS_TOTAL,
-    YIELD_ERRORS_TOTAL,
-    YIELD_WITHDRAWS_TOTAL,
-    start_metrics_server,
-)
+from arbit.metrics.exporter import (CYCLE_LATENCY, FILLS_TOTAL, ORDERS_TOTAL,
+                                    PROFIT_TOTAL, SKIPS_TOTAL,
+                                    YIELD_ALERTS_TOTAL, YIELD_APR,
+                                    YIELD_BEST_APR, YIELD_CHECKS_TOTAL,
+                                    YIELD_DEPOSITS_TOTAL, YIELD_ERRORS_TOTAL,
+                                    YIELD_WITHDRAWS_TOTAL,
+                                    start_metrics_server)
 from arbit.models import Fill, Triangle, TriangleAttempt
 from arbit.notify import fmt_usd, notify_discord
-from arbit.persistence.db import (
-    init_db,
-    insert_attempt,
-    insert_fill,
-    insert_triangle,
-    insert_yield_op,
-)
+from arbit.persistence.db import (init_db, insert_attempt, insert_fill,
+                                  insert_triangle, insert_yield_op)
 
 AaveProvider = _import_module("arbit.yield").AaveProvider
 
@@ -400,8 +387,26 @@ async def _live_run_for_venue(
     *,
     symbols: str | None = None,
     auto_suggest_top: int = 0,
+    debug_log: bool = False,
 ):
-    """Run the continuous live loop for a single venue (async)."""
+    """Run the continuous live loop for a single venue (async).
+
+    Parameters
+    ----------
+    venue:
+        Exchange venue name.
+    symbols:
+        Optional CSV of symbols to restrict triangles.
+    auto_suggest_top:
+        When non-zero, automatically use the top N suggested triangles.
+    debug_log:
+        Enable detailed debug logging for each triangle attempt.
+    """
+
+    if debug_log:
+        logging.getLogger().setLevel(logging.DEBUG)
+        log.setLevel(logging.DEBUG)
+        log.debug("live@%s detailed logging enabled", venue)
 
     a = _build_adapter(venue, settings)
     _log_balances(venue, a)
@@ -518,6 +523,15 @@ async def _live_run_for_venue(
     async for tri, res, reasons, latency in stream_triangles(
         a, tris, float(getattr(settings, "net_threshold_bps", 0) or 0) / 10000.0
     ):
+        if debug_log:
+            log.debug(
+                "live@%s tri=%s res=%s reasons=%s latency=%.3fs",
+                venue,
+                tri,
+                res,
+                reasons,
+                latency,
+            )
         CYCLE_LATENCY.labels(venue).observe(latency)
         attempts_total += 1
         if res is None:
@@ -1471,7 +1485,8 @@ def fitness(
     When ``--simulate`` is provided, attempt dry-run triangle executions using
     current order books and log simulated PnL. Use ``--persist`` to store
     simulated fills in SQLite for later analysis. Current account balances are
-    logged at startup for supported venues.
+    logged at startup for supported venues. Set ``--debug-log`` to emit
+    detailed debug logging during execution.
     """
 
     if help_verbose:
@@ -1492,7 +1507,13 @@ def fitness(
         typer.echo(
             "Use --discord-heartbeat-secs to send periodic summaries to Discord (0=off)."
         )
+        typer.echo("Use --debug-log to emit detailed debug logs.")
         raise SystemExit(0)
+
+    if debug_log:
+        logging.getLogger().setLevel(logging.DEBUG)
+        log.setLevel(logging.DEBUG)
+        log.debug("fitness@%s detailed logging enabled", venue)
 
     a = _build_adapter(venue, settings)
     _log_balances(venue, a)
@@ -1631,6 +1652,14 @@ def fitness(
                             settings.net_threshold_bps / 10000.0,
                             skip_reasons,
                         )
+                        if debug_log:
+                            log.debug(
+                                "fitness@%s tri=%s res=%s skips=%s",
+                                venue,
+                                tri,
+                                res,
+                                skip_reasons,
+                            )
                     except Exception as e:  # defensive: keep fitness resilient
                         log.error("simulate error for %s: %s", tri, e)
                         continue
@@ -1817,11 +1846,13 @@ def live(
     venue: str = "alpaca",
     symbols: str | None = None,
     auto_suggest_top: int = 0,
+    debug_log: bool = False,
     help_verbose: bool = False,
 ):
     """Continuously scan for profitable triangles and execute trades.
 
-    Logs current account balances at startup for supported venues.
+    Logs current account balances at startup for supported venues. Set
+    ``--debug-log`` to emit detailed debug logs.
     """
 
     if help_verbose:
@@ -1829,6 +1860,7 @@ def live(
             "Log line: 'alpaca Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.10 USDT'\n"
             "net = estimated profit after fees; PnL = realized gain in USDT."
         )
+        typer.echo("Use --debug-log to emit detailed debug logs.")
         raise SystemExit(0)
 
     # Start metrics server once per process
@@ -2184,7 +2216,10 @@ def live(
     try:
         asyncio.run(
             _live_run_for_venue(
-                venue, symbols=symbols, auto_suggest_top=auto_suggest_top
+                venue,
+                symbols=symbols,
+                auto_suggest_top=auto_suggest_top,
+                debug_log=debug_log,
             )
         )
     except KeyboardInterrupt:
@@ -2204,11 +2239,13 @@ def live_multi(
     venues: str | None = None,
     symbols: str | None = None,
     auto_suggest_top: int = 0,
+    debug_log: bool = False,
     help_verbose: bool = False,
 ):
     """Run live trading loops concurrently across multiple venues.
 
-    Provide a CSV via --venues (default: settings.exchanges). Uses same flags as `live` per venue.
+    Provide a CSV via --venues (default: settings.exchanges). Uses same flags as
+    `live` per venue. Set ``--debug-log`` to enable detailed debug logging across venues.
     """
 
     if help_verbose:
@@ -2233,7 +2270,12 @@ def live_multi(
     async def _run_all():
         tasks = [
             asyncio.create_task(
-                _live_run_for_venue(v, symbols=symbols, auto_suggest_top=auto_suggest_top)
+                _live_run_for_venue(
+                    v,
+                    symbols=symbols,
+                    auto_suggest_top=auto_suggest_top,
+                    debug_log=debug_log,
+                )
             )
             for v in vlist
         ]
