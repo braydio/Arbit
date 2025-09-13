@@ -306,7 +306,9 @@ if not getattr(log, "_configured", False):
     # Console handler
     ch = logging.StreamHandler()
     ch.setLevel(log.level)
-    ch.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    ch.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
     log.addHandler(ch)
     # Optional file handler
     try:
@@ -318,7 +320,9 @@ if not getattr(log, "_configured", False):
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
             max_bytes = int(getattr(settings, "log_max_bytes", 1_000_000) or 1_000_000)
             backup_count = int(getattr(settings, "log_backup_count", 3) or 3)
-            fh = RotatingFileHandler(log_path, maxBytes=max_bytes, backupCount=backup_count)
+            fh = RotatingFileHandler(
+                log_path, maxBytes=max_bytes, backupCount=backup_count
+            )
             fh.setLevel(log.level)
             fh.setFormatter(
                 logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -452,13 +456,20 @@ async def _live_run_for_venue(
         kept: list[Triangle] = []
         is_alpaca = str(getattr(a, "name", lambda: "")()).lower() == "alpaca"
         map_usdt = bool(getattr(settings, "alpaca_map_usdt_to_usd", False))
+
         def _supported(leg: str) -> bool:
             if leg in ms:
                 return True
-            if is_alpaca and map_usdt and isinstance(leg, str) and leg.upper().endswith("/USDT"):
+            if (
+                is_alpaca
+                and map_usdt
+                and isinstance(leg, str)
+                and leg.upper().endswith("/USDT")
+            ):
                 alt = leg[:-5] + "/USD"
                 return alt in ms
             return False
+
         for t in tris:
             legs = [t.leg_ab, t.leg_bc, t.leg_ac]
             miss = [leg for leg in legs if not _supported(leg)]
@@ -507,11 +518,7 @@ async def _live_run_for_venue(
                     if "missing" in locals() and missing
                     else "n/a"
                 ),
-                (
-                    "; ".join("|".join(t) for t in suggestions)
-                    if suggestions
-                    else "n/a"
-                ),
+                ("; ".join("|".join(t) for t in suggestions) if suggestions else "n/a"),
             )
             try:
                 notify_discord(
@@ -565,7 +572,7 @@ async def _live_run_for_venue(
             latency_total += float(latency or 0.0)
             if res is None:
                 # Collect skip reasons for periodic summary/diagnosis
-                for r in (reasons or ["unknown"]):
+                for r in reasons or ["unknown"]:
                     skip_counts[r] = skip_counts.get(r, 0) + 1
                 continue
             # Record attempt
@@ -581,9 +588,15 @@ async def _live_run_for_venue(
                         ok=True,
                         net_est=res["net_est"],
                         realized_usdt=res["realized_usdt"],
-                        threshold_bps=float(getattr(settings, "net_threshold_bps", 0.0) or 0.0),
-                        notional_usd=float(getattr(settings, "notional_per_trade_usd", 0.0) or 0.0),
-                        slippage_bps=float(getattr(settings, "max_slippage_bps", 0.0) or 0.0),
+                        threshold_bps=float(
+                            getattr(settings, "net_threshold_bps", 0.0) or 0.0
+                        ),
+                        notional_usd=float(
+                            getattr(settings, "notional_per_trade_usd", 0.0) or 0.0
+                        ),
+                        slippage_bps=float(
+                            getattr(settings, "max_slippage_bps", 0.0) or 0.0
+                        ),
                         dry_run=bool(getattr(settings, "dry_run", True)),
                         latency_ms=latency * 1000.0,
                         skip_reasons=None,
@@ -593,7 +606,9 @@ async def _live_run_for_venue(
                         bc_ask=None,
                         ac_bid=None,
                         ac_ask=None,
-                        qty_base=float(res["fills"][0]["qty"]) if res.get("fills") else None,
+                        qty_base=(
+                            float(res["fills"][0]["qty"]) if res.get("fills") else None
+                        ),
                     ),
                 )
             except Exception:
@@ -609,7 +624,7 @@ async def _live_run_for_venue(
                 ORDERS_TOTAL.labels(venue, "ok").inc()
             except Exception:
                 pass
-            for f in (res.get("fills") or []):
+            for f in res.get("fills") or []:
                 try:
                     insert_fill(
                         conn,
@@ -626,9 +641,12 @@ async def _live_run_for_venue(
                             tif=str(f.get("tif") or ""),
                             order_type=str(f.get("type") or ""),
                             fee_rate=(
-                                float(f.get("fee_rate")) if f.get("fee_rate") is not None else None
+                                float(f.get("fee_rate"))
+                                if f.get("fee_rate") is not None
+                                else None
                             ),
-                            notional=float(f.get("price", 0.0)) * float(f.get("qty", 0.0)),
+                            notional=float(f.get("price", 0.0))
+                            * float(f.get("qty", 0.0)),
                             dry_run=bool(getattr(settings, "dry_run", True)),
                             attempt_id=attempt_id,
                         ),
@@ -655,7 +673,9 @@ async def _live_run_for_venue(
                     if attempt_id is not None:
                         msg += f"attempt_id={attempt_id} "
                     qty = (
-                        float(res["fills"][0]["qty"]) if res and res.get("fills") else None
+                        float(res["fills"][0]["qty"])
+                        if res and res.get("fills")
+                        else None
                     )
                     if qty is not None:
                         msg += f"qty={qty:.6g} "
@@ -666,12 +686,16 @@ async def _live_run_for_venue(
                 last_trade_notify_at = time.time()
 
             # Periodic Discord heartbeat summary
-            hb_interval = float(getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0)
+            hb_interval = float(
+                getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0
+            )
             if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
                 # Console heartbeat for local visibility
                 try:
                     succ_rate = (
-                        (successes_total / attempts_total * 100.0) if attempts_total else 0.0
+                        (successes_total / attempts_total * 100.0)
+                        if attempts_total
+                        else 0.0
                     )
                     log.info(
                         (
@@ -688,7 +712,9 @@ async def _live_run_for_venue(
                     )
                     if skip_counts:
                         # Show top 3 skip reasons by count for quick diagnosis
-                        top = sorted(skip_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+                        top = sorted(
+                            skip_counts.items(), key=lambda kv: kv[1], reverse=True
+                        )[:3]
                         log.info(
                             "live@%s hb: top_skips=%s",
                             venue,
@@ -1910,7 +1936,7 @@ def live(
             except Exception:
                 pass
     return
-    '''
+    """
         # Filter out triangles with legs not listed by the venue (defensive)
         try:
             ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
@@ -2265,7 +2291,9 @@ def live(
             except Exception:
                 pass
 
-    '''
+    """
+
+
 @app.command("live:multi")
 @app.command("live_multi")
 def live_multi(
@@ -2287,10 +2315,11 @@ def live_multi(
         )
         raise SystemExit(0)
 
-    vlist = (
-        [v.strip() for v in (venues or ",".join(settings.exchanges)).split(",") if v.strip()]
-        or ["alpaca", "kraken"]
-    )
+    vlist = [
+        v.strip()
+        for v in (venues or ",".join(settings.exchanges)).split(",")
+        if v.strip()
+    ] or ["alpaca", "kraken"]
 
     # Start metrics server once per process
     try:
@@ -2301,7 +2330,9 @@ def live_multi(
     async def _run_all():
         tasks = [
             asyncio.create_task(
-                _live_run_for_venue(v, symbols=symbols, auto_suggest_top=auto_suggest_top)
+                _live_run_for_venue(
+                    v, symbols=symbols, auto_suggest_top=auto_suggest_top
+                )
             )
             for v in vlist
         ]
