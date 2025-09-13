@@ -27,6 +27,12 @@ This document expands Phase II into concrete, testable deliverables needed to ru
   - 99% of cycles use WS-derived quotes; median staleness < 250 ms.
   - `market_data_staleness_ms` histogram available; alerts on >2s for 1m.
 
+Progress
+- [x] Stream API surface in adapter (`orderbook_stream`) with REST fallback.
+- [ ] Initialize `ccxt.pro` client (`ex_ws`) when present; per-symbol watch with retries.
+- [ ] Add `orderbook_staleness_seconds` histogram; measure inter-update deltas.
+- [ ] Tests with fake stream to validate staleness and fallback behavior.
+
 ### 2) Execution Engine Hardening
 - Place IOC limit orders for all legs; enforce per-leg `max_slippage_bps` and `min_notional`.
 - Idempotent client order IDs and retry policy with exponential backoff and jitter.
@@ -121,4 +127,3 @@ This document expands Phase II into concrete, testable deliverables needed to ru
 
 ---
 For current status and Phase I notes, see `ROADMAP.md`.
-

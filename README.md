@@ -55,6 +55,9 @@ Run `python -m arbit.cli --help-verbose` for command flags and more output sampl
 - Global: `--help` (summary), `--help-verbose` (all flags + examples)
 - `fitness` flags: `--venue`, `--secs`, `--simulate/--no-simulate`, `--persist/--no-persist`, `--dummy-trigger`, `--help-verbose`
 - `live` flags: `--venue`, `--help-verbose`
+- `live:multi` flags: `--venues`, `--symbols`, `--auto-suggest-top`
+  - Example: `python -m arbit.cli live:multi --venues alpaca,kraken`
+  - Or use `./scripts/run_live_multi.sh` with `VENUES`, `SYMBOLS`, `AUTO_SUGGEST_TOP`
 - Helpers: `keys:check`, `markets:limits --venue --symbols`, `config:recommend --venue`
 - Yield: `yield:collect --asset USDC --reserve-usd 50` (beta, on-chain)
 - Yield watch: `yield:watch --asset USDC --sources <CSV|JSON> --interval 60 --apr-hint 4.5`

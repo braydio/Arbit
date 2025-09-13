@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     dry_run: bool = True
     reserve_amount_usd: float = 0.0
     reserve_percent: float = 0.0
+    # Market data freshness guard (milliseconds)
+    max_book_age_ms: int = 1500
 
     # Aave staking defaults
     usdc_address: str = "0xff970A61a04b1Ca14834A43F5de4533eBDDB5CC8"
@@ -158,6 +160,7 @@ class Settings(BaseSettings):
             "min_usdc_stake",
             "min_eth_balance_wei",
             "max_gas_price_gwei",
+            "max_book_age_ms",
         ):
             _coerce_int(f)
         for b in (

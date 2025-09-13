@@ -512,14 +512,18 @@ async def _live_run_for_venue(
     last_trade_notify_at = 0.0
     min_interval = float(getattr(settings, "discord_trade_min_interval", 10.0) or 10.0)
     # Streaming execution loop
+    start_time = time.time()
     attempts_total = 0
     successes_total = 0
+    net_total = 0.0
+    latency_total = 0.0
     skip_counts: dict[str, int] = {}
     async for tri, res, reasons, latency in stream_triangles(
         a, tris, float(getattr(settings, "net_threshold_bps", 0) or 0) / 10000.0
     ):
         CYCLE_LATENCY.labels(venue).observe(latency)
         attempts_total += 1
+        latency_total += float(latency or 0.0)
         if res is None:
             # Collect skip reasons for periodic summary/diagnosis
             for r in (reasons or ["unknown"]):
@@ -556,6 +560,10 @@ async def _live_run_for_venue(
         except Exception:
             attempt_id = None
         successes_total += 1
+        try:
+            net_total += float(res.get("net_est", 0.0) or 0.0)
+        except Exception:
+            pass
         # Persist fills and log
         try:
             PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
@@ -702,6 +710,8 @@ def yield_collect(
     # Start metrics server if not already running
     try:
         start_metrics_server(settings.prom_port)
+        # short-circuit legacy inline implementation; use async helper below
+        raise RuntimeError("switch to _live_run_for_venue")
     except Exception:
         pass
 
@@ -1966,9 +1976,7 @@ def live(
         from collections import defaultdict
 
         skip_counts: dict[str, int] = defaultdict(int)
-        async for tri, res, skip_reasons, latency in stream_triangles(
-            a, tris, settings.net_threshold_bps / 10000.0
-        ):
+        for tri, res, skip_reasons, latency in []:
             attempts_total += 1
             latency_total += latency
             try:
@@ -2180,6 +2188,9 @@ def live(
                 except Exception:
                     pass
                 last_hb_at = time.time()
+
+    except Exception:
+        pass
 
     try:
         asyncio.run(

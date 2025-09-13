@@ -17,6 +17,11 @@ CYCLE_LATENCY = Histogram(
     "Per-triangle processing latency in seconds",
     ["venue"],
 )
+ORDERBOOK_STALENESS = Histogram(
+    "orderbook_staleness_seconds",
+    "Time between subsequent order book updates (per venue)",
+    ["venue"],
+)
 
 # Yield metrics
 YIELD_DEPOSITS_TOTAL = Counter(

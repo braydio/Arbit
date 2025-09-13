@@ -137,8 +137,17 @@ net   = gross * (1 - fee)^3 - 1
 
 ### Phase 2 (Production Ready)
  - [ ] WebSocket order books for reduced latency
+   - [x] CLI scaffolding and adapter method (`orderbook_stream`)
+   - [ ] Initialize `ccxt.pro` client when available (`ex_ws`)
+   - [ ] Fallback to REST with staleness guard and metrics
+   - [ ] Basic tests with mocked stream/polling
+ - [x] Multi-venue live mode (concurrent)
+   - [x] `live:multi` command with per-venue loops
+   - [x] Discord notifications include balances per venue
  - [ ] Multi-symbol rotation and inventory rebalancing
-- [ ] Prometheus metrics and monitoring
+ - [ ] Prometheus metrics and monitoring
+   - [ ] Order book staleness histogram
+   - [ ] Error counters for WS connect/retry
 
 See `ROADMAP_PHASE_II.md` for detailed Phase II deliverables, acceptance criteria, and test plan.
 

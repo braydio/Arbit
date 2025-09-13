@@ -219,11 +219,19 @@ async def stream_triangles(
 
     syms = {s for t in tris for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
     books: dict[str, dict] = {}
+    seen_at: dict[str, float] = {}
+    max_age_sec = max(float(getattr(settings, "max_book_age_ms", 1500) or 1500) / 1000.0, 0.0)
     async for sym, ob in adapter.orderbook_stream(syms, depth):
         books[sym] = ob
+        seen_at[sym] = time.time()
         for tri in tris:
             legs = (tri.leg_ab, tri.leg_bc, tri.leg_ac)
             if all(b in books for b in legs):
+                # Staleness guard across the three legs
+                now = time.time()
+                if max_age_sec > 0.0 and any((now - float(seen_at.get(s, 0.0))) > max_age_sec for s in legs):
+                    yield tri, None, ["stale_book"], 0.0
+                    continue
                 t0 = time.time()
                 res = try_triangle(
                     adapter,

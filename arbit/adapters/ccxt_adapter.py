@@ -50,6 +50,15 @@ class CCXTAdapter(ExchangeAdapter):
         cls = getattr(ccxt, ex_id)
         self.ex = cls({"apiKey": key, "secret": secret, "enableRateLimit": True})
         self.client = self.ex
+        # Optional: initialise ccxt.pro client for websocket support when available
+        self.ex_ws = None
+        try:  # pragma: no cover - depends on optional ccxt.pro
+            if ccxtpro is not None:
+                ws_cls = getattr(ccxtpro, ex_id, None)
+                if ws_cls is not None:
+                    self.ex_ws = ws_cls({"apiKey": key, "secret": secret})
+        except Exception:
+            self.ex_ws = None
         if ex_id == "alpaca" and settings.alpaca_base_url:
             # Some venues like Alpaca use non-ccxt defaults; allow override.
             api_urls = self.ex.urls.get("api")
@@ -140,19 +149,55 @@ class CCXTAdapter(ExchangeAdapter):
         back to polling REST with ``poll_interval`` seconds between cycles.
         """
 
+        # Track inter-update staleness
+        last_ts: dict[str, float] = {}
+        venue = getattr(self.ex, "id", "unknown")
+        # Prefer websockets when available; otherwise poll REST
         if getattr(self, "ex_ws", None):
             while True:
-                tasks = {
-                    asyncio.create_task(self.ex_ws.watch_order_book(sym, depth)): sym
-                    for sym in symbols
-                }
-                done, pending = await asyncio.wait(
-                    tasks.keys(), return_when=asyncio.FIRST_COMPLETED
-                )
-                for t in done:
-                    yield tasks[t], t.result()
-                for t in pending:
-                    t.cancel()
+                try:
+                    tasks = {
+                        asyncio.create_task(self.ex_ws.watch_order_book(sym, depth)): sym
+                        for sym in symbols
+                    }
+                    done, pending = await asyncio.wait(
+                        tasks.keys(), return_when=asyncio.FIRST_COMPLETED
+                    )
+                    for t in done:
+                        sym = tasks[t]
+                        ob = t.result()
+                        now = asyncio.get_event_loop().time()
+                        prev = last_ts.get(sym)
+                        if prev is not None:
+                            try:
+                                from arbit.metrics.exporter import ORDERBOOK_STALENESS
+
+                                ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
+                            except Exception:
+                                pass
+                        last_ts[sym] = now
+                        yield sym, ob
+                    for t in pending:
+                        t.cancel()
+                except Exception:
+                    # WS failure – fall back to REST for a cycle before retrying
+                    for sym in symbols:
+                        try:
+                            ob = self.fetch_orderbook(sym, depth)
+                        except Exception as e:
+                            ob = {"bids": [], "asks": [], "error": str(e)}
+                        now = asyncio.get_event_loop().time()
+                        prev = last_ts.get(sym)
+                        if prev is not None:
+                            try:
+                                from arbit.metrics.exporter import ORDERBOOK_STALENESS
+
+                                ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
+                            except Exception:
+                                pass
+                        last_ts[sym] = now
+                        yield sym, ob
+                    await asyncio.sleep(poll_interval)
         else:
             while True:
                 for sym in symbols:
@@ -161,6 +206,16 @@ class CCXTAdapter(ExchangeAdapter):
                     except Exception as e:  # skip symbols that 404 or error
                         # Yield an empty book so callers can record a skip reason
                         ob = {"bids": [], "asks": [], "error": str(e)}
+                    now = asyncio.get_event_loop().time()
+                    prev = last_ts.get(sym)
+                    if prev is not None:
+                        try:
+                            from arbit.metrics.exporter import ORDERBOOK_STALENESS
+
+                            ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
+                        except Exception:
+                            pass
+                    last_ts[sym] = now
                     yield sym, ob
                 await asyncio.sleep(poll_interval)
 
