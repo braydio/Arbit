@@ -17,30 +17,17 @@ from arbit.adapters.base import ExchangeAdapter
 from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
-from arbit.metrics.exporter import (
-    CYCLE_LATENCY,
-    FILLS_TOTAL,
-    ORDERS_TOTAL,
-    PROFIT_TOTAL,
-    SKIPS_TOTAL,
-    YIELD_ALERTS_TOTAL,
-    YIELD_APR,
-    YIELD_BEST_APR,
-    YIELD_CHECKS_TOTAL,
-    YIELD_DEPOSITS_TOTAL,
-    YIELD_ERRORS_TOTAL,
-    YIELD_WITHDRAWS_TOTAL,
-    start_metrics_server,
-)
+from arbit.metrics.exporter import (CYCLE_LATENCY, FILLS_TOTAL, ORDERS_TOTAL,
+                                    PROFIT_TOTAL, SKIPS_TOTAL,
+                                    YIELD_ALERTS_TOTAL, YIELD_APR,
+                                    YIELD_BEST_APR, YIELD_CHECKS_TOTAL,
+                                    YIELD_DEPOSITS_TOTAL, YIELD_ERRORS_TOTAL,
+                                    YIELD_WITHDRAWS_TOTAL,
+                                    start_metrics_server)
 from arbit.models import Fill, Triangle, TriangleAttempt
 from arbit.notify import fmt_usd, notify_discord
-from arbit.persistence.db import (
-    init_db,
-    insert_attempt,
-    insert_fill,
-    insert_triangle,
-    insert_yield_op,
-)
+from arbit.persistence.db import (init_db, insert_attempt, insert_fill,
+                                  insert_triangle, insert_yield_op)
 
 AaveProvider = _import_module("arbit.yield").AaveProvider
 
@@ -1491,6 +1478,7 @@ def fitness(
     dummy_trigger: bool = False,
     symbols: str | None = None,
     discord_heartbeat_secs: float = 0.0,
+    debug_log: bool = False,
     help_verbose: bool = False,
 ):
     """Read-only sanity check that prints bid/ask spreads.
@@ -2226,25 +2214,22 @@ def live(
                     pass
                 last_hb_at = time.time()
 
-    try:
-        asyncio.run(
-            _live_run_for_venue(
-                venue,
-                symbols=symbols,
-                auto_suggest_top=auto_suggest_top,
-                debug_log=debug_log,
-            )
+    asyncio.run(
+        _live_run_for_venue(
+            venue,
+            symbols=symbols,
+            auto_suggest_top=auto_suggest_top,
+            debug_log=debug_log,
         )
-    except KeyboardInterrupt:
-        pass
-    finally:
-        # On shutdown, send a stop summary (best-effort)
-        if bool(getattr(settings, "discord_live_stop_notify", True)):
-            try:
-                a = _build_adapter(venue, settings)
-                notify_discord(venue, f"[live@{venue}] stop | {_balances_brief(a)}")
-            except Exception:
-                pass
+    )
+
+    # On shutdown, send a stop summary (best-effort)
+    if bool(getattr(settings, "discord_live_stop_notify", True)):
+        try:
+            a = _build_adapter(venue, settings)
+            notify_discord(venue, f"[live@{venue}] stop | {_balances_brief(a)}")
+        except Exception:
+            pass
 
 @app.command("live:multi")
 @app.command("live_multi")
