@@ -9,8 +9,8 @@ expose a stream.
 from __future__ import annotations
 
 import asyncio
-from typing import AsyncGenerator, Iterable
 import logging
+from typing import AsyncGenerator, Iterable
 
 import ccxt
 
@@ -198,7 +198,9 @@ class CCXTAdapter(ExchangeAdapter):
                 while True:
                     try:
                         tasks = {
-                            asyncio.create_task(self.ex_ws.watch_order_book(sym, depth)): sym
+                            asyncio.create_task(
+                                self.ex_ws.watch_order_book(sym, depth)
+                            ): sym
                             for sym in symbols
                         }
                         done, pending = await asyncio.wait(
@@ -217,9 +219,13 @@ class CCXTAdapter(ExchangeAdapter):
                             prev = last_ts.get(sym)
                             if prev is not None:
                                 try:
-                                    from arbit.metrics.exporter import ORDERBOOK_STALENESS
+                                    from arbit.metrics.exporter import (
+                                        ORDERBOOK_STALENESS,
+                                    )
 
-                                    ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
+                                    ORDERBOOK_STALENESS.labels(venue).observe(
+                                        max(now - prev, 0.0)
+                                    )
                                 except Exception:
                                     pass
                             last_ts[sym] = now
@@ -242,9 +248,13 @@ class CCXTAdapter(ExchangeAdapter):
                             prev = last_ts.get(sym)
                             if prev is not None:
                                 try:
-                                    from arbit.metrics.exporter import ORDERBOOK_STALENESS
+                                    from arbit.metrics.exporter import (
+                                        ORDERBOOK_STALENESS,
+                                    )
 
-                                    ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
+                                    ORDERBOOK_STALENESS.labels(venue).observe(
+                                        max(now - prev, 0.0)
+                                    )
                                 except Exception:
                                     pass
                             last_ts[sym] = now
@@ -276,7 +286,9 @@ class CCXTAdapter(ExchangeAdapter):
                             try:
                                 from arbit.metrics.exporter import ORDERBOOK_STALENESS
 
-                                ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
+                                ORDERBOOK_STALENESS.labels(venue).observe(
+                                    max(now - prev, 0.0)
+                                )
                             except Exception:
                                 pass
                         last_ts[sym] = now
