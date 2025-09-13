@@ -22,9 +22,6 @@ For installation and configuration guidance, see [README](README.md) or [WARP.md
 - Loops at ~1s cadence in CLI examples; rate-limited at CCXT level
 - Docker containerization with docker-compose for multi-venue deployment
 
-**Legacy Components:**
-- Optional curses TUI in `legacy_arbit.py` (monitor only)
-
 ## Strategy and Math
 
 ### Triangular Arbitrage Cycle
@@ -124,7 +121,7 @@ net   = gross * (1 - fee)^3 - 1
 ## Development Roadmap
 
 ### Phase 1 (MVP Weekend) — Status
- - [x] CCXT REST monitor with TUI — Complete
+ - [x] CCXT REST monitor — Complete
  - [x] Single triangle, single exchange — Complete
  - [x] Estimates only, no execution — Complete (initial MVP; now superseded by basic executor listed in "What Ships Today")
  - [ ] Optional: Aave USDC deposit utility — Pending
@@ -289,8 +286,6 @@ This section tracks what remains to make yield commands robust for dev/live test
 ### SQLite
 - Data path defaults to `./data`; ensure directory exists or set `ARBIT_DATA_DIR`
 
-### Legacy TUI
-- If TUI is needed, use `python legacy_arbit.py --tui` (monitor only)
 
 ## FAQ
 
@@ -317,5 +312,4 @@ A: Estimates assume perfect execution at top-of-book prices. Real trading involv
 - **Metrics**: `arbit/metrics/exporter.py`
 - **DeFi**: `stake.py`
 - **Docker**: `Dockerfile`, `docker-compose.yml`
-- **Legacy**: `legacy_arbit.py`
 - **Tests**: `tests/test_triangle.py`

@@ -103,8 +103,6 @@ pip install ccxt pydantic typer prometheus-client orjson websockets pytest
 # Optional: DeFi integration
 pip install web3
 
-# Optional: Windows legacy TUI support
-pip install windows-curses  # Windows only
 ```
 
 See [WARP.md Development Workflow](WARP.md#development-workflow) for complete setup instructions. For practical guidance on safe tuning and starter values, see [TIPS_TRICKS.md](TIPS_TRICKS.md).
@@ -376,8 +374,7 @@ A: **NO**. This is development/research software. See [safety warnings](#%EF%B8%
 This README provides user-focused documentation. For comprehensive technical details:
 
 - **[WARP.md](WARP.md)** - Complete documentation (architecture, roadmap, development)
-- **Tests**: `pytest -q` 
-- **Deprecated legacy TUI**: `python deprecated/legacy_arbit.py --tui` (use `python -m arbit.cli` instead)
+- **Tests**: `pytest -q`
 
 ## Acknowledgments
 
