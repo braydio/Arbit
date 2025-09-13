@@ -2,6 +2,7 @@
 
 This document outlines current capabilities and future development for the Arbit triangular arbitrage system.
 
+
 For installation and configuration guidance, see the [README](README.md).
 
 ## What Ships Today
@@ -22,9 +23,6 @@ For installation and configuration guidance, see the [README](README.md).
 - Loops at ~1s cadence in CLI examples; rate-limited at CCXT level
 - Docker containerization with docker-compose for multi-venue deployment
 
-**Legacy Components:**
- - Deprecated curses TUI in `deprecated/legacy_arbit.py` (monitor only; prefer `arbit.cli`)
-
 ## Strategy and Math
 
 ### Triangular Arbitrage Cycle
@@ -32,6 +30,10 @@ USDT → ETH → BTC → USDT via symbols:
 - AB = ETH/USDT (buy ETH with USDT)
 - BC = ETH/BTC (sell ETH for BTC)
 - AC = BTC/USDT (sell BTC for USDT)
+
+Additional default candidate:
+- USDT → SOL → BTC → USDT via `SOL/USDT`, `SOL/BTC`, `BTC/USDT`.
+  Rationale: high liquidity and active BTC cross tend to create frequent small dislocations. Validate symbol availability per venue with `keys:check`.
 
 ### Profit Calculation
 **Current Implementation:**
@@ -117,6 +119,7 @@ net   = gross * (1 - fee)^3 - 1
 ## Development Roadmap
 
 ### Phase 1 (MVP Weekend)
+
 - [x] ccxt REST monitor with TUI
 - [x] Single triangle, single exchange
 - [x] Estimates only, no execution
@@ -179,8 +182,6 @@ net   = gross * (1 - fee)^3 - 1
 ### SQLite
 - Data path defaults to `./data`; ensure directory exists or set `ARBIT_DATA_DIR`
 
-### Legacy TUI
-- If TUI is needed, use `python deprecated/legacy_arbit.py --tui` (deprecated; prefer `python -m arbit.cli`)
 
 ## FAQ
 
@@ -207,7 +208,6 @@ A: Estimates assume perfect execution at top-of-book prices. Real trading involv
 - **Metrics**: `arbit/metrics/exporter.py`
 - **DeFi**: `stake.py`
 - **Docker**: `Dockerfile`, `docker-compose.yml`
-- **Deprecated**: `deprecated/legacy_arbit.py`
 - **Tests**: `tests/test_triangle.py`
 
 ## Common Development Commands

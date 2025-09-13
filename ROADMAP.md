@@ -22,9 +22,6 @@ For installation and configuration guidance, see [README](README.md) or [WARP.md
 - Loops at ~1s cadence in CLI examples; rate-limited at CCXT level
 - Docker containerization with docker-compose for multi-venue deployment
 
-**Legacy Components:**
-- Optional curses TUI in `legacy_arbit.py` (monitor only)
-
 ## Strategy and Math
 
 ### Triangular Arbitrage Cycle
@@ -32,6 +29,13 @@ USDT → ETH → BTC → USDT via symbols:
 - AB = ETH/USDT (buy ETH with USDT)
 - BC = ETH/BTC (sell ETH for BTC)
 - AC = BTC/USDT (sell BTC for USDT)
+
+### New Triangle Candidate: SOL → BTC → USDT
+- AB = SOL/USDT (buy SOL with USDT)
+- BC = SOL/BTC (sell SOL for BTC)
+- AC = BTC/USDT (sell BTC for USDT)
+
+Rationale: SOL has strong liquidity and an active BTC cross on Alpaca and Kraken, increasing the odds of small, frequent inefficiencies. This triangle is added to default configs for both venues. Rollout steps below help validate safely.
 
 ### Profit Calculation
 **Current Implementation:**
@@ -116,16 +120,35 @@ net   = gross * (1 - fee)^3 - 1
 
 ## Development Roadmap
 
-### Phase 1 (MVP Weekend)
- - [x] ccxt REST monitor with TUI
- - [x] Single triangle, single exchange
- - [x] Estimates only, no execution
- - [ ] Optional: Aave USDC deposit utility
+### Phase 1 (MVP Weekend) — Status
+ - [x] CCXT REST monitor — Complete
+ - [x] Single triangle, single exchange — Complete
+ - [x] Estimates only, no execution — Complete (initial MVP; now superseded by basic executor listed in "What Ships Today")
+ - [ ] Optional: Aave USDC deposit utility — Pending
+
+#### Hardening/Improvements (post‑MVP)
+- Execution safety: enforce IOC/timeouts, explicit dry‑run, and strict notional/slippage caps.
+- Fees/slippage modeling: include taker fees and spread impact in `net_edge_cycle` and sizing.
+- Partial fills handling: detect partials, cancel remainders, and reconcile inventory.
+- Resilience: idempotent client IDs, retries with backoff, circuit breakers on repeated failures.
+- Observability: enrich Prometheus metrics (latency histograms, error counters) and structured logs.
+- Persistence: add schema migrations and more frequent snapshots for auditability.
+- Docs: expand safety checklist and examples for paper/live flows; clarify venue quirks.
 
 ### Phase 2 (Production Ready)
  - [ ] WebSocket order books for reduced latency
  - [ ] Multi-symbol rotation and inventory rebalancing
- - [ ] Prometheus metrics and monitoring
+- [ ] Prometheus metrics and monitoring
+
+See `ROADMAP_PHASE_II.md` for detailed Phase II deliverables, acceptance criteria, and test plan.
+
+### Triangle Expansion (Ongoing)
+- [x] Add SOL/USDT–SOL/BTC–BTC/USDT to default triangles (alpaca, kraken)
+- [ ] Verify symbol availability per venue with `keys:check` in docs/examples
+- [ ] Paper test in `fitness --simulate` and persist to SQLite for sizing review
+- [ ] Tune `NET_THRESHOLD_BPS` and `MAX_SLIPPAGE_BPS` per venue for SOL triangle
+- [ ] Monitor `min_notional` and taker fees per leg; document venue-specific quirks
+- [ ] Consider adding XRP/BTC/USDT as a next candidate pending liquidity checks
  - [ ] Dry-run execution mode for controlled live trading
  - [ ] Strict notional caps and IOC-only orders
  - [ ] Automated stablecoin allocator with thresholds
@@ -263,8 +286,6 @@ This section tracks what remains to make yield commands robust for dev/live test
 ### SQLite
 - Data path defaults to `./data`; ensure directory exists or set `ARBIT_DATA_DIR`
 
-### Legacy TUI
-- If TUI is needed, use `python legacy_arbit.py --tui` (monitor only)
 
 ## FAQ
 
@@ -291,5 +312,4 @@ A: Estimates assume perfect execution at top-of-book prices. Real trading involv
 - **Metrics**: `arbit/metrics/exporter.py`
 - **DeFi**: `stake.py`
 - **Docker**: `Dockerfile`, `docker-compose.yml`
-- **Legacy**: `legacy_arbit.py`
 - **Tests**: `tests/test_triangle.py`

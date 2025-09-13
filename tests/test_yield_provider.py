@@ -3,9 +3,11 @@
 These tests focus on balance-reading helpers with injected dummy web3.
 """
 
+import importlib
 from types import SimpleNamespace
 
-from arbit.yield.providers import AaveProvider
+# Import provider via importlib because `yield` is a Python keyword
+AaveProvider = importlib.import_module("arbit.yield.providers").AaveProvider
 
 
 class DummyCall:
@@ -65,4 +67,3 @@ def test_provider_balance_reads_without_atoken():
 
     assert p.get_wallet_balance_raw() == 1_500_000
     assert p.get_deposit_balance_raw() == 0
-

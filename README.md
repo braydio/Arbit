@@ -22,6 +22,15 @@ Arbit monitors triangular arbitrage opportunities across cryptocurrency exchange
 - Sell ETH for BTC (`ETH/BTC`) 
 - Sell BTC for USDT (`BTC/USDT`)
 
+New candidate (enabled by default):
+
+**USDT → SOL → BTC → USDT**
+- Buy SOL with USDT (`SOL/USDT`)
+- Sell SOL for BTC (`SOL/BTC`)
+- Sell BTC for USDT (`BTC/USDT`)
+
+Why SOL? High daily volume and active BTC cross provide frequent micro-inefficiencies with sufficient depth. This triangle is included by default on Kraken. Some venues (e.g., Alpaca) may not list `SOL/BTC`; use `--symbols` filtering or override triangles in `.env`. Always verify symbols exist on your venue (`keys:check`) and keep thresholds conservative.
+
 **Core Features:**
 - **Read-only monitoring** with `fitness` command (safe for testing)
 - **Live execution** with `live` command (⚠️ places real orders)
@@ -94,8 +103,6 @@ pip install ccxt pydantic typer prometheus-client orjson websockets pytest
 # Optional: DeFi integration
 pip install web3
 
-# Optional: Windows legacy TUI support
-pip install windows-curses  # Windows only
 ```
 
 See [WARP.md Development Workflow](WARP.md#development-workflow) for complete setup instructions. For practical guidance on safe tuning and starter values, see [TIPS_TRICKS.md](TIPS_TRICKS.md).
@@ -167,8 +174,9 @@ python -m arbit.cli fitness --venue kraken --secs 20
 python -m arbit.cli fitness --venue alpaca --secs 5
 ```
 
-Typical log line: ``kraken ETH/USDT spread=0.5 bps`` where ``spread`` is the
-best ask minus best bid expressed in basis points (1 bps = 0.01%). Smaller
+On startup, current account balances for supported venues (Alpaca, Kraken) are
+logged. Typical log line: ``kraken ETH/USDT spread=0.5 bps`` where ``spread`` is
+the best ask minus best bid expressed in basis points (1 bps = 0.01%). Smaller
 spreads generally indicate deeper liquidity. Use ``--help-verbose`` for more
 output guidance.
 
@@ -200,11 +208,12 @@ python -m arbit.cli live --venue alpaca
 python -m arbit.cli live --venue kraken
 ```
 
-A typical execution log looks like
-``alpaca Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.05 USDT``.
-Here ``net`` denotes the estimated profit after fees for the triangle and
-``PnL`` shows realized profit in USDT. Invoke the command with
-``--help-verbose`` to see these explanations from the CLI itself.
+At launch, the CLI logs current balances for supported venues. A typical
+execution log looks like
+``alpaca Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.05 USDT``. Here
+``net`` denotes the estimated profit after fees for the triangle and ``PnL``
+shows realized profit in USDT. Invoke the command with ``--help-verbose`` to see
+these explanations from the CLI itself.
 
 ### Monitoring & Metrics
 
@@ -219,7 +228,15 @@ curl http://localhost:9109/metrics
 
 **Supported Venues**: `alpaca`, `kraken`
 
-**Note**: Ensure triangle symbols exist on your chosen venue (ETH/USDT, ETH/BTC, BTC/USDT). See [WARP.md CLI Commands](WARP.md#cli-commands) for full documentation.
+**Note**: Ensure triangle symbols exist on your chosen venue (e.g., ETH/USDT, ETH/BTC, BTC/USDT; SOL/USDT, SOL/BTC, BTC/USDT on supported venues like Kraken). See [WARP.md CLI Commands](WARP.md#cli-commands) for full documentation.
+
+Customizing triangles (advanced): set `TRIANGLES_BY_VENUE` as JSON in `.env` to override defaults, e.g.
+```
+TRIANGLES_BY_VENUE={
+  "alpaca": [["ETH/USDT","ETH/BTC","BTC/USDT"],["SOL/USDT","SOL/BTC","BTC/USDT"]],
+  "kraken": [["ETH/USDC","ETH/BTC","BTC/USDC"]]
+}
+```
 
 ## Persistence
 
@@ -357,8 +374,7 @@ A: **NO**. This is development/research software. See [safety warnings](#%EF%B8%
 This README provides user-focused documentation. For comprehensive technical details:
 
 - **[WARP.md](WARP.md)** - Complete documentation (architecture, roadmap, development)
-- **Tests**: `pytest -q` 
-- **Deprecated legacy TUI**: `python deprecated/legacy_arbit.py --tui` (use `python -m arbit.cli` instead)
+- **Tests**: `pytest -q`
 
 ## Acknowledgments
 

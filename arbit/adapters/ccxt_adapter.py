@@ -156,7 +156,12 @@ class CCXTAdapter(ExchangeAdapter):
         else:
             while True:
                 for sym in symbols:
-                    yield sym, self.fetch_orderbook(sym, depth)
+                    try:
+                        ob = self.fetch_orderbook(sym, depth)
+                    except Exception as e:  # skip symbols that 404 or error
+                        # Yield an empty book so callers can record a skip reason
+                        ob = {"bids": [], "asks": [], "error": str(e)}
+                    yield sym, ob
                 await asyncio.sleep(poll_interval)
 
     def balances(self):
