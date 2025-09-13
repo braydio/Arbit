@@ -31,7 +31,6 @@ curl http://localhost:9109/metrics
 **Notes:**
 - Use `fitness` command for safe read-only testing.
 - The `live` command can place real orders - use with caution.
- - Deprecated legacy TUI script in `deprecated/legacy_arbit.py` (prefer `arbit.cli`).
 
 ## Development Workflow
 
@@ -62,8 +61,6 @@ pytest -q
 
 Run `python -m arbit.cli --help-verbose` for command flags and additional output samples.
 
-- Deprecated legacy TUI (monitor-only): `python deprecated/legacy_arbit.py --tui` (use `python -m arbit.cli` instead)
-
 ### Configuration
 The system uses Pydantic Settings with environment prefix `ARBIT_`:
 - `ARBIT_API_KEY`, `ARBIT_API_SECRET`: Exchange credentials
@@ -73,7 +70,6 @@ The system uses Pydantic Settings with environment prefix `ARBIT_`:
 
 ### Platform-Specific Notes
 - Ensure data directory exists: `mkdir -p data`
-- Windows legacy TUI dependency: `pip install windows-curses`
 - Deactivate venv: `deactivate`
 
 ## Configuration and Environment
@@ -130,9 +126,6 @@ Refer to `.env.example` for complete configuration template.
 **Performance:**
 - Loops at ~1s cadence in CLI examples; rate-limited at CCXT level
 - Docker containerization with docker-compose for multi-venue deployment
-
-**Legacy Components:**
- - Deprecated curses TUI in `deprecated/legacy_arbit.py` (monitor only; prefer `arbit.cli`)
 
 ## Strategy and Math
 
@@ -230,7 +223,7 @@ net   = gross * (1 - fee)^3 - 1
 ## Development Roadmap
 
 ### Phase 1 (MVP Weekend)
-- ✅ ccxt REST monitor with TUI
+- ✅ ccxt REST monitor
 - ✅ Single triangle, single exchange
 - ✅ Estimates only, no execution
 - 🔄 Optional: Aave USDC deposit utility
@@ -292,8 +285,6 @@ net   = gross * (1 - fee)^3 - 1
 ### SQLite
 - Data path defaults to `./data`; ensure directory exists or set `ARBIT_DATA_DIR`
 
-### Legacy TUI
-- If TUI is needed, use `python deprecated/legacy_arbit.py --tui` (deprecated; prefer `python -m arbit.cli`)
 
 ## FAQ
 
@@ -320,7 +311,6 @@ A: Estimates assume perfect execution at top-of-book prices. Real trading involv
 - **Metrics**: `arbit/metrics/exporter.py`
 - **DeFi**: `stake.py`
 - **Docker**: `Dockerfile`, `docker-compose.yml`
-- **Deprecated**: `deprecated/legacy_arbit.py`
 - **Tests**: `tests/test_triangle.py`
 
 ## Common Development Commands
