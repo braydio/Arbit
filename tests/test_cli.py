@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import types
 
@@ -154,6 +155,36 @@ def test_fitness_simulate(monkeypatch):
     runner = CliRunner()
     result = runner.invoke(cli.app, ["fitness", "--secs", "1", "--simulate"])
     assert result.exit_code == 0
+
+
+def test_fitness_debug_log(monkeypatch, caplog):
+    """`--debug-log` should emit debug messages."""
+
+    monkeypatch.setenv("ARBIT_API_KEY", "x")
+    monkeypatch.setenv("ARBIT_API_SECRET", "y")
+
+    class _Time:
+        def __init__(self):
+            self.t = 0.0
+
+        def time(self) -> float:
+            self.t += 1.0
+            return self.t
+
+        @staticmethod
+        def sleep(_secs: float) -> None:
+            return None
+
+    monkeypatch.setattr(cli, "time", _Time())
+
+    adapter = DummyAdapter()
+    monkeypatch.setattr(cli, "_build_adapter", lambda venue, _settings: adapter)
+
+    runner = CliRunner()
+    with caplog.at_level(logging.DEBUG):
+        result = runner.invoke(cli.app, ["fitness", "--secs", "1", "--debug-log"])
+    assert result.exit_code == 0
+    assert any("detailed logging enabled" in m for m in caplog.messages)
 
 
 def test_keys_check(monkeypatch):
