@@ -50,6 +50,10 @@ class Settings(BaseSettings):
 
     env: str = "dev"
     log_level: str = "INFO"
+    # Optional log file path; when set, logs also write to this file.
+    log_file: str | None = "data/arbit.log"
+    log_max_bytes: int = 1_000_000
+    log_backup_count: int = 3
     exchanges: List[str] = ["alpaca", "kraken"]  # default venues
 
     # Per-venue keys (preferred)
@@ -99,6 +103,9 @@ class Settings(BaseSettings):
     # Optional RPC configuration for on-chain yield ops
     rpc_url: str | None = None
     private_key: str | None = None
+
+    # Optional venue-specific behavior
+    alpaca_map_usdt_to_usd: bool = False
 
     # Per-venue triangle definitions (override via JSON in env if desired)
     # Format: { venue: [[leg_ab, leg_bc, leg_ac], ...], ... }
@@ -161,6 +168,8 @@ class Settings(BaseSettings):
             "min_eth_balance_wei",
             "max_gas_price_gwei",
             "max_book_age_ms",
+            "log_max_bytes",
+            "log_backup_count",
         ):
             _coerce_int(f)
         for b in (
@@ -170,6 +179,7 @@ class Settings(BaseSettings):
             "discord_error_notify",
             "discord_live_start_notify",
             "discord_live_stop_notify",
+            "alpaca_map_usdt_to_usd",
         ):
             _coerce_bool(b)
 

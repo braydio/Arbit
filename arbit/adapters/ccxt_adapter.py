@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import AsyncGenerator, Iterable
+import logging
 
 import ccxt
 
@@ -49,6 +50,13 @@ class CCXTAdapter(ExchangeAdapter):
             key, secret = creds_for(ex_id)
         cls = getattr(ccxt, ex_id)
         self.ex = cls({"apiKey": key, "secret": secret, "enableRateLimit": True})
+        # Hint ccxt to use trading endpoints where relevant (helps Alpaca crypto)
+        try:
+            opts = dict(getattr(self.ex, "options", {}) or {})
+            opts.setdefault("defaultType", "trading")
+            self.ex.options = opts
+        except Exception:
+            pass
         self.client = self.ex
         # Optional: initialise ccxt.pro client for websocket support when available
         self.ex_ws = None
@@ -74,7 +82,29 @@ class CCXTAdapter(ExchangeAdapter):
 
     def fetch_orderbook(self, symbol, depth=10):
         """Return order book for *symbol* limited to *depth* levels."""
-        return self.ex.fetch_order_book(symbol, depth)
+        try:
+            return self.ex.fetch_order_book(symbol, depth)
+        except Exception as e:
+            # Optional Alpaca quirk: map USDT-quoted to USD-quoted pairs for book-only
+            try:
+                if (
+                    getattr(self.ex, "id", "").lower() == "alpaca"
+                    and getattr(settings, "alpaca_map_usdt_to_usd", False)
+                    and isinstance(symbol, str)
+                    and symbol.upper().endswith("/USDT")
+                ):
+                    alt = symbol[:-5] + "/USD"
+                    ob = self.ex.fetch_order_book(alt, depth)
+                    logging.getLogger("arbit").debug(
+                        "mapped %s -> %s for orderbook fetch", symbol, alt
+                    )
+                    return ob
+            except Exception:
+                pass
+            logging.getLogger("arbit").debug(
+                "fetch_orderbook error symbol=%s depth=%s: %s", symbol, depth, e
+            )
+            raise
 
     # Compatibility wrappers expected by tests -------------------------------------------------
     def fetch_order_book(self, symbol: str, depth: int = 10) -> dict:
@@ -125,9 +155,19 @@ class CCXTAdapter(ExchangeAdapter):
                 "fee": fee,
             }
 
-        o = self.client.create_order(
-            spec.symbol, order_type, spec.side, qty, spec.price or None
-        )
+        try:
+            o = self.client.create_order(
+                spec.symbol, order_type, spec.side, qty, spec.price or None
+            )
+        except Exception as e:
+            logging.getLogger("arbit").error(
+                "create_order failed symbol=%s side=%s qty=%s: %s",
+                spec.symbol,
+                spec.side,
+                qty,
+                e,
+            )
+            raise
         filled = float(o.get("filled", qty))
         price = float(o.get("average") or o.get("price") or 0.0)
         fee_cost = sum(float(f.get("cost") or 0) for f in o.get("fees", []))
@@ -154,37 +194,81 @@ class CCXTAdapter(ExchangeAdapter):
         venue = getattr(self.ex, "id", "unknown")
         # Prefer websockets when available; otherwise poll REST
         if getattr(self, "ex_ws", None):
-            while True:
-                try:
-                    tasks = {
-                        asyncio.create_task(self.ex_ws.watch_order_book(sym, depth)): sym
-                        for sym in symbols
-                    }
-                    done, pending = await asyncio.wait(
-                        tasks.keys(), return_when=asyncio.FIRST_COMPLETED
-                    )
-                    for t in done:
-                        sym = tasks[t]
-                        ob = t.result()
-                        now = asyncio.get_event_loop().time()
-                        prev = last_ts.get(sym)
-                        if prev is not None:
+            try:
+                while True:
+                    try:
+                        tasks = {
+                            asyncio.create_task(self.ex_ws.watch_order_book(sym, depth)): sym
+                            for sym in symbols
+                        }
+                        done, pending = await asyncio.wait(
+                            tasks.keys(), return_when=asyncio.FIRST_COMPLETED
+                        )
+                        for t in done:
+                            sym = tasks[t]
                             try:
-                                from arbit.metrics.exporter import ORDERBOOK_STALENESS
+                                ob = t.result()
+                            except Exception as e:
+                                logging.getLogger("arbit").debug(
+                                    "ws watch_order_book error %s: %s", sym, e
+                                )
+                                ob = {"bids": [], "asks": [], "error": str(e)}
+                            now = asyncio.get_event_loop().time()
+                            prev = last_ts.get(sym)
+                            if prev is not None:
+                                try:
+                                    from arbit.metrics.exporter import ORDERBOOK_STALENESS
 
-                                ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
+                                    ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
+                                except Exception:
+                                    pass
+                            last_ts[sym] = now
+                            yield sym, ob
+                        for t in pending:
+                            t.cancel()
+                        if pending:
+                            try:
+                                await asyncio.gather(*pending, return_exceptions=True)
                             except Exception:
                                 pass
-                        last_ts[sym] = now
-                        yield sym, ob
-                    for t in pending:
-                        t.cancel()
+                    except Exception:
+                        # WS failure – fall back to REST for a cycle before retrying
+                        for sym in symbols:
+                            try:
+                                ob = self.fetch_orderbook(sym, depth)
+                            except Exception as e:
+                                ob = {"bids": [], "asks": [], "error": str(e)}
+                            now = asyncio.get_event_loop().time()
+                            prev = last_ts.get(sym)
+                            if prev is not None:
+                                try:
+                                    from arbit.metrics.exporter import ORDERBOOK_STALENESS
+
+                                    ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
+                                except Exception:
+                                    pass
+                            last_ts[sym] = now
+                            yield sym, ob
+                        await asyncio.sleep(poll_interval)
+            except asyncio.CancelledError:
+                try:
+                    # Close websocket client cleanly
+                    close = getattr(self.ex_ws, "close", None)
+                    if close:
+                        res = close()
+                        if asyncio.iscoroutine(res):
+                            await res
                 except Exception:
-                    # WS failure – fall back to REST for a cycle before retrying
+                    pass
+                raise
+        else:
+            try:
+                while True:
                     for sym in symbols:
                         try:
                             ob = self.fetch_orderbook(sym, depth)
-                        except Exception as e:
+                        except Exception as e:  # skip symbols that 404 or error
+                            # Yield an empty book so callers can record a skip reason
                             ob = {"bids": [], "asks": [], "error": str(e)}
                         now = asyncio.get_event_loop().time()
                         prev = last_ts.get(sym)
@@ -198,26 +282,25 @@ class CCXTAdapter(ExchangeAdapter):
                         last_ts[sym] = now
                         yield sym, ob
                     await asyncio.sleep(poll_interval)
-        else:
-            while True:
-                for sym in symbols:
-                    try:
-                        ob = self.fetch_orderbook(sym, depth)
-                    except Exception as e:  # skip symbols that 404 or error
-                        # Yield an empty book so callers can record a skip reason
-                        ob = {"bids": [], "asks": [], "error": str(e)}
-                    now = asyncio.get_event_loop().time()
-                    prev = last_ts.get(sym)
-                    if prev is not None:
-                        try:
-                            from arbit.metrics.exporter import ORDERBOOK_STALENESS
+            except asyncio.CancelledError:
+                raise
 
-                            ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
-                        except Exception:
-                            pass
-                    last_ts[sym] = now
-                    yield sym, ob
-                await asyncio.sleep(poll_interval)
+    async def close(self) -> None:
+        """Close underlying exchange resources (REST + WebSocket)."""
+        try:
+            if getattr(self, "ex_ws", None):
+                try:
+                    res = self.ex_ws.close()
+                    if asyncio.iscoroutine(res):
+                        await res
+                except Exception:
+                    pass
+        finally:
+            try:
+                if hasattr(self.ex, "close"):
+                    self.ex.close()
+            except Exception:
+                pass
 
     def balances(self):
         """Return assets with non-zero balances."""

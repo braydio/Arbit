@@ -233,12 +233,19 @@ async def stream_triangles(
                     yield tri, None, ["stale_book"], 0.0
                     continue
                 t0 = time.time()
-                res = try_triangle(
-                    adapter,
-                    tri,
-                    {s: books[s] for s in legs},
-                    threshold,
-                    skip_reasons := [],
-                )
+                skip_reasons = []
+                try:
+                    res = try_triangle(
+                        adapter,
+                        tri,
+                        {s: books[s] for s in legs},
+                        threshold,
+                        skip_reasons,
+                    )
+                except Exception:
+                    # Defensive: surface as a skip rather than letting background
+                    # tasks raise unhandled exceptions that become noisy futures.
+                    res = None
+                    skip_reasons.append("exec_error")
                 latency = max(time.time() - t0, 0.0)
                 yield tri, res, skip_reasons, latency

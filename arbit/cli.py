@@ -298,7 +298,36 @@ class CLIApp(typer.Typer):
 
 app = CLIApp()
 log = logging.getLogger("arbit")
-logging.basicConfig(level=settings.log_level)
+
+# Configure logging once with console + optional rotating file handler
+if not getattr(log, "_configured", False):
+    log.setLevel(getattr(logging, str(settings.log_level).upper(), logging.INFO))
+    log.propagate = False
+    # Console handler
+    ch = logging.StreamHandler()
+    ch.setLevel(log.level)
+    ch.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    log.addHandler(ch)
+    # Optional file handler
+    try:
+        import os
+        from logging.handlers import RotatingFileHandler
+
+        log_path = getattr(settings, "log_file", None) or "data/arbit.log"
+        if log_path:
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            max_bytes = int(getattr(settings, "log_max_bytes", 1_000_000) or 1_000_000)
+            backup_count = int(getattr(settings, "log_backup_count", 3) or 3)
+            fh = RotatingFileHandler(log_path, maxBytes=max_bytes, backupCount=backup_count)
+            fh.setLevel(log.level)
+            fh.setFormatter(
+                logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+            )
+            log.addHandler(fh)
+    except Exception:
+        # If file logging fails, continue with console-only
+        pass
+    setattr(log, "_configured", True)
 
 
 def _triangles_for(venue: str) -> list[Triangle]:
@@ -421,9 +450,18 @@ async def _live_run_for_venue(
         ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
         missing: list[tuple[Triangle, list[str]]] = []
         kept: list[Triangle] = []
+        is_alpaca = str(getattr(a, "name", lambda: "")()).lower() == "alpaca"
+        map_usdt = bool(getattr(settings, "alpaca_map_usdt_to_usd", False))
+        def _supported(leg: str) -> bool:
+            if leg in ms:
+                return True
+            if is_alpaca and map_usdt and isinstance(leg, str) and leg.upper().endswith("/USDT"):
+                alt = leg[:-5] + "/USD"
+                return alt in ms
+            return False
         for t in tris:
             legs = [t.leg_ab, t.leg_bc, t.leg_ac]
-            miss = [leg for leg in legs if leg not in ms]
+            miss = [leg for leg in legs if not _supported(leg)]
             if miss:
                 missing.append((t, miss))
             else:
@@ -518,9 +556,10 @@ async def _live_run_for_venue(
     net_total = 0.0
     latency_total = 0.0
     skip_counts: dict[str, int] = {}
-    async for tri, res, reasons, latency in stream_triangles(
-        a, tris, float(getattr(settings, "net_threshold_bps", 0) or 0) / 10000.0
-    ):
+    try:
+        async for tri, res, reasons, latency in stream_triangles(
+            a, tris, float(getattr(settings, "net_threshold_bps", 0) or 0) / 10000.0
+        ):
         CYCLE_LATENCY.labels(venue).observe(latency)
         attempts_total += 1
         latency_total += float(latency or 0.0)
@@ -562,6 +601,15 @@ async def _live_run_for_venue(
         successes_total += 1
         try:
             net_total += float(res.get("net_est", 0.0) or 0.0)
+        except Exception:
+            pass
+    finally:
+        try:
+            await a.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
         except Exception:
             pass
         # Persist fills and log
@@ -1844,17 +1892,27 @@ def live(
     # Start metrics server once per process
     try:
         start_metrics_server(settings.prom_port)
-        conn = init_db(settings.sqlite_path)
-        tris = _triangles_for(venue)
-        # Optional: filter triangles by CSV of symbols (must include all three legs)
-        if symbols:
-            allowed = {s.strip() for s in symbols.split(",") if s.strip()}
-            if allowed:
-                tris = [
-                    t
-                    for t in tris
-                    if all(leg in allowed for leg in (t.leg_ab, t.leg_bc, t.leg_ac))
-                ]
+    except Exception:
+        pass
+
+    # Delegate to async runner; keep legacy block below unreachable
+    try:
+        asyncio.run(
+            _live_run_for_venue(
+                venue, symbols=symbols, auto_suggest_top=auto_suggest_top
+            )
+        )
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # On shutdown, send a stop summary (best-effort)
+        if bool(getattr(settings, "discord_live_stop_notify", True)):
+            try:
+                a = _build_adapter(venue, settings)
+                notify_discord(venue, f"[live@{venue}] stop | {_balances_brief(a)}")
+            except Exception:
+                pass
+    return
         # Filter out triangles with legs not listed by the venue (defensive)
         try:
             ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
