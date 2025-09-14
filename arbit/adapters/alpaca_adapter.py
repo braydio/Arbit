@@ -20,12 +20,12 @@ from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.config import creds_for, settings
 
 try:  # pragma: no cover - optional dependency
-    from alpaca.trading.client import TradingClient
-    from alpaca.trading.requests import MarketOrderRequest, GetAssetsRequest
-    from alpaca.trading.enums import AssetClass, AssetStatus, OrderSide, TimeInForce
     from alpaca.data.historical import CryptoHistoricalDataClient
-    from alpaca.data.requests import CryptoLatestOrderbookRequest
     from alpaca.data.live import CryptoDataStream
+    from alpaca.data.requests import CryptoLatestOrderbookRequest
+    from alpaca.trading.client import TradingClient
+    from alpaca.trading.enums import AssetClass, AssetStatus, OrderSide, TimeInForce
+    from alpaca.trading.requests import GetAssetsRequest, MarketOrderRequest
 except Exception:  # pragma: no cover - dependency may be absent
     TradingClient = None  # type: ignore
     MarketOrderRequest = None  # type: ignore
