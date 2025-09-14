@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 from arbit.engine import executor
 from arbit.models import Triangle
-
 from tests.alpaca_mocks import MockDataStream, MockHistClient, MockTradingClient
 
 

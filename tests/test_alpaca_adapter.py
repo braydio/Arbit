@@ -5,7 +5,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from arbit.adapters.base import OrderSpec
-
 from tests.alpaca_mocks import MockHistClient, MockTradingClient
 
 
