@@ -76,7 +76,9 @@ class CCXTAdapter(ExchangeAdapter):
                 self.ex.urls["api"] = settings.alpaca_base_url
         # Patch Alpaca websocket crypto URL to current version if available
         try:
-            if getattr(self.ex, "id", "").lower() == "alpaca" and getattr(self, "ex_ws", None):
+            if getattr(self.ex, "id", "").lower() == "alpaca" and getattr(
+                self, "ex_ws", None
+            ):
                 # Prefer env override; otherwise default to v1beta3/crypto/us which supersedes v1beta2
                 ws_crypto_url = getattr(settings, "alpaca_ws_crypto_url", None) or (
                     "wss://stream.data.alpaca.markets/v1beta3/crypto/us"
@@ -211,126 +213,32 @@ class CCXTAdapter(ExchangeAdapter):
         Uses a websocket client if ``self.ex_ws`` is available; otherwise falls
         back to polling REST with ``poll_interval`` seconds between cycles.
         """
-
-        # Track inter-update staleness
         last_ts: dict[str, float] = {}
         venue = getattr(self.ex, "id", "unknown")
-        # Prefer websockets when available; otherwise poll REST
+
         if getattr(self, "ex_ws", None):
-            # Maintain persistent watch tasks per symbol; re-arm only completed ones.
             tasks_by_sym: dict[str, asyncio.Task] = {}
             try:
-                # Prime tasks
-                for sym in symbols:
-                    tasks_by_sym[sym] = asyncio.create_task(
-                        self.ex_ws.watch_order_book(sym, depth)
+                while True:
+                    tasks = {
+                        asyncio.create_task(
+                            self.ex_ws.watch_order_book(sym, depth)
+                        ): sym
+                        for sym in symbols
+                    }
+                    done, pending = await asyncio.wait(
+                        tasks.keys(), return_when=asyncio.FIRST_COMPLETED
                     )
-                while True:
-                    try:
-                        tasks = {
-                            asyncio.create_task(
-                                self.ex_ws.watch_order_book(sym, depth)
-                            ): sym
-                            for sym in symbols
-                        }
-                        done, pending = await asyncio.wait(
-                            tasks.keys(), return_when=asyncio.FIRST_COMPLETED
-                        )
-                        for t in done:
-                            sym = tasks[t]
-                            try:
-                                ob = t.result()
-                            except Exception as e:
-                                logging.getLogger("arbit").debug(
-                                    "ws watch_order_book error %s: %s", sym, e
-                                )
-                                ob = {"bids": [], "asks": [], "error": str(e)}
-                            now = asyncio.get_event_loop().time()
-                            prev = last_ts.get(sym)
-                            if prev is not None:
-                                try:
-                                    from arbit.metrics.exporter import (
-                                        ORDERBOOK_STALENESS,
-                                    )
-
-                                    ORDERBOOK_STALENESS.labels(venue).observe(
-                                        max(now - prev, 0.0)
-                                    )
-                                except Exception:
-                                    pass
-                            last_ts[sym] = now
-                            yield sym, ob
-                        for t in pending:
-                            t.cancel()
-                        if pending:
-                            try:
-                                await asyncio.gather(*pending, return_exceptions=True)
-                            except Exception:
-                                pass
-                        last_ts[sym] = now
-                        yield sym, ob
-                        # Mark for re-subscribe on the next loop turn
-                        tasks_by_sym[sym] = None
-            except Exception:
-                # If WS loop breaks unexpectedly, fall back to REST polling
-                while True:
-                    for sym in symbols:
+                    for t in done:
+                        sym = tasks[t]
                         try:
-                            ob = self.fetch_orderbook(sym, depth)
+                            ob = t.result()
                         except Exception as e:
+                            logging.getLogger("arbit").debug(
+                                "ws watch_order_book error %s: %s", sym, e
+                            )
                             ob = {"bids": [], "asks": [], "error": str(e)}
-                        now = asyncio.get_event_loop().time()
-                        prev = last_ts.get(sym)
-                        if prev is not None:
-                            try:
-                                ob = self.fetch_orderbook(sym, depth)
-                            except Exception as e:
-                                ob = {"bids": [], "asks": [], "error": str(e)}
-                            now = asyncio.get_event_loop().time()
-                            prev = last_ts.get(sym)
-                            if prev is not None:
-                                try:
-                                    from arbit.metrics.exporter import (
-                                        ORDERBOOK_STALENESS,
-                                    )
 
-                                    ORDERBOOK_STALENESS.labels(venue).observe(
-                                        max(now - prev, 0.0)
-                                    )
-                                except Exception:
-                                    pass
-                            last_ts[sym] = now
-                            yield sym, ob
-                        await asyncio.sleep(poll_interval)
-            except asyncio.CancelledError:
-                raise
-            finally:
-                # Ensure all WS tasks are cancelled/awaited and client closed
-                try:
-                    live_tasks = [t for t in tasks_by_sym.values() if t is not None]
-                    for t in live_tasks:
-                        t.cancel()
-                    if live_tasks:
-                        await asyncio.gather(*live_tasks, return_exceptions=True)
-                except Exception:
-                    pass
-                try:
-                    close = getattr(self.ex_ws, "close", None)
-                    if close:
-                        res = close()
-                        if asyncio.iscoroutine(res):
-                            await res
-                except Exception:
-                    pass
-        else:
-            try:
-                while True:
-                    for sym in symbols:
-                        try:
-                            ob = self.fetch_orderbook(sym, depth)
-                        except Exception as e:  # skip symbols that 404 or error
-                            # Yield an empty book so callers can record a skip reason
-                            ob = {"bids": [], "asks": [], "error": str(e)}
                         now = asyncio.get_event_loop().time()
                         prev = last_ts.get(sym)
                         if prev is not None:
@@ -344,9 +252,59 @@ class CCXTAdapter(ExchangeAdapter):
                                 pass
                         last_ts[sym] = now
                         yield sym, ob
-                    await asyncio.sleep(poll_interval)
+
+                    for t in pending:
+                        t.cancel()
+                    if pending:
+                        await asyncio.gather(*pending, return_exceptions=True)
+
             except asyncio.CancelledError:
                 raise
+            except Exception:
+                # fallback to REST polling
+                pass
+            finally:
+                try:
+                    live_tasks = [t for t in tasks_by_sym.values() if t is not None]
+                    for t in live_tasks:
+                        t.cancel()
+                    if live_tasks:
+                        await asyncio.gather(*live_tasks, return_exceptions=True)
+                except Exception:
+                    pass
+                try:
+                    if getattr(self.ex_ws, "close", None):
+                        res = self.ex_ws.close()
+                        if asyncio.iscoroutine(res):
+                            await res
+                except Exception:
+                    pass
+
+        # REST polling fallback
+        try:
+            while True:
+                for sym in symbols:
+                    try:
+                        ob = self.fetch_orderbook(sym, depth)
+                    except Exception as e:
+                        ob = {"bids": [], "asks": [], "error": str(e)}
+
+                    now = asyncio.get_event_loop().time()
+                    prev = last_ts.get(sym)
+                    if prev is not None:
+                        try:
+                            from arbit.metrics.exporter import ORDERBOOK_STALENESS
+
+                            ORDERBOOK_STALENESS.labels(venue).observe(
+                                max(now - prev, 0.0)
+                            )
+                        except Exception:
+                            pass
+                    last_ts[sym] = now
+                    yield sym, ob
+                await asyncio.sleep(poll_interval)
+        except asyncio.CancelledError:
+            raise
 
     async def close(self) -> None:
         """Close underlying exchange resources (REST + WebSocket)."""
