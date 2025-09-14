@@ -207,7 +207,9 @@ def test_help_lists_commands() -> None:
     assert result.exit_code == 0
     assert result.output.count("keys:check") == 1
     assert result.output.count("fitness") == 1
-    assert result.output.count("live") == 1
+    # The help output may list additional variants like ``live:multi``. Ensure
+    # the primary ``live`` command appears at least once.
+    assert result.output.count("live") >= 1
     assert result.output.count("markets:limits") == 1
     assert result.output.count("config:recommend") == 1
 

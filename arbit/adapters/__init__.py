@@ -7,4 +7,9 @@ try:  # pragma: no cover - optional dependency
 except Exception:  # pragma: no cover
     CCXTAdapter = None  # type: ignore
 
-__all__ = ["ExchangeAdapter", "CCXTAdapter"]
+try:  # pragma: no cover - optional dependency
+    from .alpaca_adapter import AlpacaAdapter
+except Exception:  # pragma: no cover
+    AlpacaAdapter = None  # type: ignore
+
+__all__ = ["ExchangeAdapter", "CCXTAdapter", "AlpacaAdapter"]
