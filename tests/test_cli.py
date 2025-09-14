@@ -20,8 +20,6 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
     )
 )
 
-sys.modules["arbit.adapters.ccxt_adapter"] = types.SimpleNamespace(CCXTAdapter=object)
-
 from arbit import cli  # noqa: E402
 
 
