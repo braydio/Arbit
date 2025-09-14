@@ -44,3 +44,13 @@ def test_load_env_file_strips_quotes(monkeypatch, tmp_path):
     else:
         sys.modules.pop("arbit.config", None)
     monkeypatch.delenv("FOO", raising=False)
+
+
+def test_creds_for_alpaca(monkeypatch) -> None:
+    """``creds_for`` should pull venue-specific keys when available."""
+
+    monkeypatch.setenv("ALPACA_API_KEY", "key")
+    monkeypatch.setenv("ALPACA_API_SECRET", "secret")
+    sys.modules.pop("arbit.config", None)
+    cfg = importlib.import_module("arbit.config")
+    assert cfg.creds_for("alpaca") == ("key", "secret")

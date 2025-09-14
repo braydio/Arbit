@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     alpaca_api_key: str | None = None
     alpaca_api_secret: str | None = None
     alpaca_base_url: str = "https://api.alpaca.markets"
+    # Websocket endpoint for crypto order book streams.
+    alpaca_ws_crypto_url: str = "wss://stream.data.alpaca.markets/v1beta3/crypto/us"
 
     kraken_api_key: str | None = None
     kraken_api_secret: str | None = None
