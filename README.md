@@ -40,6 +40,15 @@ Another stablecoin triangle now included by default on Kraken:
 
 Rationale: Tight spreads on `DAI/USDT` and `ETH/USDT` with generally adequate depth on `ETH/DAI` make this a reasonable candidate. If your venue shows stronger depth on USDC, consider replacing with `USDT → USDC → ETH → USDT` instead.
 
+Also enabled by default on Kraken where liquidity is strong:
+
+**USDT → USDC → ETH → USDT**
+- Swap USDT to USDC (`USDC/USDT`)
+- Swap USDC to ETH (`ETH/USDC`)
+- Swap ETH back to USDT (`ETH/USDT`)
+
+Rationale: `USDC/USDT` and `ETH/USDC` are typically very liquid on Kraken with tight spreads, offering frequent micro-inefficiencies while keeping inventory risk low.
+
 **Core Features:**
 - **Read-only monitoring** with `fitness` command (safe for testing)
 - **Live execution** with `live` command (⚠️ places real orders)
@@ -159,6 +168,13 @@ export ALPACA_BASE_URL=https://paper-api.alpaca.markets  # Paper trading
 # Kraken
 export KRAKEN_API_KEY=your_kraken_key
 export KRAKEN_API_SECRET=your_kraken_secret
+
+# Discord notifications (optional)
+export DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...   # enable alerts
+export DISCORD_HEARTBEAT_SECS=60                                  # live periodic summary
+export DISCORD_TRADE_NOTIFY=false                                  # trade-only alerts
+export DISCORD_ATTEMPT_NOTIFY=false                                # per-attempt alerts (noisy)
+export DISCORD_MIN_NOTIFY_INTERVAL_SECS=10                         # rate limit seconds
 ```
 
 ### Using .env Files

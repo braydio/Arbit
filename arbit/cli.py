@@ -13,6 +13,12 @@ from datetime import datetime, timezone
 from importlib import import_module as _import_module
 
 import typer
+# Backward-compat: some environments may lack typer.Option; provide a fallback
+try:  # pragma: no cover - environment-specific
+    from typer import Option as TyperOption
+except Exception:  # pragma: no cover
+    def TyperOption(default=None, *args, **kwargs):
+        return default
 from arbit.adapters import AlpacaAdapter, CCXTAdapter, ExchangeAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
@@ -440,6 +446,7 @@ async def _live_run_for_venue(
     *,
     symbols: str | None = None,
     auto_suggest_top: int = 0,
+    attempt_notify_override: bool | None = None,
 ):
     """Run the continuous live loop for a single venue (async)."""
 
@@ -559,10 +566,18 @@ async def _live_run_for_venue(
         insert_triangle(conn, tri)
     log.info("live@%s dry_run=%s", venue, settings.dry_run)
     # Discord notify controls
-    last_alert_at = 0.0
     last_hb_at = time.time()
     last_trade_notify_at = 0.0
-    min_interval = float(getattr(settings, "discord_trade_min_interval", 10.0) or 10.0)
+    last_attempt_notify_at = 0.0
+    # Global min notify interval for all Discord notifications
+    min_interval = float(
+        getattr(settings, "discord_min_notify_interval_secs", 10.0) or 10.0
+    )
+    attempt_notify = (
+        bool(attempt_notify_override)
+        if attempt_notify_override is not None
+        else bool(getattr(settings, "discord_attempt_notify", False))
+    )
     # Streaming execution loop
     start_time = time.time()
     attempts_total = 0
@@ -581,6 +596,17 @@ async def _live_run_for_venue(
                 # Collect skip reasons for periodic summary/diagnosis
                 for r in reasons or ["unknown"]:
                     skip_counts[r] = skip_counts.get(r, 0) + 1
+                # Optional per-attempt skip notification (rate-limited)
+                if attempt_notify and (time.time() - last_attempt_notify_at) > min_interval:
+                    try:
+                        rs = ",".join(reasons or ["unknown"])[:200]
+                        notify_discord(
+                            venue,
+                            f"[live@{venue}] attempt SKIP {tri} reasons={rs}",
+                        )
+                    except Exception:
+                        pass
+                    last_attempt_notify_at = time.time()
                 continue
             # Record attempt
             try:
@@ -668,29 +694,38 @@ async def _live_run_for_venue(
                 res["net_est"] * 100,
                 res["realized_usdt"],
             )
-            # Trade executed notification
-            if bool(getattr(settings, "discord_trade_notify", False)) and (
-                time.time() - last_trade_notify_at > min_interval
-            ):
+            # Per-attempt success notification or legacy trade notify (rate-limited)
+            if (time.time() - last_trade_notify_at) > min_interval:
                 try:
-                    msg = (
-                        f"[{venue}] TRADE {tri} net={res['net_est'] * 100:.2f}% "
-                        f"pnl={res['realized_usdt']:.4f} USDT "
-                    )
-                    if attempt_id is not None:
-                        msg += f"attempt_id={attempt_id} "
                     qty = (
-                        float(res["fills"][0]["qty"])
-                        if res and res.get("fills")
-                        else None
+                        float(res["fills"][0]["qty"]) if res and res.get("fills") else None
                     )
-                    if qty is not None:
-                        msg += f"qty={qty:.6g} "
-                    msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(a)}"
-                    notify_discord(venue, msg)
+                    if attempt_notify:
+                        msg = (
+                            f"[live@{venue}] attempt OK {tri} net={res['net_est']*100:.2f}% "
+                            f"pnl={res['realized_usdt']:.4f} USDT "
+                        )
+                        if attempt_id is not None:
+                            msg += f"attempt_id={attempt_id} "
+                        if qty is not None:
+                            msg += f"qty={qty:.6g} "
+                        msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(a)}"
+                        notify_discord(venue, msg)
+                        last_trade_notify_at = time.time()
+                    elif bool(getattr(settings, "discord_trade_notify", False)):
+                        msg = (
+                            f"[{venue}] TRADE {tri} net={res['net_est'] * 100:.2f}% "
+                            f"pnl={res['realized_usdt']:.4f} USDT "
+                        )
+                        if attempt_id is not None:
+                            msg += f"attempt_id={attempt_id} "
+                        if qty is not None:
+                            msg += f"qty={qty:.6g} "
+                        msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(a)}"
+                        notify_discord(venue, msg)
+                        last_trade_notify_at = time.time()
                 except Exception:
                     pass
-                last_trade_notify_at = time.time()
 
             # Periodic Discord heartbeat summary
             hb_interval = float(
@@ -1550,6 +1585,11 @@ def fitness(
     dummy_trigger: bool = False,
     symbols: str | None = None,
     discord_heartbeat_secs: float = 0.0,
+    attempt_notify: bool | None = TyperOption(
+        None,
+        "--attempt-notify/--no-attempt-notify",
+        help="Send per-attempt Discord alerts (noisy). Overrides env.",
+    ),
     help_verbose: bool = False,
 ):
     """Read-only sanity check that prints bid/ask spreads.
@@ -1632,6 +1672,16 @@ def fitness(
     skip_counts: dict[str, int] = defaultdict(int)
     loop_idx = 0
     last_hb_at = 0.0
+    # Resolve per-attempt notify preference and rate limit
+    attempt_notify = (
+        bool(attempt_notify)
+        if attempt_notify is not None
+        else bool(getattr(settings, "discord_attempt_notify", False))
+    )
+    last_attempt_notify_at = 0.0
+    min_interval = float(
+        getattr(settings, "discord_min_notify_interval_secs", 10.0) or 10.0
+    )
     try:
         while time.time() - t0 < secs:
             books_cache: dict[str, dict] = {}
@@ -1789,9 +1839,37 @@ def fitness(
                             skip_counts["unprofitable"] = (
                                 skip_counts.get("unprofitable", 0) + 1
                             )
+                        # Optional per-attempt SKIP notification
+                        if attempt_notify and (time.time() - last_attempt_notify_at) > min_interval:
+                            try:
+                                rs = ",".join(skip_reasons or ["unknown"])[:200]
+                                notify_discord(
+                                    venue,
+                                    f"[fitness@{venue}] attempt SKIP {tri} reasons={rs}",
+                                )
+                            except Exception:
+                                pass
+                            last_attempt_notify_at = time.time()
                         continue
                     sim_count += 1
                     sim_pnl += float(res.get("realized_usdt", 0.0))
+                    # Optional per-attempt OK notification (simulate)
+                    if attempt_notify and (time.time() - last_attempt_notify_at) > min_interval:
+                        try:
+                            qty = (
+                                float(res["fills"][0]["qty"]) if res and res.get("fills") else None
+                            )
+                            msg = (
+                                f"[fitness@{venue}] attempt OK {tri} net={res['net_est']*100:.2f}% "
+                                f"pnl={res['realized_usdt']:.4f} USDT "
+                            )
+                            if qty is not None:
+                                msg += f"qty={qty:.6g} "
+                            msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)}"
+                            notify_discord(venue, msg)
+                        except Exception:
+                            pass
+                        last_attempt_notify_at = time.time()
                     for f in res.get("fills", []):
                         if conn is not None:
                             try:
@@ -1903,6 +1981,11 @@ def live(
     venue: str = "alpaca",
     symbols: str | None = None,
     auto_suggest_top: int = 0,
+    attempt_notify: bool | None = TyperOption(
+        None,
+        "--attempt-notify/--no-attempt-notify",
+        help="Send per-attempt Discord alerts (noisy). Overrides env.",
+    ),
     help_verbose: bool = False,
 ):
     """Continuously scan for profitable triangles and execute trades.
@@ -1927,7 +2010,10 @@ def live(
     try:
         asyncio.run(
             _live_run_for_venue(
-                venue, symbols=symbols, auto_suggest_top=auto_suggest_top
+                venue,
+                symbols=symbols,
+                auto_suggest_top=auto_suggest_top,
+                attempt_notify_override=attempt_notify,
             )
         )
     except KeyboardInterrupt:
@@ -2305,6 +2391,11 @@ def live_multi(
     venues: str | None = None,
     symbols: str | None = None,
     auto_suggest_top: int = 0,
+    attempt_notify: bool | None = TyperOption(
+        None,
+        "--attempt-notify/--no-attempt-notify",
+        help="Send per-attempt Discord alerts (noisy). Overrides env.",
+    ),
     help_verbose: bool = False,
 ):
     """Run live trading loops concurrently across multiple venues.
@@ -2336,7 +2427,10 @@ def live_multi(
         tasks = [
             asyncio.create_task(
                 _live_run_for_venue(
-                    v, symbols=symbols, auto_suggest_top=auto_suggest_top
+                    v,
+                    symbols=symbols,
+                    auto_suggest_top=auto_suggest_top,
+                    attempt_notify_override=attempt_notify,
                 )
             )
             for v in vlist
