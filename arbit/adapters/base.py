@@ -34,8 +34,8 @@ class ExchangeAdapter(ABC):
         """Return ``(maker, taker)`` fee rates for *symbol*."""
 
     @abstractmethod
-    def load_markets(self) -> Dict[str, Dict[str, Any]]:
-        """Return mapping of market symbol to metadata."""
+    def load_markets(self) -> Dict[str, Any]:
+        """Return ``{symbol: info}`` mapping of available markets."""
 
     @abstractmethod
     def min_notional(self, symbol: str) -> float:

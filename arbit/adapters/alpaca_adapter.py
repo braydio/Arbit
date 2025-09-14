@@ -223,7 +223,7 @@ class AlpacaAdapter(ExchangeAdapter):
             self._stream = None
 
     # ------------------------------------------------------------------
-    def load_markets(self) -> Dict[str, Dict[str, Any]]:
+    def load_markets(self) -> Dict[str, Any]:
         """Return mapping of tradeable pairs via the Alpaca REST API."""
 
         if self._markets is not None:
