@@ -12,7 +12,7 @@ For installation and configuration guidance, see [README](README.md) or [WARP.md
 - Simplified execution via three limit orders at top-of-book prices when threshold exceeded
 - Prometheus metrics (orders_total, fills_total, profit_total)
 - SQLite persistence (triangles, fills tables)
-- Supported exchanges: `alpaca`, `kraken`
+- Supported exchanges: `alpaca` (native), `kraken` (CCXT)
 
 **CLI Modes:**
 - `fitness`: Read-only connectivity/spread sampling; optional dry-run simulation (`--simulate`)
@@ -66,7 +66,8 @@ net   = gross * (1 - fee)^3 - 1
 
 **Exchange Adapters:**
 - `arbit/adapters/base.py` (ExchangeAdapter ABC)
-- `arbit/adapters/ccxt_adapter.py` (CCXT-backed adapter for alpaca/kraken)
+- `arbit/adapters/alpaca_adapter.py` (native Alpaca API)
+- `arbit/adapters/ccxt_adapter.py` (CCXT-backed adapter for kraken)
 
 **Engine:**
 - `arbit/engine/triangle.py` (top-of-book helpers, net_edge_cycle, size_from_depth)
@@ -305,7 +306,7 @@ A: The `fitness` command is read-only. The `live` command can place real orders 
 A: Yes, for both `fitness` and `live` commands. Keys are required for order book access.
 
 **Q: Which exchanges are supported?**
-A: Currently `alpaca` and `kraken` through the CCXT adapter.
+A: Currently `alpaca` via a native adapter and `kraken` through CCXT.
 
 **Q: How accurate are the profit estimates?**
 A: Estimates assume perfect execution at top-of-book prices. Real trading involves slippage, partial fills, and fees.
@@ -315,7 +316,7 @@ A: Estimates assume perfect execution at top-of-book prices. Real trading involv
 - **CLI**: `arbit/cli.py`
 - **Config**: `arbit/config.py`
 - **Models**: `arbit/models.py`
-- **Adapters**: `arbit/adapters/base.py`, `arbit/adapters/ccxt_adapter.py`
+- **Adapters**: `arbit/adapters/base.py`, `arbit/adapters/alpaca_adapter.py`, `arbit/adapters/ccxt_adapter.py`
 - **Engine**: `arbit/engine/triangle.py`, `arbit/engine/executor.py`
 - **Persistence**: `arbit/persistence/db.py`
 - **Metrics**: `arbit/metrics/exporter.py`

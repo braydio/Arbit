@@ -47,7 +47,7 @@ Rationale: Tight spreads on `DAI/USDT` and `ETH/USDT` with generally adequate de
 - **SQLite persistence** for trade history
 - **Docker support** with multi-venue deployment
 - **WebSocket streaming** with automatic REST fallback
-- **Supported exchanges**: Alpaca, Kraken (via CCXT)
+- **Supported exchanges**: Alpaca (native), Kraken (via CCXT)
 
 ### CLI Modes at a Glance
 
@@ -370,7 +370,7 @@ See [WARP.md Troubleshooting](WARP.md#common-issues-and-troubleshooting) for det
 A: `fitness` is read-only. `live` **WILL place real orders** if keys have trading permissions.
 
 **Q: Which exchanges are supported?**  
-A: Currently Alpaca and Kraken via CCXT. More exchanges can be added.
+A: Currently Alpaca (native) and Kraken (via CCXT). More exchanges can be added.
 
 **Q: How accurate are profit estimates?**
 A: Estimates assume perfect execution at top-of-book prices. Real trading involves slippage, fees, and partial fills.
