@@ -9,18 +9,18 @@ For installation and configuration guidance, see the [README](README.md).
 
 **Core Functionality:**
 - Modular Python package with Typer CLI interface
-- CCXT REST order books and order placement through `CCXTAdapter`
+- Native Alpaca REST/websocket via `AlpacaAdapter` (alpaca-py) and CCXT order books through `CCXTAdapter`
 - Simplified execution via three limit orders at top-of-book prices when threshold exceeded
 - Prometheus metrics (orders_total, fills_total, profit_total)
 - SQLite persistence (triangles, fills tables)
-- Supported exchanges: `alpaca`, `kraken`
+- Supported exchanges: `alpaca` (native), `kraken` (via CCXT)
 
 **CLI Modes:**
 - `fitness`: Read-only connectivity/spread sampling
 - `live`: Simplified live attempts; places orders if keys have trade permissions
 
 **Performance:**
-- Loops at ~1s cadence in CLI examples; rate-limited at CCXT level
+- Loops at ~1s cadence in CLI examples; Kraken path rate-limited via CCXT
 - Docker containerization with docker-compose for multi-venue deployment
 
 ## Strategy and Math
@@ -59,12 +59,18 @@ net   = gross * (1 - fee)^3 - 1
 **Configuration:**
 - `arbit/config.py` (Pydantic Settings, env prefix ARBIT_)
 
+**Alpaca Settings:**
+- `ALPACA_BASE_URL` to select paper or live API endpoint
+- `ALPACA_WS_CRYPTO_URL` to override websocket endpoint
+- `ALPACA_MAP_USDT_TO_USD` to treat `/USDT` symbols as `/USD`
+
 **Models:**
 - `arbit/models.py` (Triangle, OrderSpec, Fill)
 
 **Exchange Adapters:**
 - `arbit/adapters/base.py` (ExchangeAdapter ABC)
-- `arbit/adapters/ccxt_adapter.py` (CCXT-backed adapter for alpaca/kraken)
+- `arbit/adapters/alpaca_adapter.py` (native Alpaca API via alpaca-py)
+- `arbit/adapters/ccxt_adapter.py` (CCXT-backed adapter for Kraken and others)
 
 **Engine:**
 - `arbit/engine/triangle.py` (top-of-book helpers, net_edge_cycle, size_from_depth)
@@ -173,7 +179,12 @@ net   = gross * (1 - fee)^3 - 1
 ### Symbols
 - Verify triangle legs exist on the chosen venue (e.g., ETH/USDT, BTC/ETH, BTC/USDT)
 
-### CCXT Errors
+### Alpaca Settings
+- `ALPACA_BASE_URL` controls paper vs live REST endpoint
+- `ALPACA_WS_CRYPTO_URL` overrides websocket stream
+- Enable `ALPACA_MAP_USDT_TO_USD` to map `/USDT` pairs to `/USD`
+
+### CCXT Errors (Kraken)
 - Keep `enableRateLimit=True`; reduce polling frequency if rate-limited
 
 ### Metrics
@@ -192,7 +203,7 @@ A: The `fitness` command is read-only. The `live` command can place real orders 
 A: Yes, for both `fitness` and `live` commands. Keys are required for order book access.
 
 **Q: Which exchanges are supported?**
-A: Currently `alpaca` and `kraken` through the CCXT adapter.
+A: Currently `alpaca` (native API) and `kraken` via the CCXT adapter.
 
 **Q: How accurate are the profit estimates?**
 A: Estimates assume perfect execution at top-of-book prices. Real trading involves slippage, partial fills, and fees.
@@ -202,7 +213,7 @@ A: Estimates assume perfect execution at top-of-book prices. Real trading involv
 - **CLI**: `arbit/cli.py`
 - **Config**: `arbit/config.py`
 - **Models**: `arbit/models.py`
-- **Adapters**: `arbit/adapters/base.py`, `arbit/adapters/ccxt_adapter.py`
+- **Adapters**: `arbit/adapters/base.py`, `arbit/adapters/alpaca_adapter.py`, `arbit/adapters/ccxt_adapter.py`
 - **Engine**: `arbit/engine/triangle.py`, `arbit/engine/executor.py`
 - **Persistence**: `arbit/persistence/db.py`
 - **Metrics**: `arbit/metrics/exporter.py`
@@ -227,7 +238,7 @@ pytest -q
 python -c "import ccxt; print(sorted(ccxt.exchanges)[:10])"
 
 # Clean venv and reinstall deps
-rm -rf .venv && python -m venv .venv && source .venv/bin/activate && pip install -U pip && pip install ccxt pydantic typer prometheus-client orjson websockets pytest web3
+rm -rf .venv && python -m venv .venv && source .venv/bin/activate && pip install -U pip && pip install alpaca-py ccxt pydantic typer prometheus-client orjson websockets pytest web3
 
 # Docker up both venues
 docker compose up -d --build

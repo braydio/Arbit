@@ -176,6 +176,9 @@ class CLIApp(typer.Typer):
             ]
             alias_str = f" (aliases: {', '.join(sorted(aliases))})" if aliases else ""
             typer.echo(f"  {cname:<12} {desc}{alias_str}")
+        typer.echo(
+            "\nExchanges: alpaca (native API via alpaca-py) and kraken (via CCXT)."
+        )
         typer.echo("\nTip: run --help-verbose for flags and examples.")
 
     # ------------------------------------------------------------------
@@ -185,6 +188,7 @@ class CLIApp(typer.Typer):
 
         typer.echo("Command reference:\n")
         typer.echo("Global: --help (short list), --help-verbose (this view)\n")
+        typer.echo("Exchanges: alpaca (native API via alpaca-py), kraken (via CCXT)\n")
 
         typer.echo(
             "keys:check\n"
@@ -393,8 +397,8 @@ def _build_adapter(venue: str, _settings=settings) -> ExchangeAdapter:
     Returns
     -------
     ExchangeAdapter
-        ``AlpacaAdapter`` when *venue* is ``"alpaca"`` otherwise
-        ``CCXTAdapter``.
+        ``AlpacaAdapter`` using Alpaca's native ``alpaca-py`` clients when
+        *venue* is ``"alpaca"``; otherwise ``CCXTAdapter``.
     """
 
     if venue.lower() == "alpaca":

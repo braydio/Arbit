@@ -56,7 +56,7 @@ Rationale: `USDC/USDT` and `ETH/USDC` are typically very liquid on Kraken with t
 - **SQLite persistence** for trade history
 - **Docker support** with multi-venue deployment
 - **WebSocket streaming** with automatic REST fallback
-- **Supported exchanges**: Alpaca, Kraken (via CCXT)
+- **Supported exchanges**: Alpaca (native API), Kraken (via CCXT)
 
 ### CLI Modes at a Glance
 
@@ -90,7 +90,7 @@ See [WARP.md](WARP.md) for comprehensive documentation, architecture details, an
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 python -m pip install -U pip
-pip install ccxt pydantic typer prometheus-client orjson websockets pytest
+pip install alpaca-py ccxt pydantic typer prometheus-client orjson websockets pytest
 
 # Configure API credentials (see Configuration section below)
 export ARBIT_API_KEY=your_venue_api_key
@@ -119,7 +119,7 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
 # Install dependencies
-pip install ccxt pydantic typer prometheus-client orjson websockets pytest
+pip install alpaca-py ccxt pydantic typer prometheus-client orjson websockets pytest
 
 # Optional: DeFi integration
 pip install web3
@@ -164,6 +164,8 @@ For multiple exchanges, use venue-specific variables:
 export ALPACA_API_KEY=your_alpaca_key
 export ALPACA_API_SECRET=your_alpaca_secret
 export ALPACA_BASE_URL=https://paper-api.alpaca.markets  # Paper trading
+export ALPACA_WS_CRYPTO_URL=wss://stream.data.alpaca.markets/v1beta3/crypto/us  # optional
+export ALPACA_MAP_USDT_TO_USD=true  # treat /USDT pairs as /USD
 
 # Kraken
 export KRAKEN_API_KEY=your_kraken_key
@@ -252,6 +254,24 @@ Prometheus metrics are exposed on port 9109 by default:
 curl http://localhost:9109/metrics
 
 # Key metrics: orders_total, fills_total, profit_total_usdt
+```
+
+### WebSocket Streaming Example
+
+Stream live order books with the native Alpaca adapter:
+
+```python
+import asyncio
+from arbit.adapters.alpaca_adapter import AlpacaAdapter
+
+async def main():
+    adapter = AlpacaAdapter()
+    async for sym, book in adapter.orderbook_stream(["BTC/USDT"], depth=1):
+        print(sym, book)
+        break
+    await adapter.close()
+
+asyncio.run(main())
 ```
 
 **Supported Venues**: `alpaca`, `kraken`
@@ -385,8 +405,8 @@ See [WARP.md Troubleshooting](WARP.md#common-issues-and-troubleshooting) for det
 **Q: Does this place actual trades?**
 A: `fitness` is read-only. `live` **WILL place real orders** if keys have trading permissions.
 
-**Q: Which exchanges are supported?**  
-A: Currently Alpaca and Kraken via CCXT. More exchanges can be added.
+**Q: Which exchanges are supported?**
+A: Currently Alpaca (native API) and Kraken via CCXT. More exchanges can be added.
 
 **Q: How accurate are profit estimates?**
 A: Estimates assume perfect execution at top-of-book prices. Real trading involves slippage, fees, and partial fills.
@@ -406,7 +426,7 @@ This README provides user-focused documentation. For comprehensive technical det
 
 ## Acknowledgments
 
-Built with [CCXT](https://github.com/ccxt/ccxt) for exchange connectivity, [Pydantic](https://pydantic-docs.helpmanual.io/) for configuration, and [Typer](https://typer.tiangolo.com/) for CLI interface.
+Built with [alpaca-py](https://github.com/alpacahq/alpaca-py) for native Alpaca connectivity, [CCXT](https://github.com/ccxt/ccxt) for other exchanges, [Pydantic](https://pydantic-docs.helpmanual.io/) for configuration, and [Typer](https://typer.tiangolo.com/) for CLI interface.
 
 ---
 
