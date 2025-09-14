@@ -16,6 +16,9 @@ import typer
 from arbit.adapters import AlpacaAdapter, CCXTAdapter, ExchangeAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
+from arbit.engine.triangle import (
+    discover_triangles_from_markets as _discover_triangles_from_markets,
+)
 from arbit.metrics.exporter import (
     CYCLE_LATENCY,
     FILLS_TOTAL,
@@ -489,7 +492,7 @@ async def _live_run_for_venue(
         suggestions: list[list[str]] = []
         try:
             ms = a.load_markets()
-            suggestions = _discover_triangles_from_markets(ms)[:3]  # noqa: F821
+            suggestions = _discover_triangles_from_markets(ms)[:3]
         except Exception:
             suggestions = []
         # If requested, auto-use top-N suggestions for this session only
@@ -1255,9 +1258,7 @@ def keys_check():
             symbol = (
                 "BTC/USDT"
                 if "BTC/USDT" in ms
-                else "BTC/USD"
-                if "BTC/USD" in ms
-                else next(iter(ms))
+                else "BTC/USD" if "BTC/USD" in ms else next(iter(ms))
             )
             ob = a.fetch_orderbook(symbol, 1)
             bid = ob.get("bids", [])
@@ -1527,7 +1528,7 @@ def config_discover(
     except Exception as e:
         log.error("load_markets failed for %s: %s", venue, e)
         raise SystemExit(1)
-    triples = _discover_triangles_from_markets(ms)  # noqa: F821
+    triples = _discover_triangles_from_markets(ms)
     typer.echo(
         f"{venue} triangles={len(triples)} "
         + (f"first={'|'.join(triples[0])}" if triples else "")
@@ -1961,7 +1962,7 @@ def live(
             suggestions: list[list[str]] = []
             try:
                 ms = a.load_markets()
-                suggestions = _discover_triangles_from_markets(ms)[:3]  # noqa: F821
+                suggestions = _discover_triangles_from_markets(ms)[:3]
             except Exception:
                 suggestions = []
             # If requested, auto-use top-N suggestions for this session only
