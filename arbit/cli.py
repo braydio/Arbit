@@ -13,12 +13,16 @@ from datetime import datetime, timezone
 from importlib import import_module as _import_module
 
 import typer
+
 # Backward-compat: some environments may lack typer.Option; provide a fallback
 try:  # pragma: no cover - environment-specific
     from typer import Option as TyperOption
 except Exception:  # pragma: no cover
+
     def TyperOption(default=None, *args, **kwargs):
         return default
+
+
 from arbit.adapters import AlpacaAdapter, CCXTAdapter, ExchangeAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
@@ -597,7 +601,10 @@ async def _live_run_for_venue(
                 for r in reasons or ["unknown"]:
                     skip_counts[r] = skip_counts.get(r, 0) + 1
                 # Optional per-attempt skip notification (rate-limited)
-                if attempt_notify and (time.time() - last_attempt_notify_at) > min_interval:
+                if (
+                    attempt_notify
+                    and (time.time() - last_attempt_notify_at) > min_interval
+                ):
                     try:
                         rs = ",".join(reasons or ["unknown"])[:200]
                         notify_discord(
@@ -698,11 +705,13 @@ async def _live_run_for_venue(
             if (time.time() - last_trade_notify_at) > min_interval:
                 try:
                     qty = (
-                        float(res["fills"][0]["qty"]) if res and res.get("fills") else None
+                        float(res["fills"][0]["qty"])
+                        if res and res.get("fills")
+                        else None
                     )
                     if attempt_notify:
                         msg = (
-                            f"[live@{venue}] attempt OK {tri} net={res['net_est']*100:.2f}% "
+                            f"[live@{venue}] attempt OK {tri} net={res['net_est'] * 100:.2f}% "
                             f"pnl={res['realized_usdt']:.4f} USDT "
                         )
                         if attempt_id is not None:
@@ -1293,7 +1302,9 @@ def keys_check():
             symbol = (
                 "BTC/USDT"
                 if "BTC/USDT" in ms
-                else "BTC/USD" if "BTC/USD" in ms else next(iter(ms))
+                else "BTC/USD"
+                if "BTC/USD" in ms
+                else next(iter(ms))
             )
             ob = a.fetch_orderbook(symbol, 1)
             bid = ob.get("bids", [])
@@ -1840,7 +1851,10 @@ def fitness(
                                 skip_counts.get("unprofitable", 0) + 1
                             )
                         # Optional per-attempt SKIP notification
-                        if attempt_notify and (time.time() - last_attempt_notify_at) > min_interval:
+                        if (
+                            attempt_notify
+                            and (time.time() - last_attempt_notify_at) > min_interval
+                        ):
                             try:
                                 rs = ",".join(skip_reasons or ["unknown"])[:200]
                                 notify_discord(
@@ -1854,18 +1868,25 @@ def fitness(
                     sim_count += 1
                     sim_pnl += float(res.get("realized_usdt", 0.0))
                     # Optional per-attempt OK notification (simulate)
-                    if attempt_notify and (time.time() - last_attempt_notify_at) > min_interval:
+                    if (
+                        attempt_notify
+                        and (time.time() - last_attempt_notify_at) > min_interval
+                    ):
                         try:
                             qty = (
-                                float(res["fills"][0]["qty"]) if res and res.get("fills") else None
+                                float(res["fills"][0]["qty"])
+                                if res and res.get("fills")
+                                else None
                             )
                             msg = (
-                                f"[fitness@{venue}] attempt OK {tri} net={res['net_est']*100:.2f}% "
+                                f"[fitness@{venue}] attempt OK {tri} net={res['net_est'] * 100:.2f}% "
                                 f"pnl={res['realized_usdt']:.4f} USDT "
                             )
                             if qty is not None:
                                 msg += f"qty={qty:.6g} "
-                            msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)}"
+                            msg += (
+                                f"slip_bps={getattr(settings, 'max_slippage_bps', 0)}"
+                            )
                             notify_discord(venue, msg)
                         except Exception:
                             pass
