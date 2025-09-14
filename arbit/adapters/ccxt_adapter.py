@@ -147,7 +147,7 @@ class CCXTAdapter(ExchangeAdapter):
         self._fee[symbol] = (maker, taker)
         return maker, taker
 
-    def load_markets(self) -> Dict[str, Dict[str, Any]]:
+    def load_markets(self) -> Dict[str, Any]:
         """Return market metadata from the underlying ``ccxt`` client."""
 
         return self.ex.load_markets()
