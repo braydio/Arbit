@@ -55,7 +55,9 @@ def test_orderbook_stream_reconnect(monkeypatch) -> None:
     monkeypatch.setattr(
         aa, "settings", SimpleNamespace(alpaca_base_url="", alpaca_map_usdt_to_usd=True)
     )
-    adapter = aa.AlpacaAdapter("k", "s")
+    monkeypatch.setattr(aa, "creds_for", lambda ex: ("k", "s"))
+    adapter = aa.AlpacaAdapter()
+    assert adapter._key == "k" and adapter._secret == "s"
 
     async def run() -> None:
         gen = adapter.orderbook_stream(["BTC/USDT"], depth=1, reconnect_delay=0)

@@ -170,6 +170,9 @@ def test_keys_check(monkeypatch):
             super().__init__()
             self.ex = DummyCcxt()
 
+        def load_markets(self) -> dict:
+            return self.ex.load_markets()
+
     adapter = DummyKeyAdapter()
     monkeypatch.setattr(cli, "_build_adapter", lambda venue, _settings: adapter)
 
