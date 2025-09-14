@@ -13,6 +13,7 @@ This guide collects practical advice for configuring and operating Arbit safely,
 - [Database Signals for Performance Debugging](#database-signals-for-performance-debugging)
 - [Safety & Operational Tips](#safety--operational-tips)
 - [Interpreting `markets:limits` Output](#interpreting-marketslimits-output)
+- [Baseline Config with `config:recommend`](#baseline-config-with-configrecommend)
 - [Extending This Guide](#extending-this-guide)
 
 ## Quick Recommendations
@@ -214,6 +215,13 @@ Aliases and Flags
   - `markets:limits` (preferred) or `markets_limits`
   - `config:recommend` (preferred) or `config_recommend`
 - Flags marked in help as “optional” are not required; some only apply when specific modes are enabled (e.g., `--persist` is only relevant with `--simulate`).
+
+## Baseline Config with `config:recommend`
+
+- Run `python -m arbit.cli config:recommend --venue <venue>` to print sample Strategy settings.
+- Copy the suggested values into `.env` and adjust for your risk tolerance.
+- Review `NOTIONAL_PER_TRADE_USD` and fee assumptions before going live.
+- Re-run after venue fee changes or when switching markets.
 
 ## Extending This Guide
 

@@ -109,6 +109,7 @@
       <li><a href="#database-signals-for-performance-debugging"> - Database Signals</a></li>
       <li><a href="#safety-operational-tips"> - Safety &amp; Operational Tips</a></li>
       <li><a href="#interpreting-marketslimits-output"> - Interpreting markets:limits</a></li>
+      <li><a href="#baseline-config-with-configrecommend"> - Baseline Config with <code>config:recommend</code></a></li>
       <li><a href="#extending-this-guide"> - Extending This Guide</a></li>
     </ul>
   </nav>
@@ -453,6 +454,15 @@
         <li>Flags marked in help as “optional” are not required; some only apply when specific modes are enabled (e.g.,
           <code>--persist</code> is only relevant with <code>--simulate</code>).
         </li>
+      </ul>
+    </section>
+    <section>
+      <h2 id="baseline-config-with-configrecommend">Baseline Config with <code>config:recommend</code></h2>
+      <ul>
+        <li>Run <code>python -m arbit.cli config:recommend --venue &lt;venue&gt;</code> to print sample Strategy settings.</li>
+        <li>Copy the suggested values into <code>.env</code> and adjust for your risk tolerance.</li>
+        <li>Review <code>NOTIONAL_PER_TRADE_USD</code> and fee assumptions before going live.</li>
+        <li>Re-run after venue fee changes or when switching markets.</li>
       </ul>
     </section>
     <section>
