@@ -153,6 +153,14 @@ export PROM_PORT=9109               # metrics server port
 
 # Create data directory
 mkdir -p data
+
+# Market data freshness controls (optional)
+# Max age of any leg's order book before skipping the attempt (ms)
+export MAX_BOOK_AGE_MS=1500
+# Try a quick REST fetch to refresh stale legs before skipping (reduces stale_book)
+export REFRESH_ON_STALE=true
+# Min gap between refreshes per symbol (ms)
+export STALE_REFRESH_MIN_GAP_MS=150
 ```
 
 ### Per-Venue Configuration

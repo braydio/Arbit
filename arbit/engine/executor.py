@@ -5,7 +5,7 @@ from typing import AsyncGenerator, Iterable
 
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.config import settings
-from arbit.engine.triangle import net_edge, size_from_depth, top
+from arbit.engine.triangle import net_edge, net_edge_cycle, size_from_depth, top
 from arbit.models import Triangle
 
 
@@ -60,8 +60,20 @@ def try_triangle(
             skip_reasons.append("incomplete_book")
         return None
 
-    taker = adapter.fetch_fees(tri.leg_ab)[1]
-    net = net_edge(askAB, bidBC, bidAC, taker)
+    # Use per-leg taker fees for a more accurate net estimate
+    try:
+        fee_ab = float(adapter.fetch_fees(tri.leg_ab)[1])
+    except Exception:
+        fee_ab = 0.001
+    try:
+        fee_bc = float(adapter.fetch_fees(tri.leg_bc)[1])
+    except Exception:
+        fee_bc = fee_ab
+    try:
+        fee_ac = float(adapter.fetch_fees(tri.leg_ac)[1])
+    except Exception:
+        fee_ac = fee_ab
+    net = net_edge_cycle([1.0 / askAB, bidBC, bidAC, (1 - fee_ab), (1 - fee_bc), (1 - fee_ac)])
     if net < threshold:
         if skip_reasons is not None:
             skip_reasons.append("below_threshold")
@@ -220,6 +232,7 @@ async def stream_triangles(
     syms = {s for t in tris for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
     books: dict[str, dict] = {}
     seen_at: dict[str, float] = {}
+    last_refreshed: dict[str, float] = {}
     max_age_sec = max(
         float(getattr(settings, "max_book_age_ms", 1500) or 1500) / 1000.0, 0.0
     )
@@ -229,13 +242,44 @@ async def stream_triangles(
         for tri in tris:
             legs = (tri.leg_ab, tri.leg_bc, tri.leg_ac)
             if all(b in books for b in legs):
-                # Staleness guard across the three legs
+                # Staleness guard across the three legs with optional refresh
                 now = time.time()
-                if max_age_sec > 0.0 and any(
-                    (now - float(seen_at.get(s, 0.0))) > max_age_sec for s in legs
-                ):
-                    yield tri, None, ["stale_book"], 0.0
-                    continue
+                stale_syms = [
+                    s for s in legs if (now - float(seen_at.get(s, 0.0))) > max_age_sec
+                ]
+                if stale_syms and max_age_sec > 0.0:
+                    if bool(getattr(settings, "refresh_on_stale", True)):
+                        # Try a quick REST refresh for stale legs (depth=1), rate-limited
+                        min_gap = max(
+                            float(
+                                getattr(settings, "stale_refresh_min_gap_ms", 150) or 150
+                            )
+                            / 1000.0,
+                            0.0,
+                        )
+                        for s in stale_syms:
+                            last = float(last_refreshed.get(s, 0.0))
+                            if (now - last) < min_gap:
+                                continue
+                            try:
+                                ob_s = adapter.fetch_orderbook(s, 1)
+                                if isinstance(ob_s, dict) and ob_s.get("bids") is not None:
+                                    books[s] = ob_s
+                                    seen_at[s] = time.time()
+                            except Exception:
+                                pass
+                            finally:
+                                last_refreshed[s] = time.time()
+                        # Recompute staleness after refresh attempts
+                        now = time.time()
+                        stale_syms = [
+                            s
+                            for s in legs
+                            if (now - float(seen_at.get(s, 0.0))) > max_age_sec
+                        ]
+                    if stale_syms:
+                        yield tri, None, ["stale_book"], 0.0
+                        continue
                 t0 = time.time()
                 skip_reasons = []
                 try:

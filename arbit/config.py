@@ -110,6 +110,9 @@ class Settings(BaseSettings):
 
     # Optional venue-specific behavior
     alpaca_map_usdt_to_usd: bool = False
+    # Streaming/attempt freshness controls
+    refresh_on_stale: bool = True
+    stale_refresh_min_gap_ms: int = 150
 
     # Per-venue triangle definitions (override via JSON in env if desired)
     # Format: { venue: [[leg_ab, leg_bc, leg_ac], ...], ... }
