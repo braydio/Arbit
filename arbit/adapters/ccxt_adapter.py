@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import AsyncGenerator, Iterable
+from typing import Any, AsyncGenerator, Dict, Iterable
 
 import ccxt
 
@@ -146,6 +146,11 @@ class CCXTAdapter(ExchangeAdapter):
         taker = m.get("taker", self.ex.fees.get("trading", {}).get("taker", 0.001))
         self._fee[symbol] = (maker, taker)
         return maker, taker
+
+    def load_markets(self) -> Dict[str, Dict[str, Any]]:
+        """Return market metadata from the underlying ``ccxt`` client."""
+
+        return self.ex.load_markets()
 
     def min_notional(self, symbol):
         """Return exchange-imposed minimum notional for *symbol*."""

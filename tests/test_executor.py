@@ -42,6 +42,11 @@ class DummyAdapter(ExchangeAdapter):
     def min_notional(self, symbol: str) -> float:  # pragma: no cover - simple stub
         return 0.0
 
+    def load_markets(
+        self,
+    ) -> dict[str, dict[str, float]]:  # pragma: no cover - simple stub
+        return {s: {"symbol": s} for s in self.books.keys()}
+
     def create_order(self, spec: OrderSpec):
         book = self.books[spec.symbol]
         price = book["asks"][0][0] if spec.side == "buy" else book["bids"][0][0]
