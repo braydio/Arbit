@@ -1,4 +1,6 @@
-"""Exchange adapter interfaces and implementations."""
+"""Exchange adapter interfaces and implementations.
+
+Exports adapters for CCXT-supported venues and Alpaca's native API."""
 
 from .base import ExchangeAdapter
 
