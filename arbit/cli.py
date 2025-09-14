@@ -13,8 +13,7 @@ from datetime import datetime, timezone
 from importlib import import_module as _import_module
 
 import typer
-from arbit.adapters.base import ExchangeAdapter
-from arbit.adapters.ccxt_adapter import CCXTAdapter
+from arbit.adapters import AlpacaAdapter, CCXTAdapter, ExchangeAdapter
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
 from arbit.metrics.exporter import (
@@ -22,7 +21,6 @@ from arbit.metrics.exporter import (
     FILLS_TOTAL,
     ORDERS_TOTAL,
     PROFIT_TOTAL,
-    SKIPS_TOTAL,
     YIELD_ALERTS_TOTAL,
     YIELD_APR,
     YIELD_BEST_APR,
@@ -371,17 +369,23 @@ def _triangles_for(venue: str) -> list[Triangle]:
     return out
 
 
-def _build_adapter(venue: str, _settings=settings):
+def _build_adapter(venue: str, _settings=settings) -> ExchangeAdapter:
     """Factory for constructing exchange adapters.
 
     Parameters
     ----------
     venue:
-        Exchange identifier understood by the underlying adapter.
-    _settings:
-        Settings object used to configure the adapter (unused for now).
+        Exchange identifier understood by the adapter.
+
+    Returns
+    -------
+    ExchangeAdapter
+        ``AlpacaAdapter`` when *venue* is ``"alpaca"`` otherwise
+        ``CCXTAdapter``.
     """
 
+    if venue.lower() == "alpaca":
+        return AlpacaAdapter()
     return CCXTAdapter(venue)
 
 
@@ -451,10 +455,10 @@ async def _live_run_for_venue(
             ]
     # Filter out triangles with legs not listed by the venue (defensive)
     try:
-        ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
+        ms = a.load_markets()
         missing: list[tuple[Triangle, list[str]]] = []
         kept: list[Triangle] = []
-        is_alpaca = str(getattr(a, "name", lambda: "")()).lower() == "alpaca"
+        is_alpaca = a.name().lower() == "alpaca"
         map_usdt = bool(getattr(settings, "alpaca_map_usdt_to_usd", False))
 
         def _supported(leg: str) -> bool:
@@ -484,8 +488,8 @@ async def _live_run_for_venue(
         # Try suggest triangles programmatically
         suggestions: list[list[str]] = []
         try:
-            ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
-            suggestions = _discover_triangles_from_markets(ms)[:3]
+            ms = a.load_markets()
+            suggestions = _discover_triangles_from_markets(ms)[:3]  # noqa: F821
         except Exception:
             suggestions = []
         # If requested, auto-use top-N suggestions for this session only
@@ -1247,7 +1251,7 @@ def keys_check():
     for venue in settings.exchanges:
         try:
             a = _build_adapter(venue, settings)
-            ms = a.ex.load_markets()
+            ms = a.load_markets()
             symbol = (
                 "BTC/USDT"
                 if "BTC/USDT" in ms
@@ -1262,7 +1266,7 @@ def keys_check():
             ask_price = ask[0][0] if ask else "n/a"
             log.info(
                 "[%s] markets=%d %s %s/%s",
-                getattr(a, "name", lambda: a.ex.id)(),
+                a.name(),
                 len(ms),
                 symbol,
                 bid_price,
@@ -1286,7 +1290,7 @@ def markets_limits(
 
     a = _build_adapter(venue, settings)
     try:
-        ms = a.ex.load_markets()
+        ms = a.load_markets()
     except Exception:
         ms = {}
 
@@ -1519,7 +1523,7 @@ def config_discover(
 
     a = _build_adapter(venue, settings)
     try:
-        ms = a.ex.load_markets()
+        ms = a.load_markets()
     except Exception as e:
         log.error("load_markets failed for %s: %s", venue, e)
         raise SystemExit(1)
@@ -1939,7 +1943,7 @@ def live(
     """
         # Filter out triangles with legs not listed by the venue (defensive)
         try:
-            ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
+            ms = a.load_markets()
             missing: list[tuple[Triangle, list[str]]] = []
             kept: list[Triangle] = []
             for t in tris:
@@ -1956,7 +1960,7 @@ def live(
             # Try suggest triangles programmatically
             suggestions: list[list[str]] = []
             try:
-                ms = getattr(a, "ex").load_markets()  # type: ignore[attr-defined]
+                ms = a.load_markets()
                 suggestions = _discover_triangles_from_markets(ms)[:3]  # noqa: F821
             except Exception:
                 suggestions = []
