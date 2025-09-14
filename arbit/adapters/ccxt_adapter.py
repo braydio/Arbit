@@ -74,6 +74,29 @@ class CCXTAdapter(ExchangeAdapter):
                 api_urls["trader"] = settings.alpaca_base_url
             else:  # pragma: no cover - legacy ccxt versions
                 self.ex.urls["api"] = settings.alpaca_base_url
+        # Patch Alpaca websocket crypto URL to current version if available
+        try:
+            if getattr(self.ex, "id", "").lower() == "alpaca" and getattr(self, "ex_ws", None):
+                # Prefer env override; otherwise default to v1beta3/crypto/us which supersedes v1beta2
+                ws_crypto_url = getattr(settings, "alpaca_ws_crypto_url", None) or (
+                    "wss://stream.data.alpaca.markets/v1beta3/crypto/us"
+                )
+                urls = getattr(self.ex_ws, "urls", {}) or {}
+                api = urls.get("api") or {}
+                ws = api.get("ws") or {}
+                ws["crypto"] = ws_crypto_url
+                # ensure nested dicts are written back
+                api["ws"] = ws
+                urls["api"] = api
+                # some ccxt.pro builds also read from urls['test'] for paper
+                test = urls.get("test") or {}
+                test_ws = test.get("ws") or {}
+                test_ws["crypto"] = ws_crypto_url
+                test["ws"] = test_ws
+                urls["test"] = test
+                self.ex_ws.urls = urls
+        except Exception:
+            pass
         self._fee = {}
 
     def name(self):
@@ -194,7 +217,14 @@ class CCXTAdapter(ExchangeAdapter):
         venue = getattr(self.ex, "id", "unknown")
         # Prefer websockets when available; otherwise poll REST
         if getattr(self, "ex_ws", None):
+            # Maintain persistent watch tasks per symbol; re-arm only completed ones.
+            tasks_by_sym: dict[str, asyncio.Task] = {}
             try:
+                # Prime tasks
+                for sym in symbols:
+                    tasks_by_sym[sym] = asyncio.create_task(
+                        self.ex_ws.watch_order_book(sym, depth)
+                    )
                 while True:
                     try:
                         tasks = {
@@ -237,9 +267,21 @@ class CCXTAdapter(ExchangeAdapter):
                                 await asyncio.gather(*pending, return_exceptions=True)
                             except Exception:
                                 pass
-                    except Exception:
-                        # WS failure – fall back to REST for a cycle before retrying
-                        for sym in symbols:
+                        last_ts[sym] = now
+                        yield sym, ob
+                        # Mark for re-subscribe on the next loop turn
+                        tasks_by_sym[sym] = None
+            except Exception:
+                # If WS loop breaks unexpectedly, fall back to REST polling
+                while True:
+                    for sym in symbols:
+                        try:
+                            ob = self.fetch_orderbook(sym, depth)
+                        except Exception as e:
+                            ob = {"bids": [], "asks": [], "error": str(e)}
+                        now = asyncio.get_event_loop().time()
+                        prev = last_ts.get(sym)
+                        if prev is not None:
                             try:
                                 ob = self.fetch_orderbook(sym, depth)
                             except Exception as e:
@@ -261,8 +303,18 @@ class CCXTAdapter(ExchangeAdapter):
                             yield sym, ob
                         await asyncio.sleep(poll_interval)
             except asyncio.CancelledError:
+                raise
+            finally:
+                # Ensure all WS tasks are cancelled/awaited and client closed
                 try:
-                    # Close websocket client cleanly
+                    live_tasks = [t for t in tasks_by_sym.values() if t is not None]
+                    for t in live_tasks:
+                        t.cancel()
+                    if live_tasks:
+                        await asyncio.gather(*live_tasks, return_exceptions=True)
+                except Exception:
+                    pass
+                try:
                     close = getattr(self.ex_ws, "close", None)
                     if close:
                         res = close()
@@ -270,7 +322,6 @@ class CCXTAdapter(ExchangeAdapter):
                             await res
                 except Exception:
                     pass
-                raise
         else:
             try:
                 while True:
