@@ -159,9 +159,9 @@ class AlpacaAdapter(ExchangeAdapter):
     ) -> AsyncGenerator[Tuple[str, Dict[str, Any]], None]:
         """Yield ``(symbol, order_book)`` updates for *symbols*.
 
-        The adapter automatically reconnects on errors. Each yielded ``book``
-        is a dictionary with ``bids`` and ``asks`` lists limited to *depth*
-        levels.
+        The adapter automatically reconnects when the underlying stream
+        terminates or errors. Each yielded ``book`` is a dictionary with
+        ``bids`` and ``asks`` lists limited to *depth* levels.
         """
 
         if CryptoDataStream is None:  # pragma: no cover - defensive
@@ -190,26 +190,32 @@ class AlpacaAdapter(ExchangeAdapter):
             stream = CryptoDataStream(self._key, self._secret)
             self._stream = stream
             stream.subscribe_orderbooks(_handler, *sub_syms)
+            run_task = asyncio.create_task(stream._run_forever())  # type: ignore[attr-defined]
+            get_task = asyncio.create_task(queue.get())
             try:
-                run_task = asyncio.create_task(stream._run_forever())  # type: ignore[attr-defined]
                 while True:
-                    item = await queue.get()
-                    yield item
+                    done, _ = await asyncio.wait(
+                        {run_task, get_task}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    if get_task in done:
+                        yield get_task.result()
+                        get_task = asyncio.create_task(queue.get())
+                    if run_task in done:
+                        run_task.result()
+                        break
             except Exception:
                 logging.getLogger("arbit").debug(
                     "alpaca stream reconnecting", exc_info=True
                 )
-                try:
-                    run_task.cancel()
-                    await asyncio.gather(run_task, return_exceptions=True)
-                except Exception:
-                    pass
-                await asyncio.sleep(reconnect_delay)
             finally:
+                run_task.cancel()
+                get_task.cancel()
+                await asyncio.gather(run_task, get_task, return_exceptions=True)
                 try:
                     stream.stop()  # type: ignore[attr-defined]
                 except Exception:
                     pass
+                await asyncio.sleep(reconnect_delay)
 
     # ------------------------------------------------------------------
     async def close(self) -> None:
