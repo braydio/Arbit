@@ -7,115 +7,42 @@ from types import SimpleNamespace
 from arbit.engine import executor
 from arbit.models import Triangle
 
-
-class DummyWs:
-    """Minimal websocket client stub."""
-
-    def __init__(self, book: dict):
-        self.book = book
-        self.calls = 0
-
-    async def watch_order_book(
-        self, symbol: str, depth: int
-    ):  # pragma: no cover - trivial
-        self.calls += 1
-        return self.book
+from tests.alpaca_mocks import MockDataStream, MockHistClient, MockTradingClient
 
 
-def test_orderbook_stream_uses_websocket(monkeypatch) -> None:
-    """When a websocket client is available it is preferred over REST."""
+def test_orderbook_stream_reconnects(monkeypatch) -> None:
+    """Alpaca stream yields multiple symbols and survives disconnects."""
 
-    import sys
+    import arbit.adapters.alpaca_adapter as aa
 
-    sys.modules.pop("arbit.adapters.ccxt_adapter", None)
-    sys.modules["arbit.config"] = SimpleNamespace(
-        creds_for=lambda ex: ("k", "s"), settings=SimpleNamespace(alpaca_base_url="")
+    monkeypatch.setattr(aa, "TradingClient", MockTradingClient)
+    monkeypatch.setattr(aa, "CryptoHistoricalDataClient", MockHistClient)
+    monkeypatch.setattr(aa, "CryptoDataStream", MockDataStream)
+    monkeypatch.setattr(
+        aa,
+        "settings",
+        SimpleNamespace(alpaca_base_url="", alpaca_map_usdt_to_usd=False),
     )
-    import arbit.adapters.ccxt_adapter as ccxt_mod
+    monkeypatch.setattr(aa, "creds_for", lambda ex: ("k", "s"))
 
-    fake_cls = SimpleNamespace(alpaca=lambda params: SimpleNamespace(id="alpaca"))
-    monkeypatch.setattr(ccxt_mod, "ccxt", fake_cls)
-    monkeypatch.setattr(ccxt_mod, "ccxtpro", None)
-    adapter = ccxt_mod.CcxtAdapter("alpaca")
-    ws = DummyWs({"bids": [], "asks": []})
-    adapter.ex_ws = ws
+    # two runs emitting different symbols before stopping
+    from types import SimpleNamespace as SN
+
+    MockDataStream.updates_runs = [
+        [SN(symbol="BTC/USD", bids=[], asks=[])],
+        [SN(symbol="ETH/USD", bids=[], asks=[])],
+    ]
+    adapter = aa.AlpacaAdapter()
 
     async def run():
-        stream = adapter.orderbook_stream(["BTC/USDT"], depth=1)
-        symbol, book = await anext(stream)
-        assert symbol == "BTC/USDT"
-        assert book == {"bids": [], "asks": []}
-        assert ws.calls == 1
-
-    asyncio.run(run())
-
-
-def test_orderbook_stream_rest_fallback(monkeypatch) -> None:
-    """REST polling is used when websocket support is missing."""
-
-    import sys
-
-    sys.modules.pop("arbit.adapters.ccxt_adapter", None)
-    sys.modules["arbit.config"] = SimpleNamespace(
-        creds_for=lambda ex: ("k", "s"), settings=SimpleNamespace(alpaca_base_url="")
-    )
-    import arbit.adapters.ccxt_adapter as ccxt_mod
-
-    fake_cls = SimpleNamespace(alpaca=lambda params: SimpleNamespace(id="alpaca"))
-    monkeypatch.setattr(ccxt_mod, "ccxt", fake_cls)
-    monkeypatch.setattr(ccxt_mod, "ccxtpro", None)
-    adapter = ccxt_mod.CcxtAdapter("alpaca")
-
-    called: dict[str, int] = {"n": 0}
-
-    def fake_fetch(symbol: str, depth: int):
-        called["n"] += 1
-        return {"bids": [], "asks": []}
-
-    monkeypatch.setattr(adapter, "fetch_orderbook", fake_fetch)
-
-    async def run():
-        stream = adapter.orderbook_stream(["ETH/USDT"], depth=5, poll_interval=0)
-        symbol, _ = await anext(stream)
-        assert symbol == "ETH/USDT"
-        assert called["n"] == 1
-
-    asyncio.run(run())
-
-
-def test_orderbook_stream_quiet_symbol(monkeypatch) -> None:
-    """A silent symbol should not block updates for active books."""
-
-    import sys
-
-    sys.modules.pop("arbit.adapters.ccxt_adapter", None)
-    sys.modules["arbit.config"] = SimpleNamespace(
-        creds_for=lambda ex: ("k", "s"), settings=SimpleNamespace(alpaca_base_url="")
-    )
-    import arbit.adapters.ccxt_adapter as ccxt_mod
-
-    fake_cls = SimpleNamespace(alpaca=lambda params: SimpleNamespace(id="alpaca"))
-    monkeypatch.setattr(ccxt_mod, "ccxt", fake_cls)
-    monkeypatch.setattr(ccxt_mod, "ccxtpro", None)
-    adapter = ccxt_mod.CcxtAdapter("alpaca")
-
-    class QuietWs:
-        def __init__(self) -> None:
-            self.calls: dict[str, int] = {}
-
-        async def watch_order_book(self, symbol: str, depth: int):
-            self.calls[symbol] = self.calls.get(symbol, 0) + 1
-            if symbol == "ETH/USDT":
-                await asyncio.sleep(0.2)
-            return {"bids": [], "asks": []}
-
-    ws = QuietWs()
-    adapter.ex_ws = ws
-
-    async def run():
-        stream = adapter.orderbook_stream(["ETH/USDT", "BTC/USDT"], depth=1)
-        sym, _ = await asyncio.wait_for(anext(stream), timeout=0.1)
-        assert sym == "BTC/USDT"
+        gen = adapter.orderbook_stream(
+            ["BTC/USD", "ETH/USD"], depth=1, reconnect_delay=0
+        )
+        sym1, _ = await anext(gen)
+        sym2, _ = await anext(gen)
+        await gen.aclose()
+        assert {sym1, sym2} == {"BTC/USD", "ETH/USD"}
+        assert len(MockDataStream.instances) >= 2
 
     asyncio.run(run())
 
