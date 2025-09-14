@@ -40,6 +40,15 @@ Another stablecoin triangle now included by default on Kraken:
 
 Rationale: Tight spreads on `DAI/USDT` and `ETH/USDT` with generally adequate depth on `ETH/DAI` make this a reasonable candidate. If your venue shows stronger depth on USDC, consider replacing with `USDT → USDC → ETH → USDT` instead.
 
+Also enabled by default on Kraken where liquidity is strong:
+
+**USDT → USDC → ETH → USDT**
+- Swap USDT to USDC (`USDC/USDT`)
+- Swap USDC to ETH (`ETH/USDC`)
+- Swap ETH back to USDT (`ETH/USDT`)
+
+Rationale: `USDC/USDT` and `ETH/USDC` are typically very liquid on Kraken with tight spreads, offering frequent micro-inefficiencies while keeping inventory risk low.
+
 **Core Features:**
 - **Read-only monitoring** with `fitness` command (safe for testing)
 - **Live execution** with `live` command (⚠️ places real orders)
@@ -81,7 +90,7 @@ See [WARP.md](WARP.md) for comprehensive documentation, architecture details, an
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 python -m pip install -U pip
-pip install ccxt pydantic typer prometheus-client orjson websockets pytest
+pip install alpaca-py ccxt pydantic typer prometheus-client orjson websockets pytest
 
 # Configure API credentials (see Configuration section below)
 export ARBIT_API_KEY=your_venue_api_key
@@ -110,7 +119,7 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
 # Install dependencies
-pip install ccxt pydantic typer prometheus-client orjson websockets pytest
+pip install alpaca-py ccxt pydantic typer prometheus-client orjson websockets pytest
 
 # Optional: DeFi integration
 pip install web3
@@ -155,10 +164,19 @@ For multiple exchanges, use venue-specific variables:
 export ALPACA_API_KEY=your_alpaca_key
 export ALPACA_API_SECRET=your_alpaca_secret
 export ALPACA_BASE_URL=https://paper-api.alpaca.markets  # Paper trading
+export ALPACA_WS_CRYPTO_URL=wss://stream.data.alpaca.markets/v1beta3/crypto/us  # optional
+export ALPACA_MAP_USDT_TO_USD=true  # treat /USDT pairs as /USD
 
 # Kraken
 export KRAKEN_API_KEY=your_kraken_key
 export KRAKEN_API_SECRET=your_kraken_secret
+
+# Discord notifications (optional)
+export DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...   # enable alerts
+export DISCORD_HEARTBEAT_SECS=60                                  # live periodic summary
+export DISCORD_TRADE_NOTIFY=false                                  # trade-only alerts
+export DISCORD_ATTEMPT_NOTIFY=false                                # per-attempt alerts (noisy)
+export DISCORD_MIN_NOTIFY_INTERVAL_SECS=10                         # rate limit seconds
 ```
 
 ### Using .env Files
@@ -236,6 +254,24 @@ Prometheus metrics are exposed on port 9109 by default:
 curl http://localhost:9109/metrics
 
 # Key metrics: orders_total, fills_total, profit_total_usdt
+```
+
+### WebSocket Streaming Example
+
+Stream live order books with the native Alpaca adapter:
+
+```python
+import asyncio
+from arbit.adapters.alpaca_adapter import AlpacaAdapter
+
+async def main():
+    adapter = AlpacaAdapter()
+    async for sym, book in adapter.orderbook_stream(["BTC/USDT"], depth=1):
+        print(sym, book)
+        break
+    await adapter.close()
+
+asyncio.run(main())
 ```
 
 **Supported Venues**: `alpaca`, `kraken`
@@ -390,7 +426,7 @@ This README provides user-focused documentation. For comprehensive technical det
 
 ## Acknowledgments
 
-Built with [CCXT](https://github.com/ccxt/ccxt) for exchange connectivity, [Pydantic](https://pydantic-docs.helpmanual.io/) for configuration, and [Typer](https://typer.tiangolo.com/) for CLI interface.
+Built with [alpaca-py](https://github.com/alpacahq/alpaca-py) for native Alpaca connectivity, [CCXT](https://github.com/ccxt/ccxt) for other exchanges, [Pydantic](https://pydantic-docs.helpmanual.io/) for configuration, and [Typer](https://typer.tiangolo.com/) for CLI interface.
 
 ---
 

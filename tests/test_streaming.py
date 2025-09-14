@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from arbit.engine import executor
 from arbit.models import Triangle
+from tests.alpaca_mocks import MockDataStream, MockHistClient, MockTradingClient
 
 
 class DummyStream:
@@ -48,6 +49,7 @@ def test_orderbook_stream_emits_updates(monkeypatch) -> None:
         SimpleNamespace(alpaca_base_url="", alpaca_map_usdt_to_usd=False),
     )
     monkeypatch.setattr(aa, "creds_for", lambda ex: ("k", "s"))
+
     adapter = aa.AlpacaAdapter()
 
     async def run() -> None:

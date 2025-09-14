@@ -100,6 +100,8 @@ class Settings(BaseSettings):
     discord_error_notify: bool = False
     discord_live_start_notify: bool = True
     discord_live_stop_notify: bool = True
+    # Attempt-level notifications (per arbitrage attempt; noisy, opt-in)
+    discord_attempt_notify: bool = False
     discord_min_notify_interval_secs: int = 10
 
     # Optional RPC configuration for on-chain yield ops
@@ -122,6 +124,8 @@ class Settings(BaseSettings):
             ["SOL/USDT", "SOL/BTC", "BTC/USDT"],
             # Added DAI-based stable triangle candidate
             ["DAI/USDT", "ETH/DAI", "ETH/USDT"],
+            # Added USDC-based stable triangle candidate
+            ["USDC/USDT", "ETH/USDC", "ETH/USDT"],
         ],
     }
 
