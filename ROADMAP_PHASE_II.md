@@ -19,7 +19,7 @@ This document expands Phase II into concrete, testable deliverables needed to ru
 ## Workstreams and Acceptance Criteria
 
 ### 1) Market Data (WebSockets)
-- Implement order book streaming per venue (Kraken, Alpaca via CCXT/native where available).
+- Implement order book streaming per venue (Kraken via CCXT, Alpaca via native adapter).
 - Maintain in-memory top-of-book with incremental updates; verify sequence integrity.
 - Fallback to REST when streams are stale; emit metric for staleness events.
 - Configurable `max_book_age_ms` with default sane values per venue.

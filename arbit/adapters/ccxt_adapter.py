@@ -50,7 +50,7 @@ class CCXTAdapter(ExchangeAdapter):
             key, secret = creds_for(ex_id)
         cls = getattr(ccxt, ex_id)
         self.ex = cls({"apiKey": key, "secret": secret, "enableRateLimit": True})
-        # Hint ccxt to use trading endpoints where relevant (helps Alpaca crypto)
+        # Hint ccxt to use trading endpoints where relevant
         try:
             opts = dict(getattr(self.ex, "options", {}) or {})
             opts.setdefault("defaultType", "trading")
@@ -67,38 +67,6 @@ class CCXTAdapter(ExchangeAdapter):
                     self.ex_ws = ws_cls({"apiKey": key, "secret": secret})
         except Exception:
             self.ex_ws = None
-        if ex_id == "alpaca" and settings.alpaca_base_url:
-            # Some venues like Alpaca use non-ccxt defaults; allow override.
-            api_urls = self.ex.urls.get("api")
-            if isinstance(api_urls, dict):
-                api_urls["trader"] = settings.alpaca_base_url
-            else:  # pragma: no cover - legacy ccxt versions
-                self.ex.urls["api"] = settings.alpaca_base_url
-        # Patch Alpaca websocket crypto URL to current version if available
-        try:
-            if getattr(self.ex, "id", "").lower() == "alpaca" and getattr(
-                self, "ex_ws", None
-            ):
-                # Prefer env override; otherwise default to v1beta3/crypto/us which supersedes v1beta2
-                ws_crypto_url = getattr(settings, "alpaca_ws_crypto_url", None) or (
-                    "wss://stream.data.alpaca.markets/v1beta3/crypto/us"
-                )
-                urls = getattr(self.ex_ws, "urls", {}) or {}
-                api = urls.get("api") or {}
-                ws = api.get("ws") or {}
-                ws["crypto"] = ws_crypto_url
-                # ensure nested dicts are written back
-                api["ws"] = ws
-                urls["api"] = api
-                # some ccxt.pro builds also read from urls['test'] for paper
-                test = urls.get("test") or {}
-                test_ws = test.get("ws") or {}
-                test_ws["crypto"] = ws_crypto_url
-                test["ws"] = test_ws
-                urls["test"] = test
-                self.ex_ws.urls = urls
-        except Exception:
-            pass
         self._fee = {}
 
     def name(self):
@@ -107,29 +75,7 @@ class CCXTAdapter(ExchangeAdapter):
 
     def fetch_orderbook(self, symbol, depth=10):
         """Return order book for *symbol* limited to *depth* levels."""
-        try:
-            return self.ex.fetch_order_book(symbol, depth)
-        except Exception as e:
-            # Optional Alpaca quirk: map USDT-quoted to USD-quoted pairs for book-only
-            try:
-                if (
-                    getattr(self.ex, "id", "").lower() == "alpaca"
-                    and getattr(settings, "alpaca_map_usdt_to_usd", False)
-                    and isinstance(symbol, str)
-                    and symbol.upper().endswith("/USDT")
-                ):
-                    alt = symbol[:-5] + "/USD"
-                    ob = self.ex.fetch_order_book(alt, depth)
-                    logging.getLogger("arbit").debug(
-                        "mapped %s -> %s for orderbook fetch", symbol, alt
-                    )
-                    return ob
-            except Exception:
-                pass
-            logging.getLogger("arbit").debug(
-                "fetch_orderbook error symbol=%s depth=%s: %s", symbol, depth, e
-            )
-            raise
+        return self.ex.fetch_order_book(symbol, depth)
 
     # Compatibility wrappers expected by tests -------------------------------------------------
     def fetch_order_book(self, symbol: str, depth: int = 10) -> dict:

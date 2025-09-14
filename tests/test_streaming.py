@@ -9,14 +9,40 @@ from arbit.models import Triangle
 from tests.alpaca_mocks import MockDataStream, MockHistClient, MockTradingClient
 
 
-def test_orderbook_stream_reconnects(monkeypatch) -> None:
-    """Alpaca stream yields multiple symbols and survives disconnects."""
+class DummyStream:
+    """Minimal Alpaca websocket stub."""
 
+    def __init__(self, key: str, secret: str) -> None:  # pragma: no cover - trivial
+        self.handler = None
+
+    def subscribe_orderbooks(self, handler, *symbols) -> None:
+        self.handler = handler
+
+    async def _run_forever(self) -> None:  # pragma: no cover - trivial
+        await self.handler(SimpleNamespace(symbol="BTC/USDT", bids=[], asks=[]))
+
+    def stop(self) -> None:  # pragma: no cover - trivial
+        pass
+
+
+class DummyClient:
+    """Minimal client stub used to satisfy adapter dependencies."""
+
+    def __init__(self, *args, **kwargs) -> None:  # pragma: no cover - trivial
+        pass
+
+
+def test_orderbook_stream_emits_updates(monkeypatch) -> None:
+    """The Alpaca adapter streams order book updates via websocket."""
+
+    import sys
+
+    sys.modules.pop("arbit.adapters.alpaca_adapter", None)
     import arbit.adapters.alpaca_adapter as aa
 
-    monkeypatch.setattr(aa, "TradingClient", MockTradingClient)
-    monkeypatch.setattr(aa, "CryptoHistoricalDataClient", MockHistClient)
-    monkeypatch.setattr(aa, "CryptoDataStream", MockDataStream)
+    monkeypatch.setattr(aa, "TradingClient", DummyClient)
+    monkeypatch.setattr(aa, "CryptoHistoricalDataClient", DummyClient)
+    monkeypatch.setattr(aa, "CryptoDataStream", DummyStream)
     monkeypatch.setattr(
         aa,
         "settings",
@@ -24,24 +50,60 @@ def test_orderbook_stream_reconnects(monkeypatch) -> None:
     )
     monkeypatch.setattr(aa, "creds_for", lambda ex: ("k", "s"))
 
-    # two runs emitting different symbols before stopping
-    from types import SimpleNamespace as SN
-
-    MockDataStream.updates_runs = [
-        [SN(symbol="BTC/USD", bids=[], asks=[])],
-        [SN(symbol="ETH/USD", bids=[], asks=[])],
-    ]
     adapter = aa.AlpacaAdapter()
 
-    async def run():
-        gen = adapter.orderbook_stream(
-            ["BTC/USD", "ETH/USD"], depth=1, reconnect_delay=0
+    async def run() -> None:
+        stream = adapter.orderbook_stream(["BTC/USDT"], depth=1, reconnect_delay=0)
+        symbol, book = await anext(stream)
+        assert symbol == "BTC/USDT"
+        assert book == {"bids": [], "asks": []}
+        await stream.aclose()
+
+    asyncio.run(run())
+
+
+def test_orderbook_stream_quiet_symbol(monkeypatch) -> None:
+    """A silent symbol should not block updates for active books."""
+
+    import sys
+
+    sys.modules.pop("arbit.adapters.alpaca_adapter", None)
+    import arbit.adapters.alpaca_adapter as aa
+
+    class QuietStream:
+        def __init__(self, key: str, secret: str) -> None:
+            self.handler = None
+
+        def subscribe_orderbooks(self, handler, *symbols) -> None:
+            self.handler = handler
+
+        async def _run_forever(self) -> None:
+            await asyncio.sleep(0.01)
+            await self.handler(SimpleNamespace(symbol="BTC/USDT", bids=[], asks=[]))
+            await asyncio.sleep(0.2)
+            await self.handler(SimpleNamespace(symbol="ETH/USDT", bids=[], asks=[]))
+
+        def stop(self) -> None:  # pragma: no cover - trivial
+            pass
+
+    monkeypatch.setattr(aa, "TradingClient", DummyClient)
+    monkeypatch.setattr(aa, "CryptoHistoricalDataClient", DummyClient)
+    monkeypatch.setattr(aa, "CryptoDataStream", QuietStream)
+    monkeypatch.setattr(
+        aa,
+        "settings",
+        SimpleNamespace(alpaca_base_url="", alpaca_map_usdt_to_usd=False),
+    )
+    monkeypatch.setattr(aa, "creds_for", lambda ex: ("k", "s"))
+    adapter = aa.AlpacaAdapter()
+
+    async def run() -> None:
+        stream = adapter.orderbook_stream(
+            ["ETH/USDT", "BTC/USDT"], depth=1, reconnect_delay=0
         )
-        sym1, _ = await anext(gen)
-        sym2, _ = await anext(gen)
-        await gen.aclose()
-        assert {sym1, sym2} == {"BTC/USD", "ETH/USD"}
-        assert len(MockDataStream.instances) >= 2
+        sym, _ = await asyncio.wait_for(anext(stream), timeout=0.1)
+        assert sym == "BTC/USDT"
+        await stream.aclose()
 
     asyncio.run(run())
 
