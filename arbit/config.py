@@ -118,6 +118,8 @@ class Settings(BaseSettings):
             ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
             # Added SOL triangle candidate
             ["SOL/USDT", "SOL/BTC", "BTC/USDT"],
+            # Added DAI-based stable triangle candidate
+            ["DAI/USDT", "ETH/DAI", "ETH/USDT"],
         ],
     }
 

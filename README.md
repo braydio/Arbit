@@ -22,7 +22,7 @@ Arbit monitors triangular arbitrage opportunities across cryptocurrency exchange
 - Sell ETH for BTC (`ETH/BTC`) 
 - Sell BTC for USDT (`BTC/USDT`)
 
-New candidate (enabled by default):
+New candidates (enabled by default on Kraken):
 
 **USDT → SOL → BTC → USDT**
 - Buy SOL with USDT (`SOL/USDT`)
@@ -30,6 +30,15 @@ New candidate (enabled by default):
 - Sell BTC for USDT (`BTC/USDT`)
 
 Why SOL? High daily volume and active BTC cross provide frequent micro-inefficiencies with sufficient depth. This triangle is included by default on Kraken. Some venues (e.g., Alpaca) may not list `SOL/BTC`; use `--symbols` filtering or override triangles in `.env`. Always verify symbols exist on your venue (`keys:check`) and keep thresholds conservative.
+
+Another stablecoin triangle now included by default on Kraken:
+
+**USDT → DAI → ETH → USDT**
+- Swap USDT to DAI (`DAI/USDT`)
+- Swap DAI to ETH (`ETH/DAI`)
+- Swap ETH back to USDT (`ETH/USDT`)
+
+Rationale: Tight spreads on `DAI/USDT` and `ETH/USDT` with generally adequate depth on `ETH/DAI` make this a reasonable candidate. If your venue shows stronger depth on USDC, consider replacing with `USDT → USDC → ETH → USDT` instead.
 
 **Core Features:**
 - **Read-only monitoring** with `fitness` command (safe for testing)
