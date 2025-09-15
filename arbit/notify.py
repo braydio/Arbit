@@ -88,7 +88,8 @@ def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
     )
     try:
         with urllib.request.urlopen(req, timeout=3):
-            log.info("notify_discord: sent message (%d chars)", len(message or ""))
+            # Downgrade success log to DEBUG to avoid chatty INFO noise
+            log.debug("notify_discord: sent message (%d chars)", len(message or ""))
             return
     except Exception as e:
         detail = None

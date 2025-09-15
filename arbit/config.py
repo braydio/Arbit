@@ -11,7 +11,15 @@ import os
 from pathlib import Path
 from typing import Any, List
 
-from pydantic import BaseSettings
+try:  # Support Pydantic v1 and v2 (via pydantic-settings)
+    from pydantic import BaseSettings  # type: ignore
+except Exception:  # pragma: no cover - fallback for Pydantic v2
+    try:
+        from pydantic_settings import BaseSettings  # type: ignore
+    except Exception as e:  # pragma: no cover
+        raise ImportError(
+            "BaseSettings not available; install pydantic (v1) or pydantic-settings (v2)"
+        ) from e
 
 
 def _load_env_file(path: str = ".env") -> None:
@@ -110,6 +118,10 @@ class Settings(BaseSettings):
 
     # Optional venue-specific behavior
     alpaca_map_usdt_to_usd: bool = False
+    # Prefer native alpaca-py adapter over CCXT for Alpaca (set false to force CCXT)
+    alpaca_prefer_native: bool = True
+    # Convenience env flag to force CCXT adapter for Alpaca (ALPACA_USE_CCXT=true)
+    alpaca_use_ccxt: bool | str | None = None
     # Streaming/attempt freshness controls
     refresh_on_stale: bool = True
     stale_refresh_min_gap_ms: int = 150

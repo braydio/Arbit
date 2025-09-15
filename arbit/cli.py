@@ -402,7 +402,19 @@ def _build_adapter(venue: str, _settings=settings) -> ExchangeAdapter:
     """
 
     if venue.lower() == "alpaca":
-        return AlpacaAdapter()
+        # Allow forcing CCXT-based adapter via env/setting
+        prefer_native = bool(getattr(_settings, "alpaca_prefer_native", True))
+        force_ccxt = str(getattr(_settings, "alpaca_use_ccxt", "")).strip().lower()
+        if force_ccxt in {"1", "true", "yes", "on"}:
+            prefer_native = False
+        if prefer_native and AlpacaAdapter is not None:
+            try:
+                return AlpacaAdapter()
+            except Exception as e:
+                logging.getLogger("arbit").warning(
+                    "AlpacaAdapter unavailable (%s); falling back to CCXTAdapter", e
+                )
+        return CCXTAdapter(venue)
     return CCXTAdapter(venue)
 
 
