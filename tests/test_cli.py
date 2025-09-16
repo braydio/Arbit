@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 
@@ -279,3 +280,50 @@ def test_config_recommend(monkeypatch):
     runner = CliRunner()
     result = runner.invoke(cli.app, ["config:recommend", "--venue", "alpaca"])
     assert result.exit_code == 0
+
+
+def test_live_uses_alpaca_adapter(monkeypatch) -> None:
+    """`live` path should instantiate `AlpacaAdapter` and avoid CCXT calls."""
+
+    dummy_settings = types.SimpleNamespace(
+        sqlite_path=":memory:",
+        alpaca_map_usdt_to_usd=False,
+        dry_run=True,
+    )
+    monkeypatch.setattr(cli, "settings", dummy_settings)
+    monkeypatch.setattr(
+        cli, "init_db", lambda _p: types.SimpleNamespace(close=lambda: None)
+    )
+    monkeypatch.setattr(cli, "notify_discord", lambda *a, **k: None)
+
+    calls = {"alpaca": 0}
+
+    class DummyAlpaca:
+        def __init__(self) -> None:
+            calls["alpaca"] += 1
+
+        @staticmethod
+        def name() -> str:
+            return "alpaca"
+
+        @staticmethod
+        def balances() -> dict[str, float]:
+            return {}
+
+        @staticmethod
+        def load_markets() -> dict[str, dict[str, float]]:
+            return {}
+
+        @staticmethod
+        async def close() -> None:  # pragma: no cover - trivial
+            return None
+
+    monkeypatch.setattr(cli, "AlpacaAdapter", DummyAlpaca)
+
+    def _fail(*_a, **_k) -> None:  # pragma: no cover - defensive
+        raise AssertionError("CCXTAdapter should not be used for alpaca")
+
+    monkeypatch.setattr(cli, "CCXTAdapter", _fail)
+
+    asyncio.run(cli._live_run_for_venue("alpaca"))
+    assert calls["alpaca"] == 1
