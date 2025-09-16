@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 from typing import Any, Mapping
 
 import typer
-
 from arbit.adapters.base import OrderSpec
 from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.config import settings
@@ -264,12 +263,16 @@ def promo_trade(
 
     adapter = CCXTAdapter("kraken")
     try:
-        plan = plan_trade(adapter, base, quote, _to_decimal(usd_amount), orderbook_depth=depth)
+        plan = plan_trade(
+            adapter, base, quote, _to_decimal(usd_amount), orderbook_depth=depth
+        )
         typer.echo(_format_plan(plan))
 
         result = execute_plan(adapter, plan, execute=execute, sell_back=sell_back)
         if result.dry_run:
-            typer.echo("Dry run complete. Re-run with --execute and DRY_RUN=false to trade.")
+            typer.echo(
+                "Dry run complete. Re-run with --execute and DRY_RUN=false to trade."
+            )
         else:
             typer.echo(
                 f"Buy order id={result.buy.get('id')} qty={result.buy.get('qty')} price={result.buy.get('price')}"
