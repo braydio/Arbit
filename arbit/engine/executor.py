@@ -73,7 +73,9 @@ def try_triangle(
         fee_ac = float(adapter.fetch_fees(tri.leg_ac)[1])
     except Exception:
         fee_ac = fee_ab
-    net = net_edge_cycle([1.0 / askAB, bidBC, bidAC, (1 - fee_ab), (1 - fee_bc), (1 - fee_ac)])
+    net = net_edge_cycle(
+        [1.0 / askAB, bidBC, bidAC, (1 - fee_ab), (1 - fee_bc), (1 - fee_ac)]
+    )
     if net < threshold:
         if skip_reasons is not None:
             skip_reasons.append("below_threshold")
@@ -252,7 +254,8 @@ async def stream_triangles(
                         # Try a quick REST refresh for stale legs (depth=1), rate-limited
                         min_gap = max(
                             float(
-                                getattr(settings, "stale_refresh_min_gap_ms", 150) or 150
+                                getattr(settings, "stale_refresh_min_gap_ms", 150)
+                                or 150
                             )
                             / 1000.0,
                             0.0,
@@ -263,7 +266,10 @@ async def stream_triangles(
                                 continue
                             try:
                                 ob_s = adapter.fetch_orderbook(s, 1)
-                                if isinstance(ob_s, dict) and ob_s.get("bids") is not None:
+                                if (
+                                    isinstance(ob_s, dict)
+                                    and ob_s.get("bids") is not None
+                                ):
                                     books[s] = ob_s
                                     seen_at[s] = time.time()
                             except Exception:
