@@ -23,7 +23,9 @@ def markets_limits(venue: str = "alpaca", symbols: str | None = None) -> None:
         selected = [sym.strip() for sym in symbols.split(",") if sym.strip()]
     else:
         tris = _triangles_for(venue)
-        selected = sorted({s for tri in tris for s in (tri.leg_ab, tri.leg_bc, tri.leg_ac)})
+        selected = sorted(
+            {s for tri in tris for s in (tri.leg_ab, tri.leg_bc, tri.leg_ac)}
+        )
 
     for symbol in selected:
         if markets and symbol not in markets:

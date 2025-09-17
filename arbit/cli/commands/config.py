@@ -5,7 +5,6 @@ from __future__ import annotations
 from textwrap import dedent
 
 import typer
-
 from arbit.config import settings
 from arbit.engine.triangle import (
     discover_triangles_from_markets as _discover_triangles_from_markets,

@@ -13,8 +13,8 @@ from arbit.notify import notify_discord
 from arbit.persistence.db import init_db, insert_attempt, insert_fill, insert_triangle
 
 from ..core import TyperOption, app, log
-from ..utils import _build_adapter, _log_balances, _triangles_for
 from ..utils import try_triangle  # re-exported for compatibility
+from ..utils import _build_adapter, _log_balances, _triangles_for
 
 
 @app.command("fitness")
@@ -55,7 +55,9 @@ def fitness(
     start = time.time()
     symbols_set = {s for tri in triangles for s in (tri.leg_ab, tri.leg_bc, tri.leg_ac)}
     if triangles:
-        tri_list = ", ".join(f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac}" for tri in triangles)
+        tri_list = ", ".join(
+            f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac}" for tri in triangles
+        )
         log.info(
             "fitness@%s active triangles=%d symbols=%d -> %s",
             venue,
@@ -179,6 +181,7 @@ def fitness(
                             adapter.fetch_orderbook = original_fetch  # type: ignore[assignment]
 
                     if conn is not None:
+
                         def _best(ob, side):
                             try:
                                 arr = ob.get(side) or []
@@ -221,7 +224,9 @@ def fitness(
                             ),
                             dry_run=True,
                             latency_ms=latency_ms,
-                            skip_reasons=",".join(skip_reasons) if skip_reasons else None,
+                            skip_reasons=(
+                                ",".join(skip_reasons) if skip_reasons else None
+                            ),
                             ab_bid=_best(ob_ab, "bids"),
                             ab_ask=_best(ob_ab, "asks"),
                             bc_bid=_best(ob_bc, "bids"),
@@ -240,10 +245,13 @@ def fitness(
                                 skip_counts[reason] = skip_counts.get(reason, 0) + 1
                             if (
                                 attempt_notify_flag
-                                and (time.time() - last_attempt_notify_at) > min_interval
+                                and (time.time() - last_attempt_notify_at)
+                                > min_interval
                             ):
                                 try:
-                                    reasons_summary = ",".join(skip_reasons or ["unknown"])[:200]
+                                    reasons_summary = ",".join(
+                                        skip_reasons or ["unknown"]
+                                    )[:200]
                                     notify_discord(
                                         venue,
                                         f"[fitness@{venue}] attempt SKIP {tri} reasons={reasons_summary}",
@@ -275,7 +283,9 @@ def fitness(
                             )
                             if qty is not None:
                                 msg += f"qty={qty:.6g} "
-                            msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)}"
+                            msg += (
+                                f"slip_bps={getattr(settings, 'max_slippage_bps', 0)}"
+                            )
                             notify_discord(venue, msg)
                         except Exception:
                             pass
@@ -305,7 +315,11 @@ def fitness(
                                         notional=float(fill.get("price", 0.0))
                                         * float(fill.get("qty", 0.0)),
                                         dry_run=True,
-                                        attempt_id=(attempt_id if "attempt_id" in locals() else None),
+                                        attempt_id=(
+                                            attempt_id
+                                            if "attempt_id" in locals()
+                                            else None
+                                        ),
                                     ),
                                 )
                             except Exception:
@@ -410,7 +424,11 @@ def fitness_hybrid(
         raise SystemExit(2)
     leg_ab, leg_bc, leg_ac = legs_list
     venue_map = _parse_map(venues)
-    used_venues = {venue_map.get(leg_ab, ""), venue_map.get(leg_bc, ""), venue_map.get(leg_ac, "")}
+    used_venues = {
+        venue_map.get(leg_ab, ""),
+        venue_map.get(leg_bc, ""),
+        venue_map.get(leg_ac, ""),
+    }
     used_venues = {v for v in used_venues if v}
 
     adapters: dict[str, ExchangeAdapter] = {}

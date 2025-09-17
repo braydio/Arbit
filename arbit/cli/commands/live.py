@@ -51,7 +51,9 @@ def live(
         if bool(getattr(settings, "discord_live_stop_notify", True)):
             try:
                 adapter = _build_adapter(venue, settings)
-                notify_discord(venue, f"[live@{venue}] stop | {_balances_brief(adapter)}")
+                notify_discord(
+                    venue, f"[live@{venue}] stop | {_balances_brief(adapter)}"
+                )
             except Exception:
                 pass
 

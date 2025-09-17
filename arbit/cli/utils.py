@@ -68,7 +68,9 @@ def _triangles_for(venue: str) -> list[Triangle]:
             if isinstance(parsed, dict):
                 data = parsed
             else:
-                log.warning("TRIANGLES_BY_VENUE provided but is not an object; ignoring")
+                log.warning(
+                    "TRIANGLES_BY_VENUE provided but is not an object; ignoring"
+                )
                 data = {}
         except Exception as exc:  # pragma: no cover - defensive
             log.warning("failed to parse TRIANGLES_BY_VENUE; using defaults: %s", exc)
@@ -241,7 +243,9 @@ async def _live_run_for_venue(
                 pass
             return
     if triangles:
-        tri_list = ", ".join(f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac}" for tri in triangles)
+        tri_list = ", ".join(
+            f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac}" for tri in triangles
+        )
         log.info("live@%s active triangles=%d -> %s", venue, len(triangles), tri_list)
         try:
             notify_discord(
@@ -285,7 +289,10 @@ async def _live_run_for_venue(
             if res is None:
                 for reason in reasons or ["unknown"]:
                     skip_counts[reason] = skip_counts.get(reason, 0) + 1
-                if attempt_notify and (time.time() - last_attempt_notify_at) > min_interval:
+                if (
+                    attempt_notify
+                    and (time.time() - last_attempt_notify_at) > min_interval
+                ):
                     try:
                         reason_summary = ",".join(reasons or ["unknown"])[:200]
                         notify_discord(

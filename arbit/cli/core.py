@@ -7,7 +7,6 @@ import sys
 from typing import Any
 
 import typer
-
 from arbit.config import settings
 
 from .help_text import VERBOSE_COMMAND_HELP, VERBOSE_GLOBAL_OVERVIEW
@@ -140,7 +139,9 @@ if not getattr(log, "_configured", False):
     # Console handler
     ch = logging.StreamHandler()
     ch.setLevel(log.level)
-    ch.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    ch.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
     log.addHandler(ch)
     # Optional file handler
     try:
