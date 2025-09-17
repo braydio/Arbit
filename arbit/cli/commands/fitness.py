@@ -34,7 +34,14 @@ def fitness(
     ),
     help_verbose: bool = False,
 ) -> None:
-    """Read-only sanity check that prints bid/ask spreads."""
+    """Read-only sanity check that prints bid/ask spreads.
+
+    Notes
+    -----
+    Discord notifications and CLI logs emitted per attempt now include the
+    cumulative attempt counter to help operators correlate simulation
+    cadence with downstream metrics.
+    """
 
     if help_verbose:
         app.print_verbose_help_for("fitness")
@@ -254,7 +261,10 @@ def fitness(
                                     )[:200]
                                     notify_discord(
                                         venue,
-                                        f"[fitness@{venue}] attempt SKIP {tri} reasons={reasons_summary}",
+                                        (
+                                            f"[fitness@{venue}] attempt#{attempts_total} "
+                                            f"SKIP {tri} reasons={reasons_summary}"
+                                        ),
                                     )
                                 except Exception:
                                     pass
@@ -278,8 +288,10 @@ def fitness(
                                 else None
                             )
                             msg = (
-                                f"[fitness@{venue}] attempt OK {tri} net={result['net_est'] * 100:.2f}% "
+                                f"[fitness@{venue}] attempt#{attempts_total} OK {tri} "
+                                f"net={result['net_est'] * 100:.2f}% "
                                 f"pnl={result['realized_usdt']:.4f} USDT "
+                                f"sim_trades_total={sim_count} "
                             )
                             if qty is not None:
                                 msg += f"qty={qty:.6g} "
@@ -325,8 +337,9 @@ def fitness(
                             except Exception:
                                 pass
                     log.info(
-                        "%s [sim] %s net=%.3f%% PnL=%.2f USDT",
+                        "%s [sim] attempt#%d %s net=%.3f%% PnL=%.2f USDT",
                         venue,
+                        attempts_total,
                         tri,
                         result.get("net_est", 0.0) * 100.0,
                         result.get("realized_usdt", 0.0),

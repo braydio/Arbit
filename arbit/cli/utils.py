@@ -148,7 +148,13 @@ async def _live_run_for_venue(
     auto_suggest_top: int = 0,
     attempt_notify_override: bool | None = None,
 ) -> None:
-    """Run the continuous live loop for a single venue (async)."""
+    """Run the continuous live loop for a single venue (async).
+
+    Notes
+    -----
+    Per-attempt Discord and console logs include the cumulative attempt
+    counter so operators can monitor trading cadence remotely.
+    """
 
     adapter = _build_adapter(venue, settings)
     _log_balances(venue, adapter)
@@ -297,7 +303,10 @@ async def _live_run_for_venue(
                         reason_summary = ",".join(reasons or ["unknown"])[:200]
                         notify_discord(
                             venue,
-                            f"[live@{venue}] attempt SKIP {tri} reasons={reason_summary}",
+                            (
+                                f"[live@{venue}] attempt#{attempts_total} "
+                                f"SKIP {tri} reasons={reason_summary}"
+                            ),
                         )
                     except Exception:
                         pass
@@ -381,8 +390,9 @@ async def _live_run_for_venue(
                 except Exception as exc:
                     log.error("persist fill error: %s", exc)
             log.info(
-                "%s %s net=%.3f%% (est. profit after fees) PnL=%.2f USDT",
+                "%s attempt#%d %s net=%.3f%% (est. profit after fees) PnL=%.2f USDT",
                 venue,
+                attempts_total,
                 tri,
                 res["net_est"] * 100,
                 res["realized_usdt"],
@@ -396,11 +406,13 @@ async def _live_run_for_venue(
                     )
                     if attempt_notify:
                         msg = (
-                            f"[live@{venue}] attempt OK {tri} net={res['net_est'] * 100:.2f}% "
+                            f"[live@{venue}] attempt#{attempts_total} OK {tri} "
+                            f"net={res['net_est'] * 100:.2f}% "
                             f"pnl={res['realized_usdt']:.4f} USDT "
                         )
                         if attempt_id is not None:
                             msg += f"attempt_id={attempt_id} "
+                        msg += f"successes_total={successes_total} "
                         if qty is not None:
                             msg += f"qty={qty:.6g} "
                         msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(adapter)}"
@@ -408,11 +420,13 @@ async def _live_run_for_venue(
                         last_trade_notify_at = time.time()
                     elif bool(getattr(settings, "discord_trade_notify", False)):
                         msg = (
-                            f"[{venue}] TRADE {tri} net={res['net_est'] * 100:.2f}% "
+                            f"[{venue}] TRADE attempt#{attempts_total} {tri} "
+                            f"net={res['net_est'] * 100:.2f}% "
                             f"pnl={res['realized_usdt']:.4f} USDT "
                         )
                         if attempt_id is not None:
                             msg += f"attempt_id={attempt_id} "
+                        msg += f"successes_total={successes_total} "
                         if qty is not None:
                             msg += f"qty={qty:.6g} "
                         msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(adapter)}"
