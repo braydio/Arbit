@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import urllib.request
-from typing import Optional, Any, Mapping
+from typing import Any, Mapping, Optional
 
 from .config import settings
 from .metrics.exporter import ERRORS_TOTAL
