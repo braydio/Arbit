@@ -129,16 +129,15 @@ class CCXTAdapter(ExchangeAdapter):
         taker_override = override.get("taker") if isinstance(override, dict) else None
 
         m = self.ex.market(symbol)
-        default_maker = m.get(
-            "maker", self.ex.fees.get("trading", {}).get("maker", 0.001)
-        )
-        default_taker = m.get(
-            "taker", self.ex.fees.get("trading", {}).get("taker", 0.001)
-        )
-
-        maker = maker_override if maker_override is not None else default_maker
-        taker = taker_override if taker_override is not None else default_taker
-
+        maker = m.get("maker", self.ex.fees.get("trading", {}).get("maker", 0.001))
+        taker = m.get("taker", self.ex.fees.get("trading", {}).get("taker", 0.001))
+        if getattr(self.ex, "id", "") == "kraken":
+            override_maker = getattr(settings, "kraken_maker_fee_bps", None)
+            override_taker = getattr(settings, "kraken_taker_fee_bps", None)
+            if override_maker is not None:
+                maker = float(override_maker) / 10000.0
+            if override_taker is not None:
+                taker = float(override_taker) / 10000.0
         self._fee[symbol] = (maker, taker)
         return maker, taker
 
