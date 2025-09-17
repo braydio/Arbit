@@ -106,6 +106,9 @@ Below are the Strategy settings and how to think about each. Defaults are chosen
 - Recommendations:
   - Typical taker fee ≈ 10 bps per leg → fees are already netted in; set threshold to add buffer for slippage and latency.
   - Start `15–30 bps` (0.15–0.30%). For very volatile markets, use `30–50 bps`.
+  - If you configure `FEE_OVERRIDES` to reflect discounted or zero taker fees,
+    revisit the threshold immediately—zero-fee tiers can support much smaller
+    guards (e.g., `5–10 bps`).
   - Revisit after you have empirical skip/realized PnL data.
 
 ### `MAX_SLIPPAGE_BPS`

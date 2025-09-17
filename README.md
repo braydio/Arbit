@@ -198,6 +198,26 @@ export MAX_BOOK_AGE_MS=1500
 export REFRESH_ON_STALE=true
 # Min gap between refreshes per symbol (ms)
 export STALE_REFRESH_MIN_GAP_MS=150
+
+### Fee overrides for CCXT venues
+
+Most CCXT exchanges expose maker/taker tiers through their metadata, but some
+accounts qualify for custom discounts (e.g., promotional or volume-based
+pricing). Set ``FEE_OVERRIDES`` with a JSON blob to supply per-venue, per-symbol
+fees in basis points so Arbit's net calculation matches your tier:
+
+```bash
+export FEE_OVERRIDES='{"kraken":{"ETH/USDT":{"taker_bps":0,"maker_bps":0},"BTC/USDT":{"taker_bps":5}}}'
+```
+
+The keys are lowercase venues and uppercase symbols. ``maker_bps``/``taker_bps``
+accept numbers in basis points (``5`` → ``0.0005``). You can also provide
+decimal ``maker``/``taker`` fields if you already know the fraction. Optional
+``"*"`` entries apply to every symbol on the venue.
+
+💡 **Tip:** zero-fee tiers radically improve the net estimate. Reduce
+``NET_THRESHOLD_BPS`` to keep the execution guard realistic once overrides are
+in place.
 ```
 
 ### Per-Venue Configuration

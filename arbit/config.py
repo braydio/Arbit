@@ -53,6 +53,106 @@ def _load_env_file(path: str = ".env") -> None:
 _load_env_file()
 
 
+def _coerce_fee_value(value: Any, *, assume_bps: bool) -> float | None:
+    """Return a decimal fee rate parsed from *value*.
+
+    Parameters
+    ----------
+    value:
+        Raw value provided by the environment or settings initialiser.
+    assume_bps:
+        When ``True`` the supplied number is interpreted as basis points and
+        scaled by ``1/10_000``. When ``False`` the number is assumed to be a
+        decimal rate (e.g., ``0.001`` for 10 bps).
+
+    Returns
+    -------
+    float | None
+        Parsed and clamped decimal fee rate, or ``None`` if parsing fails.
+    """
+
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if assume_bps:
+        number /= 10_000.0
+    return max(number, 0.0)
+
+
+def _normalize_fee_overrides(
+    data: Any,
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Return a normalised fee override mapping derived from *data*.
+
+    Parameters
+    ----------
+    data:
+        Raw mapping or JSON string describing fee overrides. Expected format is
+        ``{venue: {symbol: {maker_bps|maker, taker_bps|taker}}}`` with fee
+        values supplied either in basis points or decimal form.
+
+    Returns
+    -------
+    dict[str, dict[str, dict[str, float]]]
+        Nested mapping keyed by lower-case venue and upper-case symbol. Each
+        value contains optional ``maker`` and ``taker`` decimal fee rates.
+    """
+
+    if data is None:
+        return {}
+    if isinstance(data, str):
+        raw = data.strip()
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return {}
+    if not isinstance(data, dict):
+        return {}
+
+    normalised: dict[str, dict[str, dict[str, float]]] = {}
+    for venue_key, symbols in data.items():
+        if not isinstance(symbols, dict):
+            continue
+        venue = str(venue_key).strip().lower()
+        if not venue:
+            continue
+        venue_map = normalised.setdefault(venue, {})
+        for symbol_key, fee_map in symbols.items():
+            if not isinstance(fee_map, dict):
+                continue
+            symbol = str(symbol_key).strip()
+            if not symbol:
+                continue
+            symbol = symbol.upper()
+
+            maker = _coerce_fee_value(fee_map.get("maker_bps"), assume_bps=True)
+            taker = _coerce_fee_value(fee_map.get("taker_bps"), assume_bps=True)
+
+            maker_decimal = _coerce_fee_value(fee_map.get("maker"), assume_bps=False)
+            taker_decimal = _coerce_fee_value(fee_map.get("taker"), assume_bps=False)
+
+            if maker is None:
+                maker = maker_decimal
+            if taker is None:
+                taker = taker_decimal
+
+            if maker is None and taker is None:
+                continue
+
+            entry = venue_map.setdefault(symbol, {})
+            if maker is not None:
+                entry["maker"] = maker
+            if taker is not None:
+                entry["taker"] = taker
+
+    return normalised
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -143,6 +243,8 @@ class Settings(BaseSettings):
             ["USDC/USDT", "ETH/USDC", "ETH/USDT"],
         ],
     }
+    # Optional per-venue fee overrides with basis point inputs.
+    fee_overrides: dict[str, dict[str, dict[str, float]]] | None = None
 
     class Config(BaseSettings.Config):
         """Pydantic settings configuration."""
@@ -151,7 +253,13 @@ class Settings(BaseSettings):
         env_prefix = ""
 
     def __init__(self, **kwargs: Any) -> None:
-        """Normalize exchange list from environment variables."""
+        """Normalise environment-provided configuration values.
+
+        The initializer coerces numeric strings into floats/integers, handles
+        boolean toggles expressed as text, expands exchange lists, and sanitises
+        optional fee override mappings so downstream consumers can rely on a
+        consistent structure.
+        """
         super().__init__(**kwargs)
 
         # Coerce common env-sourced strings to proper types for robustness.
@@ -236,6 +344,8 @@ class Settings(BaseSettings):
                 cleaned.append(s)
         if cleaned:
             self.exchanges = cleaned
+
+        self.fee_overrides = _normalize_fee_overrides(self.fee_overrides)
 
 
 # Singleton settings instance populated on import.

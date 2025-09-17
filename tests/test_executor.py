@@ -14,7 +14,8 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
         log_level="INFO",
         reserve_amount_usd=0.0,
         reserve_percent=0.0,
-    )
+    ),
+    creds_for=lambda _ex: (None, None),
 )
 
 from arbit import try_triangle
@@ -111,3 +112,102 @@ def test_try_triangle_respects_reserve(monkeypatch) -> None:
     res = try_triangle(adapter, tri, books, thresh, skips)
     assert res is None
     assert "reserve" in skips
+
+
+def test_try_triangle_honours_ccxt_fee_overrides(monkeypatch) -> None:
+    """CCXT taker overrides should flip net estimation above the threshold."""
+
+    monkeypatch.setitem(sys.modules, "ccxt", types.SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "ccxt.pro", types.SimpleNamespace())
+    from arbit.adapters import ccxt_adapter as ccxta
+    from arbit.engine import executor as exec_mod
+
+    books = {
+        "ETH/USDT": {"asks": [(100.0, 5.0)], "bids": [(99.95, 5.0)]},
+        "ETH/BTC": {"asks": [(0.02055, 5.0)], "bids": [(0.02045, 5.0)]},
+        "BTC/USDT": {"asks": [(4905.0, 5.0)], "bids": [(4900.0, 5.0)]},
+    }
+
+    class DummyClient:
+        id = "kraken"
+        fees = {"trading": {"maker": 0.001, "taker": 0.001}}
+
+        def market(self, symbol: str):
+            return {"symbol": symbol, "maker": 0.001, "taker": 0.001}
+
+    class MockCCXTAdapter(ccxta.CCXTAdapter):
+        """CCXT adapter stub exposing real ``fetch_fees`` behaviour."""
+
+        def __init__(self, books_data):
+            self.ex = DummyClient()
+            self.client = self.ex
+            self.ex_ws = None
+            self._fee = {}
+            self.books = books_data
+            self.orders: list[OrderSpec] = []
+
+        def fetch_orderbook(self, symbol: str, depth: int = 10):  # noqa: D401
+            """Return the in-memory order book for *symbol*."""
+
+            return self.books[symbol]
+
+        def min_notional(self, symbol: str) -> float:
+            return 0.0
+
+        def create_order(self, spec: OrderSpec):
+            book = self.books[spec.symbol]
+            price = book["asks"][0][0] if spec.side == "buy" else book["bids"][0][0]
+            self.orders.append(spec)
+            return {"price": price, "qty": spec.qty, "fee": 0.0}
+
+        def balances(self):  # pragma: no cover - not needed for this test
+            return {}
+
+        def fetch_balance(self, asset: str) -> float:
+            return 10_000.0
+
+    tri = Triangle("ETH/USDT", "ETH/BTC", "BTC/USDT")
+
+    base_settings = types.SimpleNamespace(
+        notional_per_trade_usd=200.0,
+        net_threshold_bps=5.0,
+        dry_run=True,
+        reserve_amount_usd=0.0,
+        reserve_percent=0.0,
+        max_slippage_bps=0.0,
+        fee_overrides={},
+    )
+    monkeypatch.setattr(ccxta, "settings", base_settings, raising=False)
+    monkeypatch.setattr(exec_mod, "settings", base_settings, raising=False)
+
+    adapter = MockCCXTAdapter(books)
+    threshold = base_settings.net_threshold_bps / 10000.0
+    skips: list[str] = []
+    result = try_triangle(adapter, tri, books, threshold, skips)
+    assert result is None
+    assert "below_threshold" in skips
+
+    override_settings = types.SimpleNamespace(
+        notional_per_trade_usd=200.0,
+        net_threshold_bps=5.0,
+        dry_run=True,
+        reserve_amount_usd=0.0,
+        reserve_percent=0.0,
+        max_slippage_bps=0.0,
+        fee_overrides={
+            "kraken": {
+                "ETH/USDT": {"maker": 0.0, "taker": 0.0},
+                "ETH/BTC": {"maker": 0.0, "taker": 0.0},
+                "BTC/USDT": {"maker": 0.0, "taker": 0.0},
+            }
+        },
+    )
+    monkeypatch.setattr(ccxta, "settings", override_settings, raising=False)
+    monkeypatch.setattr(exec_mod, "settings", override_settings, raising=False)
+
+    adapter_override = MockCCXTAdapter(books)
+    threshold_override = override_settings.net_threshold_bps / 10000.0
+    result_override = try_triangle(adapter_override, tri, books, threshold_override, [])
+    assert result_override is not None
+    assert len(adapter_override.orders) == 3
+    assert adapter_override.fetch_fees("ETH/USDT")[1] == 0.0
