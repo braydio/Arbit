@@ -99,7 +99,7 @@ class CLIApp(typer.Typer):
         """Print detailed command reference with optional command filtering."""
 
         typer.echo(VERBOSE_GLOBAL_OVERVIEW.strip())
-        typer.echo()
+        typer.echo("")
 
         if command:
             text = VERBOSE_COMMAND_HELP.get(command)
@@ -121,7 +121,7 @@ class CLIApp(typer.Typer):
             ]
             if aliases:
                 typer.echo(f"  Aliases: {', '.join(sorted(set(aliases)))}")
-            typer.echo()
+            typer.echo("")
 
     def print_verbose_help_for(self, command: str) -> None:
         """Expose verbose help rendering for command functions."""
