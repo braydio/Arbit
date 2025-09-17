@@ -112,7 +112,9 @@ def _update_env_triangles(
     path = Path(env_path)
     try:
         raw = path.read_text(encoding="utf-8")
-        newline = "\r\n" if "\r\n" in raw and "\n" not in raw.replace("\r\n", "") else "\n"
+        newline = (
+            "\r\n" if "\r\n" in raw and "\n" not in raw.replace("\r\n", "") else "\n"
+        )
         lines = raw.splitlines()
         had_trailing_newline = raw.endswith(("\n", "\r\n"))
     except FileNotFoundError:
