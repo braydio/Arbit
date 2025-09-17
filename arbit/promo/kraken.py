@@ -9,9 +9,9 @@ from decimal import ROUND_DOWN, Decimal
 from typing import Any, Mapping
 
 import typer
-from arbit.adapters.base import OrderSpec
 from arbit.adapters.ccxt_adapter import CCXTAdapter
 from arbit.config import settings
+from arbit.models import OrderSpec
 
 LOGGER = logging.getLogger(__name__)
 
@@ -208,7 +208,13 @@ def execute_plan(
             "DRY_RUN is enabled. Export DRY_RUN=false to allow live trading."
         )
 
-    buy_spec = OrderSpec(symbol=plan.symbol, side="buy", qty=float(plan.quantity))
+    buy_spec = OrderSpec(
+        symbol=plan.symbol,
+        side="buy",
+        quantity=float(plan.quantity),
+        price=None,
+        order_type="market",
+    )
     LOGGER.info(
         "Submitting Kraken buy order symbol=%s qty=%s", plan.symbol, plan.quantity
     )
@@ -218,7 +224,13 @@ def execute_plan(
     if sell_back:
         sell_qty = _to_decimal(buy_fill.get("qty", plan.quantity))
         if sell_qty > 0:
-            sell_spec = OrderSpec(symbol=plan.symbol, side="sell", qty=float(sell_qty))
+            sell_spec = OrderSpec(
+                symbol=plan.symbol,
+                side="sell",
+                quantity=float(sell_qty),
+                price=None,
+                order_type="market",
+            )
             LOGGER.info(
                 "Submitting Kraken sell order symbol=%s qty=%s", plan.symbol, sell_qty
             )
