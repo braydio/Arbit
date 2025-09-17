@@ -83,7 +83,7 @@ net   = gross * (1 - fee)^3 - 1
 - `arbit/metrics/exporter.py` (Prometheus counters/gauges and server start)
 
 **CLI:**
-- `arbit/cli.py` (Typer interface: fitness, live)
+- `arbit/cli/` (Typer interface: fitness, live)
 
 **DeFi:**
 - `stake.py` (Aave v3 supply demo)
@@ -212,7 +212,7 @@ A: Estimates assume perfect execution at top-of-book prices. Real trading involv
 
 ## Key Files Reference
 
-- **CLI**: `arbit/cli.py`
+- **CLI**: `arbit/cli/`
 - **Config**: `arbit/config.py`
 - **Models**: `arbit/models.py`
 - **Adapters**: `arbit/adapters/base.py`, `arbit/adapters/alpaca_adapter.py`, `arbit/adapters/ccxt_adapter.py`

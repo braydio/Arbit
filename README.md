@@ -65,7 +65,7 @@ Rationale: `USDC/USDT` and `ETH/USDC` are typically very liquid on Kraken with t
   - `adapters/`: exchange connectors (CCXT and Alpaca)
   - `metrics/`: Prometheus exporters
   - `persistence/`: SQLite helpers
-  - `cli.py`: Typer CLI entry point
+  - `cli/`: Typer CLI package (core app, shared utils, grouped commands)
 - `tests/`: pytest suite (`test_*.py`)
 - `data/`: local data/DB (gitignored)
 - `scripts/`: helper scripts
