@@ -6,7 +6,7 @@
   - `adapters/`: exchange connectors (CCXT-based)
   - `metrics/`: Prometheus exporters
   - `persistence/`: SQLite helpers
-  - `cli.py`: Typer CLI entry point
+  - `cli/`: Typer CLI package (Typer entry point and commands)
 - `tests/`: Pytest suite (`test_*.py`)
 - `data/`: Local data/DB (gitignored)
 - `Dockerfile`, `docker-compose.yml`: containerization
