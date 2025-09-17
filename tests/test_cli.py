@@ -342,3 +342,39 @@ def test_live_uses_alpaca_adapter(monkeypatch) -> None:
 
     asyncio.run(cli._live_run_for_venue("alpaca"))
     assert calls["alpaca"] == 1
+
+
+def test_config_discover_writes_env(monkeypatch, tmp_path):
+    """`config:discover` should persist discovered triangles when requested."""
+
+    class DummyConfigAdapter:
+        def load_markets(self) -> dict[str, dict[str, str]]:
+            return {
+                "ETH/USDT": {"base": "ETH", "quote": "USDT"},
+                "ETH/BTC": {"base": "ETH", "quote": "BTC"},
+                "BTC/USDT": {"base": "BTC", "quote": "USDT"},
+            }
+
+    monkeypatch.setattr(
+        cli,
+        "_build_adapter",
+        lambda venue, _settings: DummyConfigAdapter(),
+    )
+
+    env_file = tmp_path / "config.env"
+    env_file.write_text("EXISTING=1\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["config:discover", "--write-env", "--env-path", str(env_file)],
+    )
+
+    assert result.exit_code == 0
+    assert "wrote TRIANGLES_BY_VENUE" in result.output
+
+    env_contents = env_file.read_text(encoding="utf-8").splitlines()
+    assert env_contents[0] == "EXISTING=1"
+    assert env_contents[-1] == (
+        'TRIANGLES_BY_VENUE={"kraken":[["ETH/BTC","ETH/USDT","BTC/USDT"]]}'
+    )

@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover
 
 
 from arbit.adapters import AlpacaAdapter, CCXTAdapter, ExchangeAdapter
+from arbit.cli_env import _update_env_triangles
 from arbit.config import settings
 from arbit.engine.executor import stream_triangles, try_triangle
 from arbit.engine.triangle import (
@@ -1723,7 +1724,7 @@ def config_discover(
         + (f"first={'|'.join(triples[0])}" if triples else "")
     )
     if write_env:
-        ok = _update_env_triangles(venue, triples, env_path)  # noqa: F821
+        ok = _update_env_triangles(venue, triples, env_path)
         if ok:
             typer.echo(f"wrote TRIANGLES_BY_VENUE for {venue} to {env_path}")
         else:
