@@ -69,6 +69,7 @@ Rationale: `USDC/USDT` and `ETH/USDC` are typically very liquid on Kraken with t
 - `tests/`: pytest suite (`test_*.py`)
 - `data/`: local data/DB (gitignored)
 - `scripts/`: helper scripts
+  - `github_watcher.py`: poll a GitHub repository and run `git pull` when new commits land
 - `Dockerfile`, `docker-compose.yml`: containerization
 - `docs/`: extended docs (`ROADMAP.md`, `WARP.md`, `ROADMAP_PHASE_II.md`)
 - `TIPS_TRICKS.md` and `TIPS_TRICKS.html`: operational tips
