@@ -58,6 +58,7 @@ def slugify(text: str) -> str:
 def replace_inline(md: str) -> str:
     # Inline code: `code`
     md = re.sub(r"`([^`]+)`", lambda m: f"<code>{html_escape(m.group(1))}</code>", md)
+
     # Links: [text](url)
     def _link(m: re.Match[str]) -> str:
         text, url = m.group(1), m.group(2)
@@ -136,7 +137,7 @@ def md_to_sections(md: str) -> tuple[str, list[tuple[str, str, str]]]:
             flush_section()
             cur_h2 = m2.group(1).strip()
             cur_id = slugify(cur_h2)
-            buf.append(f"<h2 id=\"{cur_id}\">{html_escape(cur_h2)}</h2>")
+            buf.append(f'<h2 id="{cur_id}">{html_escape(cur_h2)}</h2>')
             continue
 
         m3 = re.match(r"^###\s+(.+)$", line)
@@ -145,7 +146,7 @@ def md_to_sections(md: str) -> tuple[str, list[tuple[str, str, str]]]:
             flush_ul()
             h3 = m3.group(1).strip()
             h3_id = slugify(h3)
-            buf.append(f"<h3 id=\"{h3_id}\">{html_escape(h3)}</h3>")
+            buf.append(f'<h3 id="{h3_id}">{html_escape(h3)}</h3>')
             continue
 
         # Lists
@@ -185,7 +186,7 @@ def build_nav(sections: list[tuple[str, str, str]]) -> str:
     for sec_id, h2, _ in sections:
         label = h2 or "Intro"
         items.append(f'<li><a href="#{sec_id}"> - {html_escape(label)}</a></li>')
-    return "<nav id=\"index\">\n  <ul>\n    " + "\n    ".join(items) + "\n  </ul>\n</nav>"
+    return '<nav id="index">\n  <ul>\n    ' + "\n    ".join(items) + "\n  </ul>\n</nav>"
 
 
 def wrap_sections(sections: list[tuple[str, str, str]]) -> str:
@@ -196,7 +197,7 @@ def wrap_sections(sections: list[tuple[str, str, str]]) -> str:
         if h2 and not re.search(r"<h2[^>]*>", html):
             content = f'<h2 id="{sec_id}">{html_escape(h2)}</h2>\n' + html
         parts.append("<section>\n" + content + "\n</section>")
-    return "<main class=\"container\">\n" + "\n".join(parts) + "\n</main>"
+    return '<main class="container">\n' + "\n".join(parts) + "\n</main>"
 
 
 def extract_head(html_text: str) -> str | None:
@@ -260,7 +261,7 @@ def main() -> int:
     main_html = wrap_sections(sections)
 
     out = (
-        "<!DOCTYPE html>\n<html lang=\"en\">\n\n<head>\n"
+        '<!DOCTYPE html>\n<html lang="en">\n\n<head>\n'
         + head_inner
         + "\n</head>\n\n<body>\n"
         + h1_html
@@ -278,4 +279,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
