@@ -234,3 +234,14 @@ As features grow (limit orders, partial-fill reconciliation, position hedging, m
 - Troubleshooting checklists for common errors and bad fills.
 
 Contributions welcome—keep changes concise, actionable, and venue-agnostic where possible.
+
+## Triangle Profit Quick Formula
+
+Handy reminder when eyeballing a potential triangle (example: `BTC/USDT/ETH`):
+
+```
+gross = (1 / ask_AB) * (bid_BC) * (bid_AC)
+net   = gross * (1 - fee_A) * (1 - fee_B) * (1 - fee_C) - 1
+```
+
+Use the best available top-of-book across legs; fees should match the venue’s taker/maker rules for your expected execution path.

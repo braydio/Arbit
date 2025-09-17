@@ -3,7 +3,7 @@
 This document outlines current capabilities and future development for the Arbit triangular arbitrage system.
 
 
-For installation and configuration guidance, see the [README](README.md).
+For installation and configuration guidance, see the [README](../README.md).
 
 ## What Ships Today
 

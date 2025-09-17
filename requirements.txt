@@ -1,11 +1,15 @@
+# Runtime dependencies (pinned)
+alpaca-py==0.26.0
+ccxt==4.5.4
+prometheus-client==0.22.1
+pydantic==2.11.9
+typer==0.17.4
+web3==7.13.0
+websockets==13.1
+orjson==3.10.7
 
-ccxt
-websockets
-pydantic
-pydantic-settings
-typer
-click
-prometheus-client
-orjson
-web3
-alpaca-py
+# CLI and compatibility
+click==8.1.7
+
+# Testing
+pytest==8.3.3

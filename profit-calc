@@ -1,5 +1,0 @@
-EG: BTC / USDT / ETH
-
-gross = (1 / ask_AB) * (bid_BC) * (bid_AC)
-net   = gross * (1 - fee_A) * (1 - fee_B) * (1 - fee_C) - 1
-

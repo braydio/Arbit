@@ -2357,25 +2357,55 @@ def live(
                         except Exception:
                             pass
                         skip_counts[r] = skip_counts.get(r, 0) + 1
-                    actionable = [
-                        r
-                        for r in skip_reasons
-                        if r.startswith("slippage") or r.startswith("min_notional")
-                    ]
-                    if actionable and time.time() - last_alert_at > 10:
-                        notify_discord(
-                            venue,
-                            f"[{venue}] skipped {tri} - reasons: {', '.join(actionable)}",
-                        )
-                    if (
-                        actionable
-                        and bool(getattr(settings, "discord_skip_notify", True))
-                        and time.time() - last_alert_at > min_interval
+
+                    # Build rich context for diagnostics regardless of reason.
+                    # Best-effort snapshot of top-of-book for context
+                    def _best(ob: dict | None, side: str) -> float | None:
+                        try:
+                            arr = (ob or {}).get(side) or []
+                            return arr[0][0] if arr else None
+                        except Exception:
+                            return None
+
+                    try:
+                        _ob_ab = a.fetch_orderbook(tri.leg_ab, 1)
+                    except Exception:
+                        _ob_ab = None
+                    try:
+                        _ob_bc = a.fetch_orderbook(tri.leg_bc, 1)
+                    except Exception:
+                        _ob_bc = None
+                    try:
+                        _ob_ac = a.fetch_orderbook(tri.leg_ac, 1)
+                    except Exception:
+                        _ob_ac = None
+
+                    details = {
+                        "triangle": str(tri),
+                        "reasons": list(skip_reasons),
+                        "threshold_bps": float(getattr(settings, "net_threshold_bps", 0.0)),
+                        "notional_usd": float(getattr(settings, "notional_per_trade_usd", 0.0)),
+                        "slippage_bps": float(getattr(settings, "max_slippage_bps", 0.0)),
+                        "latency_ms": float(latency * 1000.0),
+                        "attempt_id": attempt_id,
+                        "ab_bid": _best(_ob_ab, "bids"),
+                        "ab_ask": _best(_ob_ab, "asks"),
+                        "bc_bid": _best(_ob_bc, "bids"),
+                        "bc_ask": _best(_ob_bc, "asks"),
+                        "ac_bid": _best(_ob_ac, "bids"),
+                        "ac_ask": _best(_ob_ac, "asks"),
+                    }
+
+                    # Optionally emit a single consolidated Discord alert with details.
+                    if bool(getattr(settings, "discord_skip_notify", True)) and (
+                        time.time() - last_alert_at > min_interval
                     ):
                         try:
                             notify_discord(
                                 venue,
-                                f"[{venue}] skipped {tri} reasons: {', '.join(actionable)}",
+                                f"[{venue}] skipped {tri} reasons: {', '.join(skip_reasons)}",
+                                severity="warning",
+                                extra=details,
                             )
                         except Exception:
                             pass

@@ -11,7 +11,7 @@ A modular Python package for triangular arbitrage trading on cryptocurrency exch
 > - Use sandbox/paper trading environments when available (see `.env.example`)
 > - Current limitations: fees/slippage/partial fills not fully modeled
 > - **This is not financial advice. Use at your own risk.**
-> - **NOT READY FOR PRODUCTION TRADING** - see [WARP.md](WARP.md#safety-and-risk-management) for current limitations
+- **NOT READY FOR PRODUCTION TRADING** - see [WARP.md](docs/WARP.md#safety-and-risk-management) for current limitations
 
 ## What It Does
 
@@ -58,6 +58,21 @@ Rationale: `USDC/USDT` and `ETH/USDC` are typically very liquid on Kraken with t
 - **WebSocket streaming** with automatic REST fallback
 - **Supported exchanges**: Alpaca (native), Kraken (via CCXT)
 
+## Project Structure
+
+- `arbit/`: core package
+  - `engine/`: triangle math and execution
+  - `adapters/`: exchange connectors (CCXT and Alpaca)
+  - `metrics/`: Prometheus exporters
+  - `persistence/`: SQLite helpers
+  - `cli.py`: Typer CLI entry point
+- `tests/`: pytest suite (`test_*.py`)
+- `data/`: local data/DB (gitignored)
+- `scripts/`: helper scripts
+- `Dockerfile`, `docker-compose.yml`: containerization
+- `docs/`: extended docs (`ROADMAP.md`, `WARP.md`, `ROADMAP_PHASE_II.md`)
+- `TIPS_TRICKS.md` and `TIPS_TRICKS.html`: operational tips
+
 ### CLI Modes at a Glance
 
 | Mode        | Purpose                                                         | Example log line                             |
@@ -83,7 +98,7 @@ to drill into a single command's flags, sample output, and operational tips.
 - Yield watch: `yield:watch --asset USDC --sources <CSV|JSON> --interval 60 --apr-hint 4.5`
 - Yield withdraw: `yield:withdraw --asset USDC --amount-usd 75` or `--all-excess`
 
-See [WARP.md](WARP.md) for comprehensive documentation, architecture details, and development roadmap.
+See [WARP.md](docs/WARP.md) for comprehensive documentation, architecture details, and development roadmap.
 
 ## Quick Start
 
@@ -109,7 +124,7 @@ python -m arbit.cli live --venue alpaca
 curl http://localhost:9109/metrics
 ```
 
-💡 **First time?** Use `fitness` command first to verify connectivity. See [WARP.md](WARP.md) for detailed explanations and safety practices.
+💡 **First time?** Use `fitness` command first to verify connectivity. See [WARP.md](docs/WARP.md) for detailed explanations and safety practices.
 
 ### Kraken Promotion Helper
 
@@ -141,14 +156,14 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
 # Install dependencies
-pip install alpaca-py ccxt pydantic typer prometheus-client orjson websockets pytest
+pip install -r requirements.txt pytest
 
 # Optional: DeFi integration
 pip install web3
 
 ```
 
-See [WARP.md Development Workflow](WARP.md#development-workflow) for complete setup instructions. For practical guidance on safe tuning and starter values, see [TIPS_TRICKS.md](TIPS_TRICKS.md).
+See [WARP.md Development Workflow](docs/WARP.md#development-workflow) for complete setup instructions. For practical guidance on safe tuning and starter values, see [TIPS_TRICKS.md](TIPS_TRICKS.md).
 
 ## Configuration
 
@@ -218,7 +233,7 @@ cp .env.example .env
 # Edit .env with your credentials
 ```
 
-See [WARP.md Configuration](WARP.md#configuration-and-environment) for complete variable reference.
+See [WARP.md Configuration](docs/WARP.md#configuration-and-environment) for complete variable reference.
 
 ## Usage
 
@@ -306,7 +321,7 @@ asyncio.run(main())
 
 **Supported Venues**: `alpaca`, `kraken`
 
-**Note**: Ensure triangle symbols exist on your chosen venue (e.g., ETH/USDT, ETH/BTC, BTC/USDT; SOL/USDT, SOL/BTC, BTC/USDT on supported venues like Kraken). See [WARP.md CLI Commands](WARP.md#cli-commands) for full documentation.
+**Note**: Ensure triangle symbols exist on your chosen venue (e.g., ETH/USDT, ETH/BTC, BTC/USDT; SOL/USDT, SOL/BTC, BTC/USDT on supported venues like Kraken). See [WARP.md CLI Commands](docs/WARP.md#cli-commands) for full documentation.
 
 Customizing triangles (advanced): set `TRIANGLES_BY_VENUE` as JSON in `.env` to override defaults, e.g.
 ```
@@ -377,7 +392,7 @@ export ARBIT_USDC_ABI_PATH=erc20.json
 export ARBIT_POOL_ABI_PATH=aave_pool.json
 ```
 
-**⚠️ EXTREME CAUTION**: Never use mainnet private keys in development. See [WARP.md DeFi Integration](WARP.md#defi-integration) for safety practices.
+**⚠️ EXTREME CAUTION**: Never use mainnet private keys in development. See [WARP.md DeFi Integration](docs/WARP.md#defi-integration) for safety practices.
 
 ### Yield Collector (Beta)
 
@@ -428,7 +443,7 @@ Metrics:
 - **Metrics**: Check port availability and Docker port mapping
 - **Dependencies**: Ensure all packages installed in active venv
 
-See [WARP.md Troubleshooting](WARP.md#common-issues-and-troubleshooting) for detailed solutions.
+See [WARP.md Troubleshooting](docs/WARP.md#common-issues-and-troubleshooting) for detailed solutions.
 
 ## FAQ
 
@@ -451,7 +466,7 @@ A: **NO**. This is development/research software. See [safety warnings](#%EF%B8%
 
 This README provides user-focused documentation. For comprehensive technical details:
 
-- **[WARP.md](WARP.md)** - Complete documentation (architecture, roadmap, development)
+- **[WARP.md](docs/WARP.md)** - Complete documentation (architecture, roadmap, development)
 - **Tests**: `pytest -q`
 
 ## Acknowledgments
@@ -460,5 +475,5 @@ Built with [alpaca-py](https://github.com/alpacahq/alpaca-py) for native Alpaca 
 
 ---
 
-📖 **Complete Documentation**: [WARP.md](WARP.md)  
+📖 **Complete Documentation**: [WARP.md](docs/WARP.md)  
 ⚠️ **Safety First**: Always test with paper trading and minimal amounts

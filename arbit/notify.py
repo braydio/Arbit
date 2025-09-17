@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import urllib.request
-from typing import Optional
+from typing import Optional, Any, Mapping
 
 from .config import settings
 from .metrics.exporter import ERRORS_TOTAL
@@ -35,7 +35,14 @@ def fmt_usd(amount: float) -> str:
     return f"${amount:,.2f}"
 
 
-def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
+def notify_discord(
+    venue: str,
+    message: str,
+    url: Optional[str] = None,
+    *,
+    severity: str | None = None,
+    extra: Optional[Mapping[str, Any]] = None,
+) -> None:
     """Send *message* to a Discord webhook.
 
     Parameters
@@ -49,6 +56,16 @@ def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
         Optional override for the webhook URL. Defaults to
         ``settings.discord_webhook_url``.
 
+    Parameters
+    ----------
+    severity:
+        Optional hint for console logging level: one of ``"info"``,
+        ``"warning"``, or ``"error"``. Defaults to ``"info"``.
+    extra:
+        Optional structured context to include with the message. If provided,
+        it is appended to the Discord message as a JSON code block and also
+        emitted to the console log for diagnostics.
+
     Notes
     -----
     Any network or configuration errors are swallowed so that notification
@@ -56,9 +73,26 @@ def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
     ``errors_total`` metric is incremented with stage ``discord_send``.
     """
 
+    # Always mirror to console for local visibility
+    sev = (severity or "info").lower()
+    if extra:
+        try:
+            pretty = json.dumps(extra, separators=(",", ":"))
+        except Exception:
+            pretty = str(extra)
+        msg_for_console = f"{message} | ctx={pretty}"
+    else:
+        msg_for_console = message
+    if sev == "error":
+        log.error("[discord] %s", msg_for_console)
+    elif sev in ("warn", "warning"):
+        log.warning("[discord] %s", msg_for_console)
+    else:
+        log.info("[discord] %s", msg_for_console)
+
     webhook = url or getattr(settings, "discord_webhook_url", None)
     if not webhook:
-        log.info("notify_discord: webhook not configured; skipping")
+        log.debug("notify_discord: webhook not configured; skipping network send")
         return
 
     # Ensure webhook uses wait=true so Discord returns a response body
@@ -76,7 +110,14 @@ def notify_discord(venue: str, message: str, url: Optional[str] = None) -> None:
     except Exception:
         url = webhook
 
-    payload = json.dumps({"content": message}).encode("utf-8")
+    # Prepare Discord payload. Append JSON context when provided for easier triage.
+    content = message
+    if extra:
+        try:
+            content += "\n```json\n" + json.dumps(extra, indent=2) + "\n```"
+        except Exception:
+            content += f"\n```\n{extra}\n```"
+    payload = json.dumps({"content": content}).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=payload,

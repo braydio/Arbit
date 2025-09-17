@@ -2,7 +2,7 @@
 
 This document outlines current capabilities and future plans for the Arbit triangular arbitrage system.
 
-For installation and configuration guidance, see [README](README.md) or [WARP.md](WARP.md).
+For installation and configuration guidance, see [README](../README.md) or [WARP.md](WARP.md).
 
 ## What Ships Today
 
