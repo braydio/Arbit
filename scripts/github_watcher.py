@@ -108,9 +108,7 @@ class GitHubWatcher:
 
         request_obj = request.Request(api_url, headers=headers)
         try:
-            with request.urlopen(
-                request_obj, timeout=self.timeout
-            ) as response:  # noqa: S310
+            with request.urlopen(request_obj, timeout=self.timeout) as response:  # noqa: S310
                 status = getattr(response, "status", None)
                 if status is not None and status != HTTPStatus.OK:
                     msg = f"GitHub API responded with status {status}."
