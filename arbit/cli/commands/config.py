@@ -42,7 +42,9 @@ def _parse_triangles_env(raw: str) -> dict[str, list[list[str]]]:
             cleaned: list[list[str]] = []
             for triangle in triangles:
                 if isinstance(triangle, (list, tuple)) and len(triangle) == 3:
-                    cleaned.append([str(triangle[0]), str(triangle[1]), str(triangle[2])])
+                    cleaned.append(
+                        [str(triangle[0]), str(triangle[1]), str(triangle[2])]
+                    )
             normalised[venue] = cleaned
     return normalised
 
