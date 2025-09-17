@@ -6,6 +6,8 @@ import importlib
 import os
 import sys
 
+import pytest
+
 
 def _load_with_exchanges(monkeypatch, value: str):
     """Reload the config module with ``EXCHANGES`` set to *value*."""
@@ -54,3 +56,20 @@ def test_creds_for_alpaca(monkeypatch) -> None:
     sys.modules.pop("arbit.config", None)
     cfg = importlib.import_module("arbit.config")
     assert cfg.creds_for("alpaca") == ("key", "secret")
+
+
+def test_fee_overrides_parse_from_env(monkeypatch) -> None:
+    """Fee override JSON should normalise into decimal maker/taker rates."""
+
+    payload = '{"kraken": {"ETH/USDT": {"maker_bps": 5, "taker_bps": 0}}}'
+    monkeypatch.setenv("FEE_OVERRIDES", payload)
+    original = sys.modules.get("arbit.config")
+    sys.modules.pop("arbit.config", None)
+    cfg = importlib.import_module("arbit.config")
+    overrides = cfg.settings.fee_overrides
+    assert overrides["kraken"]["ETH/USDT"]["maker"] == pytest.approx(0.0005)
+    assert overrides["kraken"]["ETH/USDT"]["taker"] == 0.0
+    if original is not None:
+        sys.modules["arbit.config"] = original
+    else:
+        sys.modules.pop("arbit.config", None)

@@ -83,13 +83,62 @@ class CCXTAdapter(ExchangeAdapter):
 
         return self.fetch_orderbook(symbol, depth)
 
+    def _resolve_fee_override(self, symbol: str) -> dict[str, float] | None:
+        """Return configured fee override for *symbol* if available.
+
+        Parameters
+        ----------
+        symbol:
+            Market identifier such as ``"ETH/USDT"``.
+
+        Returns
+        -------
+        dict[str, float] | None
+            Mapping containing decimal ``maker``/``taker`` rates when an
+            override exists for the adapter's venue, otherwise ``None``.
+        """
+
+        overrides = getattr(settings, "fee_overrides", {}) or {}
+        if not isinstance(overrides, dict):
+            return None
+
+        venue = str(getattr(self.ex, "id", "") or "").strip().lower()
+        if not venue:
+            return None
+
+        venue_map = overrides.get(venue)
+        if not isinstance(venue_map, dict):
+            return None
+
+        symbol_key = symbol.upper()
+        fee_map = venue_map.get(symbol_key)
+        if not isinstance(fee_map, dict):
+            fee_map = (
+                venue_map.get("*") if isinstance(venue_map.get("*"), dict) else None
+            )
+        return fee_map
+
     def fetch_fees(self, symbol):
-        """Return ``(maker, taker)`` fees for *symbol*, caching results."""
+        """Return ``(maker, taker)`` fees for *symbol*, respecting overrides."""
+
         if symbol in self._fee:
             return self._fee[symbol]
+
+        override = self._resolve_fee_override(symbol)
+        maker_override = override.get("maker") if isinstance(override, dict) else None
+        taker_override = override.get("taker") if isinstance(override, dict) else None
+
         m = self.ex.market(symbol)
-        maker = m.get("maker", self.ex.fees.get("trading", {}).get("maker", 0.001))
-        taker = m.get("taker", self.ex.fees.get("trading", {}).get("taker", 0.001))
+        default_maker = m.get(
+            "maker", self.ex.fees.get("trading", {}).get("maker", 0.001)
+        )
+        default_taker = m.get(
+            "taker", self.ex.fees.get("trading", {}).get("taker", 0.001)
+        )
+
+        maker = maker_override if maker_override is not None else default_maker
+        taker = taker_override if taker_override is not None else default_taker
+
         self._fee[symbol] = (maker, taker)
         return maker, taker
 
