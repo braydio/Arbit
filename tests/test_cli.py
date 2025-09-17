@@ -227,6 +227,21 @@ def test_help_verbose_shows_details() -> None:
     assert "Sample output" in result.output
 
 
+def test_command_help_verbose_filters_sections() -> None:
+    """`COMMAND --help-verbose` should show only that command's verbose help."""
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["fitness", "--help-verbose"])
+    assert result.exit_code == 0
+    assert "Monitor bid/ask spreads" in result.output
+    assert "live:multi" not in result.output
+
+    alias_result = runner.invoke(cli.app, ["live_multi", "--help-verbose"])
+    assert alias_result.exit_code == 0
+    assert "live:multi" in alias_result.output
+    assert "markets:limits" not in alias_result.output
+
+
 def test_markets_limits(monkeypatch):
     class DummyCcxt:
         @staticmethod
