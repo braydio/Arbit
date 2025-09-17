@@ -1,0 +1,12 @@
+pynance-dietpi.duckdns.org {
+    encode zstd gzip
+
+    @api path /api/*
+    handle @api {
+        reverse_proxy {$BACKEND_UPSTREAM}
+    }
+
+    handle {
+        reverse_proxy {$FRONTEND_UPSTREAM}
+    }
+}
