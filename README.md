@@ -109,6 +109,26 @@ curl http://localhost:9109/metrics
 
 💡 **First time?** Use `fitness` command first to verify connectivity. See [WARP.md](WARP.md) for detailed explanations and safety practices.
 
+### Kraken Promotion Helper
+
+Need to complete Kraken's "$20 in BTC" welcome promo that requires at least $50 in trading volume on a non-stablecoin asset? The Typer helper below plans a qualifying trade and defaults to a safe dry run:
+
+```bash
+# Preview the plan (no orders placed)
+python -m arbit.promo.kraken trade --usd-amount 55 --base ETH --quote USD
+
+# Execute the trade once you're ready
+export DRY_RUN=false  # required for live orders
+python -m arbit.promo.kraken trade --usd-amount 55 --base ETH --quote USD --execute
+```
+
+Key safeguards:
+
+- Rejects stablecoin bases (e.g., USDC, USDT) so the trade qualifies.
+- Verifies the notional exceeds $50 after rounding to Kraken's lot size.
+- Sells the asset back to the quote currency by default to keep exposure flat (use `--hold` to keep it).
+- Requires both `--execute` **and** `DRY_RUN=false` to place real orders.
+
 ## Installation
 
 **Requirements:** Python 3.10+ recommended
