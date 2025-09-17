@@ -41,7 +41,8 @@ database if `--persist` is also specified.
 
 ### CLI Help Quick Reference
 
-- Global help: `python -m arbit.cli --help` (summary) or `--help-verbose` (all flags + examples)
+- Global help: `python -m arbit.cli --help` (summary) or `--help-verbose` (full catalog). Append
+  `--help-verbose` to any command for focused tips (e.g., `python -m arbit.cli live --help-verbose`).
 - Fitness flags: `--venue`, `--secs`, `--simulate/--no-simulate`, `--persist/--no-persist`, `--dummy-trigger`, `--help-verbose`
 - Live flags: `--venue`, `--help-verbose`
 - Yield (beta): `yield:collect --asset USDC --reserve-usd <USD> [--min-stake <units>]`; requires `RPC_URL`/`PRIVATE_KEY`.

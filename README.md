@@ -66,11 +66,13 @@ Rationale: `USDC/USDT` and `ETH/USDC` are typically very liquid on Kraken with t
 | `live`      | Execute trades when triangles meet profit thresholds            | `alpaca Triangle(...) net=0.15% PnL=0.05`    |
 | `keys:check`| Validate exchange keys and permissions                          | `[alpaca] markets=123 BTC/USDT 60000/60010`  |
 
-Run `python -m arbit.cli --help-verbose` for command flags and more output samples.
+Run `python -m arbit.cli --help-verbose` for the full catalog, or append
+`--help-verbose` to a command (for example, `python -m arbit.cli fitness --help-verbose`)
+to drill into a single command's flags, sample output, and operational tips.
 
 ### CLI Help
 
-- Global: `--help` (summary), `--help-verbose` (all flags + examples)
+- Global: `--help` (summary), `--help-verbose` (detailed catalog or command-specific when appended)
 - `fitness` flags: `--venue`, `--secs`, `--simulate/--no-simulate`, `--persist/--no-persist`, `--dummy-trigger`, `--help-verbose`
 - `live` flags: `--venue`, `--help-verbose`
 - `live:multi` flags: `--venues`, `--symbols`, `--auto-suggest-top`

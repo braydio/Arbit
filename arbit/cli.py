@@ -11,6 +11,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from importlib import import_module as _import_module
+from textwrap import dedent
 
 import typer
 
@@ -54,6 +55,219 @@ from arbit.persistence.db import (
 )
 
 AaveProvider = _import_module("arbit.yield").AaveProvider
+
+
+VERBOSE_GLOBAL_OVERVIEW = dedent(
+    """\
+    Command reference
+
+    Use ``--help`` for a compact summary of commands.
+    Use ``--help-verbose`` either globally for the full catalog or after a command
+    to drill into that command's flags, typical output, and operational tips.
+
+    Exchanges: alpaca (native API via alpaca-py), kraken (via CCXT)
+    """
+)
+
+
+VERBOSE_COMMAND_HELP: dict[str, str] = {
+    "keys:check": dedent(
+        """\
+        keys:check
+          Purpose:
+            Validate API credentials by fetching representative market data. Useful when
+            onboarding a new venue or verifying trading permissions.
+          Key flags:
+            --venue TEXT   Exchange to query (default: alpaca). Use --venue kraken for CCXT.
+          Usage tips:
+            - Run this before live trading to confirm read/trade permissions.
+            - Combine with environment variable overrides to test sandbox keys.
+          Sample output:
+            [alpaca] markets=123 BTC/USDT 60000/60010 (depth preview for a hot market)
+        """
+    ),
+    "fitness": dedent(
+        """\
+        fitness
+          Purpose:
+            Monitor bid/ask spreads and triangle candidates without placing orders.
+            Ideal for validating venue connectivity and discovering profitable loops.
+          Key flags:
+            --venue TEXT              Exchange to query (default: alpaca).
+            --secs INTEGER            Seconds to run (default: 20).
+            --simulate/--no-simulate  Attempt dry-run triangle executions (default: no).
+            --persist/--no-persist    Persist simulated fills to SQLite (with --simulate).
+            --dummy-trigger           Inject a synthetic profitable triangle for testing.
+            --symbols TEXT            CSV of legs to restrict monitored triangles.
+            --discord-heartbeat-secs  Emit periodic Discord summaries (0 disables).
+          Usage tips:
+            - ``--simulate`` logs net% and PnL estimates; pair with ``--persist`` to audit later.
+            - ``--dummy-trigger`` is helpful for end-to-end alerting/metrics rehearsals.
+            - Pass ``--symbols 'ETH/USDT,BTC/USDT,ETH/BTC'`` to restrict to familiar legs.
+            - Discord heartbeats summarize attempts/successes for remote monitoring.
+          Sample log lines:
+            kraken ETH/USDT spread=0.5 bps
+            kraken [sim] Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.05 USDT
+        """
+    ),
+    "live": dedent(
+        """\
+        live
+          Purpose:
+            Continuously evaluate live triangles and place orders when the net spread beats
+            configured thresholds. Intended for production once fitness results look healthy.
+          Key flags:
+            --venue TEXT           Venue to trade (default: alpaca).
+            --symbols TEXT         CSV leg filter applied before triangle selection.
+            --auto-suggest-top INT Auto-generate a shortlist of triangles when config is empty.
+            --attempt-notify       Send Discord updates on every attempt (noisy, opt-in).
+          Usage tips:
+            - Confirm balances via the startup banner before trusting executions.
+            - ``--symbols`` keeps exposure constrained to pairs you actively monitor.
+            - ``--auto-suggest-top`` is useful for quick experiments; persists only for session.
+            - Combine with metrics on port 9109 to track cycle latency and realized profit.
+          Sample log lines:
+            alpaca Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.42% PnL=0.11 USDT
+            alpaca heartbeat: dry_run=True attempts=250 successes=3 hit_rate=1.20%
+        """
+    ),
+    "live:multi": dedent(
+        """\
+        live:multi
+          Purpose:
+            Orchestrate ``live`` loops for multiple venues concurrently in one process.
+            Shares metrics export and Discord notifications across venues.
+          Key flags:
+            --venues TEXT         CSV list of venues (default: settings.exchanges).
+            --symbols TEXT        CSV leg filter applied to every venue.
+            --auto-suggest-top INT Same as ``live`` but replicated per venue.
+            --attempt-notify       Forward ``--attempt-notify`` to every venue loop.
+          Usage tips:
+            - Provide ``--venues alpaca,kraken`` to reuse account configs side-by-side.
+            - Combine with different ``--symbols`` to avoid overlapping inventory drains.
+            - Graceful Ctrl+C waits for child tasks to cancel before shutting down metrics.
+          Sample usage:
+            python -m arbit.cli live:multi --venues alpaca,kraken --symbols ETH/USDT,ETH/BTC,BTC/USDT
+        """
+    ),
+    "markets:limits": dedent(
+        """\
+        markets:limits
+          Purpose:
+            Inspect minimum notionals and maker/taker fees for venue markets.
+            Handy when sizing trades or configuring triangle thresholds.
+          Key flags:
+            --venue TEXT   Exchange to query (default: alpaca).
+            --symbols TEXT CSV of symbols to filter (defaults to configured triangle legs).
+          Usage tips:
+            - Use alongside fitness metrics to correlate spreads versus fee drag.
+            - Export results to a spreadsheet for per-symbol what-if analysis.
+          Sample output:
+            BTC/USDT min_cost=5.0 maker=10 bps taker=10 bps
+        """
+    ),
+    "config:recommend": dedent(
+        """\
+        config:recommend
+          Purpose:
+            Suggest starting strategy parameters for a venue based on historical heuristics.
+          Key flags:
+            --venue TEXT  Exchange to analyze (default: alpaca).
+          Usage tips:
+            - Treat as a baseline; tune thresholds according to venue-specific slippage.
+            - Pair with ``markets:limits`` output to ensure size recommendations clear minimums.
+          Sample output:
+            Recommend: NOTIONAL_PER_TRADE_USD=10 NET_THRESHOLD_BPS=25 MAX_SLIPPAGE_BPS=8 DRY_RUN=true
+        """
+    ),
+    "fitness:hybrid": dedent(
+        """\
+        fitness:hybrid
+          Purpose:
+            Evaluate cross-venue triangles by mixing legs from multiple exchanges without trading.
+            Useful for gauging latency penalties or cross-exchange arbitrage headroom.
+          Key flags:
+            --legs TEXT     CSV of legs (default: ETH/USDT,ETH/BTC,BTC/USDT).
+            --venues TEXT   CSV mapping leg=venue (e.g., ETH/USDT=kraken,...).
+            --secs INTEGER  Seconds to sample (default: 10).
+          Usage tips:
+            - Keep expectations modest; liquidity and settlement risk grow across venues.
+            - Pair with ``markets:limits`` to ensure proposed legs exist on target venues.
+          Notes:
+            Estimates only—no simulation or order placement occurs.
+        """
+    ),
+    "config:discover": dedent(
+        """\
+        config:discover
+          Purpose:
+            Enumerate supported triangles for a venue via ``load_markets`` and optionally persist
+            them into ``.env`` for quick reuse.
+          Key flags:
+            --venue TEXT     Exchange to inspect (default: kraken).
+            --write-env      Write TRIANGLES_BY_VENUE to .env for the venue.
+            --env-path TEXT  Location of the .env file (default: .env).
+          Usage tips:
+            - Capture output under version control to document venue coverage drift.
+            - Use ``--write-env`` during onboarding to scaffold configuration quickly.
+          Sample output:
+            kraken triangles=15 first=ETH/USDT|ETH/BTC|BTC/USDT
+        """
+    ),
+    "yield:collect": dedent(
+        """\
+        yield:collect
+          Purpose:
+            Deposit idle USDC into Aave v3 with configurable wallet reserves.
+          Key flags:
+            --asset TEXT        Asset symbol to deposit (default: USDC).
+            --min-stake INTEGER Minimum token units to deposit (defaults from settings).
+            --reserve-usd FLOAT Keep this much USD in wallet; reserve_percent also applies.
+          Usage tips:
+            - Requires RPC_URL and PRIVATE_KEY environment variables; honors global DRY_RUN.
+            - Run with ``--help-verbose`` first to confirm assumptions before live funds.
+            - Pair with ``yield:watch`` alerts to know when to unwind positions.
+          Sample output:
+            [dry-run] would deposit 150.00 USDC to Aave (reserve=50.00)
+        """
+    ),
+    "yield:withdraw": dedent(
+        """\
+        yield:withdraw
+          Purpose:
+            Withdraw USDC from Aave v3 either by specifying an amount or freeing all excess
+            above the configured reserve target.
+          Key flags:
+            --asset TEXT        Asset symbol (default: USDC).
+            --amount-usd FLOAT  Exact USD amount to withdraw.
+            --all-excess        Withdraw everything above reserve thresholds.
+            --reserve-usd FLOAT Override reserve size when computing ``--all-excess``.
+          Usage tips:
+            - Honors DRY_RUN; review simulated withdrawal amounts before executing for real.
+            - Combine with ``yield:collect`` to rebalance wallet liquidity after profit-taking.
+          Sample output:
+            [dry-run] would withdraw 75.00 USDC (leaving reserve=50.00)
+        """
+    ),
+    "yield:watch": dedent(
+        """\
+        yield:watch
+          Purpose:
+            Poll APR sources and emit Discord alerts when a better yield exceeds thresholds.
+          Key flags:
+            --asset TEXT        Asset symbol (default: USDC).
+            --sources TEXT      CSV or JSON array of {provider, asset, apr_percent} endpoints.
+            --interval FLOAT    Poll interval seconds (default: 60).
+            --apr-hint FLOAT    Current provider APR baseline for alert comparisons.
+            --min-delta-bps INT Minimum APR improvement before alerting (default: 50 bps).
+          Usage tips:
+            - Configure Discord notifications to surface actionable opportunities quickly.
+            - Use ``--sources`` with a local JSON file during development for repeatability.
+          Sample output:
+            Better yield available for USDC: foo 5.10% >= current 4.50% + 0.50%
+        """
+    ),
+}
 
 
 def format_live_heartbeat(
@@ -136,14 +350,25 @@ class CLIApp(typer.Typer):
         The method detects ``--help`` and ``--help-verbose`` flags before
         delegating to Typer's normal processing.  ``--help`` prints a short
         summary of available commands while ``--help-verbose`` provides a
-        more detailed reference including flags and sample output.
+        detailed reference.  When ``--help-verbose`` follows a command it
+        narrows the output to just that command's guidance.
         """
 
         if args is None:
             args = sys.argv[1:]
 
-        if args and args[0] == "--help-verbose":
-            self._print_verbose_help()
+        if args and "--help-verbose" in args:
+            idx = args.index("--help-verbose")
+            if idx == 0:
+                self._print_verbose_help()
+            else:
+                target = args[0] if args else ""
+                canonical = None
+                for cname, info in self._unique_commands().items():
+                    if target == cname or target in info["aliases"]:
+                        canonical = cname
+                        break
+                self._print_verbose_help(canonical)
             raise SystemExit(0)
 
         if args and args[0] == "--help":
@@ -179,136 +404,44 @@ class CLIApp(typer.Typer):
         typer.echo(
             "\nExchanges: alpaca (native API via alpaca-py) and kraken (via CCXT)."
         )
-        typer.echo("\nTip: run --help-verbose for flags and examples.")
+        typer.echo(
+            "\nTip: run --help-verbose for the full catalog or COMMAND --help-verbose"
+            " for focused tips."
+        )
 
     # ------------------------------------------------------------------
-    @staticmethod
-    def _print_verbose_help() -> None:
-        """Print detailed command reference with flags and examples."""
+    def _print_verbose_help(self, command: str | None = None) -> None:
+        """Print detailed command reference with optional command filtering."""
 
-        typer.echo("Command reference:\n")
-        typer.echo("Global: --help (short list), --help-verbose (this view)\n")
-        typer.echo("Exchanges: alpaca (native API via alpaca-py), kraken (via CCXT)\n")
+        typer.echo(VERBOSE_GLOBAL_OVERVIEW.strip())
+        typer.echo()
 
-        typer.echo(
-            "keys:check\n"
-            "  Validate exchange credentials by fetching a sample order book.\n"
-            "  Aliases: keys:check, keys_check\n"
-            "  Sample output:\n"
-            "    [alpaca] markets=123 BTC/USDT 60000/60010\n"
-        )
+        if command:
+            text = VERBOSE_COMMAND_HELP.get(command)
+            if text:
+                typer.echo(text.rstrip())
+            else:
+                typer.echo(f"No verbose help available for '{command}'.")
+            return
 
-        typer.echo(
-            "fitness\n"
-            "  Monitor order books to gauge spread without trading. Optionally simulate executions.\n"
-            "  Flags (all optional):\n"
-            "    --venue TEXT              Exchange to query (default: alpaca)\n"
-            "    --secs INTEGER            Seconds to run (default: 20)\n"
-            "    --simulate/--no-simulate  Try dry-run triangle executions (default: no-simulate)\n"
-            "    --persist/--no-persist    Persist simulated fills to SQLite (used with --simulate)\n"
-            "    --dummy-trigger           Inject one synthetic profitable triangle (with --simulate)\n"
-            "    --help-verbose            Print extra context about fitness output\n"
-            "  Sample output:\n"
-            "    alpaca ETH/USDT spread=10.0 bps\n"
-            "    alpaca [sim] Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.05 USDT\n"
-        )
+        for cname, info in sorted(self._unique_commands().items()):
+            text = VERBOSE_COMMAND_HELP.get(cname)
+            if not text:
+                continue
+            typer.echo(text.rstrip())
+            aliases = [
+                alias.replace("_", ":")
+                for alias in info["aliases"]
+                if alias.replace("_", ":") != cname
+            ]
+            if aliases:
+                typer.echo(f"  Aliases: {', '.join(sorted(set(aliases)))}")
+            typer.echo()
 
-        typer.echo(
-            "live\n"
-            "  Continuously scan for profitable triangles and execute trades.\n"
-            "  Flags (optional):\n"
-            "    --venue TEXT           Exchange to trade on (default: alpaca)\n"
-            "    --symbols TEXT         CSV filter; only triangles whose three legs are all included are traded\n"
-            "    --auto-suggest-top INT Use top N discovered triangles if none configured/supported (session only)\n"
-            "    --help-verbose         Print extra context about live output semantics\n"
-            "  Sample output:\n"
-            "    alpaca ETH/BTC net=0.5% PnL=0.10 USDT\n"
-        )
+    def print_verbose_help_for(self, command: str) -> None:
+        """Expose verbose help rendering for command functions."""
 
-        typer.echo(
-            "live:multi\n"
-            "  Run live loops concurrently across multiple venues.\n"
-            "  Aliases: live:multi, live_multi\n"
-            "  Flags (optional):\n"
-            "    --venues TEXT         CSV of venues (default: settings.exchanges)\n"
-            "    --symbols TEXT        CSV filter applied per venue\n"
-            "    --auto-suggest-top INT Use top N discovered triangles if none configured/supported\n"
-            "  Sample usage:\n"
-            "    python -m arbit.cli live:multi --venues alpaca,kraken\n"
-        )
-
-        typer.echo(
-            "markets:limits\n"
-            "  List market min-notional and fees to help size trades.\n"
-            "  Aliases: markets:limits, markets_limits\n"
-            "  Flags (all optional):\n"
-            "    --venue TEXT     Exchange to query (default: alpaca)\n"
-            "    --symbols TEXT   CSV filter (e.g., BTC/USDT,ETH/USDT); default = triangle symbols\n"
-            "  Sample output:\n"
-            "    BTC/USDT min_cost=5.0 maker=10 bps taker=10 bps\n"
-        )
-
-        typer.echo(
-            "config:recommend\n"
-            "  Suggest starter Strategy settings based on venue data.\n"
-            "  Aliases: config:recommend, config_recommend\n"
-            "  Flags (optional):\n"
-            "    --venue TEXT   Exchange to query (default: alpaca)\n"
-            "  Sample output:\n"
-            "    Recommend: NOTIONAL_PER_TRADE_USD=10 NET_THRESHOLD_BPS=25 MAX_SLIPPAGE_BPS=8 DRY_RUN=true\n"
-        )
-
-        typer.echo(
-            "fitness:hybrid\n"
-            "  Read-only multi-venue check: compute net% using legs sourced from different exchanges.\n"
-            "  Aliases: fitness:hybrid, fitness_hybrid\n"
-            "  Flags (optional):\n"
-            "    --legs TEXT     CSV of legs (default: ETH/USDT,ETH/BTC,BTC/USDT)\n"
-            "    --venues TEXT   CSV mapping of symbol=venue (e.g., 'ETH/USDT=kraken,ETH/BTC=kraken,BTC/USDT=alpaca')\n"
-            "    --secs INTEGER  Seconds to run sampling (default: 10)\n"
-            "  Notes: estimates only; no order placement or simulation across venues.\n"
-        )
-
-        typer.echo(
-            "config:discover\n"
-            "  Discover supported triangles for a venue from load_markets().\n"
-            "  Aliases: config:discover, config_discover\n"
-            "  Flags (optional):\n"
-            "    --venue TEXT     Exchange to query (default: kraken)\n"
-            "    --write-env      Write TRIANGLES_BY_VENUE to .env for venue\n"
-            "    --env-path TEXT  Path to .env (default: .env)\n"
-            "  Sample output:\n"
-            "    kraken triangles=15 first=ETH/USDT|ETH/BTC|BTC/USDT\n"
-        )
-
-        typer.echo(
-            "yield:collect\n"
-            "  Deposit idle USDC to Aave v3 to earn yield (beta).\n"
-            "  Aliases: yield:collect, yield_collect\n"
-            "  Flags (optional):\n"
-            "    --asset TEXT        Asset to deposit (default: USDC)\n"
-            "    --min-stake INTEGER Minimum token units to deposit (default: settings.min_usdc_stake)\n"
-            "    --reserve-usd FLOAT Keep this much USD in wallet (default: settings.reserve_amount_usd; reserve_percent also applied)\n"
-            "    --help-verbose      Print extra context and environment requirements\n"
-            "  Environment:\n"
-            "    RPC_URL, PRIVATE_KEY; USDC/Pool addresses from settings.\n"
-            "  Sample output:\n"
-            "    [dry-run] would deposit 150.00 USDC to Aave (reserve=50.00)\n"
-        )
-
-        typer.echo(
-            "yield:watch\n"
-            "  Periodically check APR sources and alert if a better yield exists.\n"
-            "  Aliases: yield:watch, yield_watch\n"
-            "  Flags (optional):\n"
-            "    --asset TEXT        Asset symbol (default: USDC)\n"
-            "    --sources TEXT      CSV or JSON array of URLs returning {provider, asset, apr_percent}\n"
-            "    --interval FLOAT    Poll interval in seconds (default: 60)\n"
-            "    --apr-hint FLOAT    Current provider APR used as baseline for alerts\n"
-            "    --min-delta-bps INT Minimum APR improvement to alert (default: 50 bps)\n"
-            "  Sample output:\n"
-            "    Better yield available for USDC: foo 5.10% >= current 4.50% + 0.50%\n"
-        )
+        self._print_verbose_help(command)
 
 
 app = CLIApp()
@@ -833,11 +966,7 @@ def yield_collect(
     """
 
     if help_verbose:
-        typer.echo(
-            "Deposits idle wallet USDC to Aave v3. Requires RPC_URL and PRIVATE_KEY.\n"
-            "Reserves are computed as max(reserve_amount_usd, reserve_percent * balance_usd).\n"
-            "Amounts are in token units: USDC uses 6 decimals. Honors global DRY_RUN."
-        )
+        app.print_verbose_help_for("yield:collect")
         raise SystemExit(0)
 
     asset = (asset or "").strip().upper()
@@ -1023,9 +1152,7 @@ def yield_withdraw(
     """
 
     if help_verbose:
-        typer.echo(
-            "Withdraws USDC from Aave v3. Use --amount-usd for a fixed amount or --all-excess to leave only the reserve."
-        )
+        app.print_verbose_help_for("yield:withdraw")
         raise SystemExit(0)
 
     asset = (asset or "").strip().upper()
@@ -1628,23 +1755,7 @@ def fitness(
     """
 
     if help_verbose:
-        typer.echo(
-            "Typical log line: 'kraken ETH/USDT spread=0.5 bps' where spread is the\n"
-            "bid/ask gap expressed in basis points (1/100th of a percent)."
-        )
-        typer.echo(
-            "Use --simulate to attempt dry-run triangle executions and log net%/PnL."
-        )
-        typer.echo(
-            "Use --dummy-trigger to inject one synthetic profitable triangle in fitness"
-            " mode to exercise the execution path without placing real orders."
-        )
-        typer.echo(
-            "Use --symbols 'A/B,C/D,...' to restrict triangles by legs (all legs must match)."
-        )
-        typer.echo(
-            "Use --discord-heartbeat-secs to send periodic summaries to Discord (0=off)."
-        )
+        app.print_verbose_help_for("fitness")
         raise SystemExit(0)
 
     a = _build_adapter(venue, settings)
@@ -2031,10 +2142,7 @@ def live(
     """
 
     if help_verbose:
-        typer.echo(
-            "Log line: 'alpaca Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.15% PnL=0.10 USDT'\n"
-            "net = estimated profit after fees; PnL = realized gain in USDT."
-        )
+        app.print_verbose_help_for("live")
         raise SystemExit(0)
 
     # Start metrics server once per process
@@ -2441,11 +2549,7 @@ def live_multi(
     """
 
     if help_verbose:
-        typer.echo(
-            "Runs multiple venue loops concurrently. Example:\n"
-            "  python -m arbit.cli live:multi --venues alpaca,kraken\n"
-            "Flags: --symbols, --auto-suggest-top mirror `live` and apply per venue."
-        )
+        app.print_verbose_help_for("live:multi")
         raise SystemExit(0)
 
     vlist = [
