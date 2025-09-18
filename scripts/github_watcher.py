@@ -30,8 +30,10 @@ from urllib import error, request
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_INTERVAL_SECONDS = 60.0
-DEFAULT_REPO = "braydio/pyNance"
+DEFAULT_REPO = "braydio/Arbit"
 DEFAULT_BRANCH = "main"
+# Environment variable name expected to hold a GitHub token. The token value is
+# resolved at runtime so sensitive data is not baked into the module.
 DEFAULT_TOKEN_ENV = "GITHUB_TOKEN"
 DEFAULT_TIMEOUT = 10.0
 
