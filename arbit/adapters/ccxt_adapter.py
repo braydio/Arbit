@@ -290,9 +290,7 @@ class CCXTAdapter(ExchangeAdapter):
                     try:
                         from arbit.metrics.exporter import ORDERBOOK_STALENESS
 
-                        ORDERBOOK_STALENESS.labels(venue).observe(
-                            max(now - prev, 0.0)
-                        )
+                        ORDERBOOK_STALENESS.labels(venue).observe(max(now - prev, 0.0))
                     except Exception:
                         pass
                 last_ts[sym] = now
