@@ -64,11 +64,13 @@ VERBOSE_COMMAND_HELP: dict[str, str] = {
             Continuously evaluate live triangles and place orders when the net spread beats
             configured thresholds. Intended for production once fitness results look healthy.
           Key flags:
+            --venues TEXT         CSV list of venues to trade concurrently.
             --venue TEXT           Venue to trade (default: alpaca).
             --symbols TEXT         CSV leg filter applied before triangle selection.
             --auto-suggest-top INT Auto-generate a shortlist of triangles when config is empty.
             --attempt-notify       Send Discord updates on every attempt (noisy, opt-in).
           Usage tips:
+            - ``--venues`` overrides ``--venue`` and spins up a loop per venue.
             - Confirm balances via the startup banner before trusting executions.
             - ``--symbols`` keeps exposure constrained to pairs you actively monitor.
             - ``--auto-suggest-top`` is useful for quick experiments; persists only for session.
@@ -76,25 +78,6 @@ VERBOSE_COMMAND_HELP: dict[str, str] = {
           Sample log lines:
             alpaca Triangle(ETH/USDT, ETH/BTC, BTC/USDT) net=0.42% PnL=0.11 USDT
             alpaca heartbeat: dry_run=True attempts=250 successes=3 hit_rate=1.20%
-        """
-    ),
-    "live:multi": dedent(
-        """\
-        live:multi
-          Purpose:
-            Orchestrate ``live`` loops for multiple venues concurrently in one process.
-            Shares metrics export and Discord notifications across venues.
-          Key flags:
-            --venues TEXT         CSV list of venues (default: settings.exchanges).
-            --symbols TEXT        CSV leg filter applied to every venue.
-            --auto-suggest-top INT Same as ``live`` but replicated per venue.
-            --attempt-notify       Forward ``--attempt-notify`` to every venue loop.
-          Usage tips:
-            - Provide ``--venues alpaca,kraken`` to reuse account configs side-by-side.
-            - Combine with different ``--symbols`` to avoid overlapping inventory drains.
-            - Graceful Ctrl+C waits for child tasks to cancel before shutting down metrics.
-          Sample usage:
-            python -m arbit.cli live:multi --venues alpaca,kraken --symbols ETH/USDT,ETH/BTC,BTC/USDT
         """
     ),
     "markets:limits": dedent(
