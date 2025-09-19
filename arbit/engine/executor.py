@@ -9,7 +9,6 @@ from arbit.config import settings
 from arbit.engine.triangle import net_edge_cycle, size_from_depth
 from arbit.models import Triangle
 
-
 log = logging.getLogger(__name__)
 
 

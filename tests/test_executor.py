@@ -1,11 +1,10 @@
 """Tests for executor utility functions."""
 
+import logging
 import sys
 import types
 
 # ruff: noqa: E402
-
-import logging
 
 
 sys.modules["arbit.config"] = types.SimpleNamespace(
