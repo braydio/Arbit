@@ -260,9 +260,7 @@ class CCXTAdapter(ExchangeAdapter):
                         try:
                             ob = task.result()
                         except Exception as exc:
-                            logger.warning(
-                                "ws watch_order_book error %s: %s", sym, exc
-                            )
+                            logger.warning("ws watch_order_book error %s: %s", sym, exc)
                             ob = {"bids": [], "asks": [], "error": str(exc)}
 
                         prev = last_ts.get(sym)
