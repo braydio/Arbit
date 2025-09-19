@@ -52,9 +52,19 @@ class MockDataStream:
     updates_runs: List[List[Any]] = []
     run_index = 0
 
-    def __init__(self, key: str, secret: str) -> None:
+    def __init__(
+        self,
+        key: str,
+        secret: str,
+        *,
+        url: str | None = None,
+        data_feed: str | None = None,
+        **_: Any,
+    ) -> None:
         self.handler = None
         self.symbols: tuple[str, ...] = ()
+        self.url = url
+        self.data_feed = data_feed
         self.idx = MockDataStream.run_index
         MockDataStream.run_index += 1
         MockDataStream.instances.append(self)

@@ -187,7 +187,12 @@ class AlpacaAdapter(ExchangeAdapter):
             await queue.put((out_sym, {"bids": bids, "asks": asks}))
 
         while True:
-            stream = CryptoDataStream(self._key, self._secret)
+            stream = CryptoDataStream(
+                self._key,
+                self._secret,
+                url=getattr(settings, "alpaca_ws_crypto_url", None),
+                data_feed=getattr(settings, "alpaca_data_feed", None),
+            )
             self._stream = stream
             stream.subscribe_orderbooks(_handler, *sub_syms)
             run_task = asyncio.create_task(stream._run_forever())  # type: ignore[attr-defined]
