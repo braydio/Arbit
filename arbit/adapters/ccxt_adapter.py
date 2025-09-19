@@ -222,6 +222,7 @@ class CCXTAdapter(ExchangeAdapter):
         logger = logging.getLogger("arbit")
 
         if getattr(self, "ex_ws", None):
+            logger = logging.getLogger("arbit")
             tasks_by_sym: dict[str, asyncio.Task] = {}
             ws_failed = False
             try:
@@ -245,10 +246,12 @@ class CCXTAdapter(ExchangeAdapter):
 
                     done, _ = await asyncio.wait(
                         set(tasks_by_sym.values()),
+
                         return_when=asyncio.FIRST_COMPLETED,
                     )
 
                     for task in done:
+
                         sym = next(
                             (s for s, t in tasks_by_sym.items() if t is task),
                             None,
@@ -262,6 +265,7 @@ class CCXTAdapter(ExchangeAdapter):
                         except Exception as exc:
                             logger.warning("ws watch_order_book error %s: %s", sym, exc)
                             ob = {"bids": [], "asks": [], "error": str(exc)}
+
 
                         prev = last_ts.get(sym)
                         now = loop.time()
@@ -277,6 +281,7 @@ class CCXTAdapter(ExchangeAdapter):
                         last_ts[sym] = now
 
                         try:
+
                             tasks_by_sym[sym] = asyncio.create_task(
                                 self.ex_ws.watch_order_book(sym, depth)
                             )
@@ -288,18 +293,21 @@ class CCXTAdapter(ExchangeAdapter):
                             raise
 
                         yield sym, ob
+
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 ws_failed = True
+
                 logger.warning("ws orderbook stream falling back to REST: %s", exc)
             finally:
                 try:
-                    live_tasks = [t for t in tasks_by_sym.values() if t is not None]
-                    for t in live_tasks:
-                        t.cancel()
-                    if live_tasks:
-                        await asyncio.gather(*live_tasks, return_exceptions=True)
+                    for task in list(tasks_by_sym.values()):
+                        task.cancel()
+                    if tasks_by_sym:
+                        await asyncio.gather(
+                            *tasks_by_sym.values(), return_exceptions=True
+                        )
                 except Exception:
                     pass
                 try:
@@ -321,7 +329,7 @@ class CCXTAdapter(ExchangeAdapter):
                 except Exception as e:
                     ob = {"bids": [], "asks": [], "error": str(e)}
 
-                now = asyncio.get_event_loop().time()
+                now = loop.time()
                 prev = last_ts.get(sym)
                 if prev is not None:
                     try:
