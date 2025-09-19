@@ -90,9 +90,8 @@ to drill into a single command's flags, sample output, and operational tips.
 
 - Global: `--help` (summary), `--help-verbose` (detailed catalog or command-specific when appended)
 - `fitness` flags: `--venue`, `--secs`, `--simulate/--no-simulate`, `--persist/--no-persist`, `--dummy-trigger`, `--help-verbose`
-- `live` flags: `--venue`, `--help-verbose`
-- `live:multi` flags: `--venues`, `--symbols`, `--auto-suggest-top`
-  - Example: `python -m arbit.cli live:multi --venues alpaca,kraken`
+- `live` flags: `--venue`, `--venues`, `--help-verbose`
+  - Example: `python -m arbit.cli live --venues alpaca,kraken`
   - Or use `./scripts/run_live_multi.sh` with `VENUES`, `SYMBOLS`, `AUTO_SUGGEST_TOP`
 - Helpers: `keys:check`, `markets:limits --venue --symbols`, `config:recommend --venue`
 - Yield: `yield:collect --asset USDC --reserve-usd 50` (beta, on-chain)

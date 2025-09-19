@@ -14,7 +14,7 @@
 set -euo pipefail
 
 VENUES=${VENUES:-"alpaca,kraken"}
-ARGS=(live:multi --venues "$VENUES")
+ARGS=(live --venues "$VENUES")
 
 if [[ -n "${SYMBOLS:-}" ]]; then
   ARGS+=(--symbols "$SYMBOLS")

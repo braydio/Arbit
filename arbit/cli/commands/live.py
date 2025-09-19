@@ -16,6 +16,14 @@ from ..utils import _balances_brief, _build_adapter, _live_run_for_venue
 @app.command("live_run")
 def live(
     venue: str = "alpaca",
+    venues: str | None = TyperOption(
+        None,
+        "--venues",
+        help=(
+            "Comma-separated venues to trade concurrently. Overrides --venue when"
+            " provided."
+        ),
+    ),
     symbols: str | None = None,
     auto_suggest_top: int = 0,
     attempt_notify: bool | None = TyperOption(
@@ -25,80 +33,43 @@ def live(
     ),
     help_verbose: bool = False,
 ) -> None:
-    """Continuously scan for profitable triangles and execute trades."""
+    """Continuously scan for profitable triangles and execute trades across venues."""
 
     if help_verbose:
         app.print_verbose_help_for("live")
         raise SystemExit(0)
 
+    venue_list = [
+        v.strip() for v in (venues.split(",") if venues else [venue]) if v.strip()
+    ]
+    if not venue_list:
+        venue_list = [venue]
+
     try:
         start_metrics_server(settings.prom_port)
     except Exception:
         pass
 
-    try:
-        asyncio.run(
-            _live_run_for_venue(
-                venue,
+    async def _run_for_all() -> None:
+        if len(venue_list) == 1:
+            await _live_run_for_venue(
+                venue_list[0],
                 symbols=symbols,
                 auto_suggest_top=auto_suggest_top,
                 attempt_notify_override=attempt_notify,
             )
-        )
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if bool(getattr(settings, "discord_live_stop_notify", True)):
-            try:
-                adapter = _build_adapter(venue, settings)
-                notify_discord(
-                    venue, f"[live@{venue}] stop | {_balances_brief(adapter)}"
-                )
-            except Exception:
-                pass
+            return
 
-
-@app.command("live:multi")
-@app.command("live_multi")
-def live_multi(
-    venues: str | None = None,
-    symbols: str | None = None,
-    auto_suggest_top: int = 0,
-    attempt_notify: bool | None = TyperOption(
-        None,
-        "--attempt-notify/--no-attempt-notify",
-        help="Send per-attempt Discord alerts (noisy). Overrides env.",
-    ),
-    help_verbose: bool = False,
-) -> None:
-    """Run live trading loops concurrently across multiple venues."""
-
-    if help_verbose:
-        app.print_verbose_help_for("live:multi")
-        raise SystemExit(0)
-
-    venue_list = [
-        v.strip()
-        for v in (venues or ",".join(settings.exchanges)).split(",")
-        if v.strip()
-    ] or ["alpaca", "kraken"]
-
-    try:
-        start_metrics_server(settings.prom_port)
-    except Exception:
-        pass
-
-    async def _run_all() -> None:
         tasks = [
             asyncio.create_task(
                 _live_run_for_venue(
-                    v,
+                    venue_name,
                     symbols=symbols,
                     auto_suggest_top=auto_suggest_top,
                     attempt_notify_override=attempt_notify,
                 )
             )
-            for v in venue_list
+            for venue_name in venue_list
         ]
         try:
             await asyncio.gather(*tasks)
@@ -110,7 +81,7 @@ def live_multi(
                 task.cancel()
 
     try:
-        asyncio.run(_run_all())
+        asyncio.run(_run_for_all())
     except KeyboardInterrupt:
         pass
     finally:
@@ -126,4 +97,4 @@ def live_multi(
                     pass
 
 
-__all__ = ["live", "live_multi"]
+__all__ = ["live"]

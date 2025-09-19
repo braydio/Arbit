@@ -19,6 +19,7 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
         net_threshold_bps=10.0,
         notional_per_trade_usd=200.0,
         exchanges=["alpaca"],
+        discord_live_stop_notify=False,
     )
 )
 
@@ -262,8 +263,6 @@ def test_help_lists_commands() -> None:
     assert result.exit_code == 0
     assert result.output.count("keys:check") == 1
     assert result.output.count("fitness") == 1
-    # The help output may list additional variants like ``live:multi``. Ensure
-    # the primary ``live`` command appears at least once.
     assert result.output.count("live") >= 1
     assert result.output.count("markets:limits") == 1
     assert result.output.count("config:recommend") == 1
@@ -287,12 +286,46 @@ def test_command_help_verbose_filters_sections() -> None:
     result = runner.invoke(cli.app, ["fitness", "--help-verbose"])
     assert result.exit_code == 0
     assert "Monitor bid/ask spreads" in result.output
-    assert "live:multi" not in result.output
+    assert "--venues" not in result.output
 
-    alias_result = runner.invoke(cli.app, ["live_multi", "--help-verbose"])
-    assert alias_result.exit_code == 0
-    assert "live:multi" in alias_result.output
-    assert "markets:limits" not in alias_result.output
+    live_result = runner.invoke(cli.app, ["live", "--help-verbose"])
+    assert live_result.exit_code == 0
+    assert "--venues" in live_result.output
+    assert "markets:limits" not in live_result.output
+
+
+def test_live_command_accepts_single_venue(monkeypatch) -> None:
+    """`live` should run a single venue loop when only `--venue` is provided."""
+
+    calls: list[str] = []
+
+    async def _fake_live(venue: str, **_: object) -> None:
+        calls.append(venue)
+
+    monkeypatch.setattr(cli, "_live_run_for_venue", _fake_live)
+    monkeypatch.setattr(cli, "start_metrics_server", lambda *_a, **_k: None)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["live", "--venue", "alpaca"])
+    assert result.exit_code == 0
+    assert calls == ["alpaca"]
+
+
+def test_live_command_runs_multiple_venues(monkeypatch) -> None:
+    """`live --venues` should fan out concurrent loops for each venue supplied."""
+
+    calls: list[str] = []
+
+    async def _fake_live(venue: str, **_: object) -> None:
+        calls.append(venue)
+
+    monkeypatch.setattr(cli, "_live_run_for_venue", _fake_live)
+    monkeypatch.setattr(cli, "start_metrics_server", lambda *_a, **_k: None)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["live", "--venues", "alpaca,kraken"])
+    assert result.exit_code == 0
+    assert set(calls) == {"alpaca", "kraken"}
 
 
 def test_markets_limits(monkeypatch):

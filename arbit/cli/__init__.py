@@ -38,7 +38,7 @@ from . import commands
 from .commands.config import config_discover, config_recommend
 from .commands.fitness import fitness, fitness_hybrid
 from .commands.keys import keys_check
-from .commands.live import live, live_multi
+from .commands.live import live
 from .commands.markets import markets_limits
 from .commands.notify import notify_test
 from .commands.yield_commands import yield_collect, yield_watch, yield_withdraw
@@ -92,7 +92,6 @@ __all__ = [
     "insert_yield_op",
     "keys_check",
     "live",
-    "live_multi",
     "log",
     "markets_limits",
     "notify_discord",
