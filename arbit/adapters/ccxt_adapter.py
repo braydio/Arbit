@@ -209,36 +209,61 @@ class CCXTAdapter(ExchangeAdapter):
     ) -> AsyncGenerator[tuple[str, dict], None]:
         """Yield ``(symbol, order_book)`` updates for *symbols*.
 
-        Uses a websocket client if ``self.ex_ws`` is available; otherwise falls
-        back to polling REST with ``poll_interval`` seconds between cycles.
+        Uses a websocket client if ``self.ex_ws`` is available, keeping a
+        dedicated watcher per symbol so quiet books do not interrupt active
+        feeds. When websocket support is missing, polling REST with
+        ``poll_interval`` seconds between cycles is used instead.
         """
+        symbols = list(symbols)
         last_ts: dict[str, float] = {}
         venue = getattr(self.ex, "id", "unknown")
+        loop = asyncio.get_running_loop()
 
         if getattr(self, "ex_ws", None):
+            logger = logging.getLogger("arbit")
             tasks_by_sym: dict[str, asyncio.Task] = {}
-            try:
-                while True:
-                    tasks = {
-                        asyncio.create_task(
-                            self.ex_ws.watch_order_book(sym, depth)
-                        ): sym
-                        for sym in symbols
-                    }
-                    done, pending = await asyncio.wait(
-                        tasks.keys(), return_when=asyncio.FIRST_COMPLETED
-                    )
-                    for t in done:
-                        sym = tasks[t]
-                        try:
-                            ob = t.result()
-                        except Exception as e:
-                            logging.getLogger("arbit").debug(
-                                "ws watch_order_book error %s: %s", sym, e
-                            )
-                            ob = {"bids": [], "asks": [], "error": str(e)}
+            task_to_sym: dict[asyncio.Task, str] = {}
+            ws_failed = False
 
-                        now = asyncio.get_event_loop().time()
+            try:
+                for sym in symbols:
+                    task = asyncio.create_task(
+                        self.ex_ws.watch_order_book(sym, depth)
+                    )
+                    tasks_by_sym[sym] = task
+                    task_to_sym[task] = sym
+
+                # Maintain a dedicated task per symbol so quiet markets do not reset
+                # other watchers when one book updates.
+                while tasks_by_sym and not ws_failed:
+                    done, _ = await asyncio.wait(
+                        list(tasks_by_sym.values()),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+
+                    for task in done:
+                        sym = task_to_sym.pop(task, None)
+                        if sym is None:
+                            continue
+                        tasks_by_sym.pop(sym, None)
+
+                        if task.cancelled():
+                            continue
+
+                        try:
+                            ob = task.result()
+                        except asyncio.CancelledError:  # pragma: no cover - defensive
+                            raise
+                        except Exception as exc:
+                            logger.warning(
+                                "ws watch_order_book error venue=%s symbol=%s: %s",
+                                venue,
+                                sym,
+                                exc,
+                            )
+                            ob = {"bids": [], "asks": [], "error": str(exc)}
+
+                        now = loop.time()
                         prev = last_ts.get(sym)
                         if prev is not None:
                             try:
@@ -252,20 +277,32 @@ class CCXTAdapter(ExchangeAdapter):
                         last_ts[sym] = now
                         yield sym, ob
 
-                    for t in pending:
-                        t.cancel()
-                    if pending:
-                        await asyncio.gather(*pending, return_exceptions=True)
-            except Exception:
-                # fallback to REST polling
-                pass
+                        try:
+                            new_task = asyncio.create_task(
+                                self.ex_ws.watch_order_book(sym, depth)
+                            )
+                            tasks_by_sym[sym] = new_task
+                            task_to_sym[new_task] = sym
+                        except Exception as exc:
+                            logger.error(
+                                "ws watch_order_book restart failed venue=%s symbol=%s: %s",
+                                venue,
+                                sym,
+                                exc,
+                            )
+                            ws_failed = True
+                            break
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                ws_failed = True
+                logger.error("ws orderbook stream failure venue=%s: %s", venue, exc)
             finally:
                 try:
-                    live_tasks = [t for t in tasks_by_sym.values() if t is not None]
-                    for t in live_tasks:
-                        t.cancel()
-                    if live_tasks:
-                        await asyncio.gather(*live_tasks, return_exceptions=True)
+                    for task in list(tasks_by_sym.values()):
+                        task.cancel()
+                    if tasks_by_sym:
+                        await asyncio.gather(*tasks_by_sym.values(), return_exceptions=True)
                 except Exception:
                     pass
                 try:
@@ -276,6 +313,9 @@ class CCXTAdapter(ExchangeAdapter):
                 except Exception:
                     pass
 
+            if not ws_failed:
+                return
+
         # REST polling fallback
         while True:
             for sym in symbols:
@@ -284,7 +324,7 @@ class CCXTAdapter(ExchangeAdapter):
                 except Exception as e:
                     ob = {"bids": [], "asks": [], "error": str(e)}
 
-                now = asyncio.get_event_loop().time()
+                now = loop.time()
                 prev = last_ts.get(sym)
                 if prev is not None:
                     try:
