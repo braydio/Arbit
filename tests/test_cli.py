@@ -25,6 +25,7 @@ sys.modules["arbit.config"] = types.SimpleNamespace(
 
 from arbit import cli  # noqa: E402
 from arbit.cli.commands import config as config_cmds  # noqa: E402
+from arbit.cli.commands import live as live_cmd  # noqa: E402
 
 
 class DummyAdapter:
@@ -198,6 +199,86 @@ def test_usage_with_bad_command() -> None:
     result = runner.invoke(cli.app, ["bogus"])
     assert result.exit_code != 0
     assert "Usage" in result.output
+
+
+def test_live_single_venue(monkeypatch):
+    """`live` should default to the single venue when `--venues` is absent."""
+
+    calls: list[tuple[str, dict]] = []
+
+    async def _fake_run(venue_name: str, **kwargs) -> None:
+        calls.append((venue_name, kwargs))
+
+    monkeypatch.setattr(live_cmd, "_live_run_for_venue", _fake_run)
+    monkeypatch.setattr(live_cmd, "start_metrics_server", lambda *_: None)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["live", "--venue", "kraken"])
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "kraken",
+            {
+                "symbols": None,
+                "auto_suggest_top": 0,
+                "attempt_notify_override": None,
+            },
+        )
+    ]
+
+
+def test_live_multi_venues(monkeypatch):
+    """`live` should fan out to multiple venues when `--venues` is provided."""
+
+    calls: list[tuple[str, dict]] = []
+
+    async def _fake_run(venue_name: str, **kwargs) -> None:
+        await asyncio.sleep(0)
+        calls.append((venue_name, kwargs))
+
+    monkeypatch.setattr(live_cmd, "_live_run_for_venue", _fake_run)
+    monkeypatch.setattr(live_cmd, "start_metrics_server", lambda *_: None)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        [
+            "live",
+            "--venue",
+            "alpaca",
+            "--venues",
+            "kraken,alpaca,kraken",
+            "--symbols",
+            "ETH/USDT,BTC/USDT",
+            "--auto-suggest-top",
+            "3",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert {venue for venue, _ in calls} == {"alpaca", "kraken"}
+    assert all(
+        call[1]
+        == {
+            "symbols": "ETH/USDT,BTC/USDT",
+            "auto_suggest_top": 3,
+            "attempt_notify_override": None,
+        }
+        for call in calls
+    )
+    assert len(calls) == 2
+
+
+def test_live_help_mentions_venues() -> None:
+    """`live --help` should document the `--venues` flag and omit the legacy command."""
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["live", "--help"])
+
+    assert result.exit_code == 0
+    assert "--venues" in result.output
+    assert "live:multi" not in result.output
 
 
 def test_config_discover_writes_env(monkeypatch, tmp_path) -> None:
