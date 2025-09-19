@@ -1,5 +1,6 @@
 """Utilities for executing triangular arbitrage cycles."""
 
+import logging
 import time
 from typing import AsyncGenerator, Iterable
 
@@ -7,6 +8,9 @@ from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.config import settings
 from arbit.engine.triangle import net_edge_cycle, size_from_depth
 from arbit.models import Triangle
+
+
+log = logging.getLogger(__name__)
 
 
 def try_triangle(
@@ -35,7 +39,9 @@ def try_triangle(
     -----
     Available balance is reduced by ``Settings.reserve_amount_usd`` or
     ``Settings.reserve_percent`` before sizing trades so that funds are held in
-    reserve.
+    reserve.  When debug logging is enabled every skip path emits a diagnostic
+    entry capturing top-of-book prices, the computed net edge (if available),
+    and the accumulated skip reasons.
     """
 
     obAB = books.get(tri.leg_ab, {"bids": [], "asks": []})
@@ -72,10 +78,34 @@ def try_triangle(
     bidBC = _price_from_level(bid_level_bc)
     bidAC = _price_from_level(bid_level_ac)
 
-    if None in (askAB, bidBC, bidAC):
+    net_estimate: float | None = None
+
+    def _record_skip(reason: str, **extra) -> None:
+        """Append *reason* to ``skip_reasons`` and emit debug diagnostics."""
+
         if skip_reasons is not None:
-            skip_reasons.append("incomplete_book")
+            skip_reasons.append(reason)
+            reasons_snapshot = list(skip_reasons)
+        else:
+            reasons_snapshot = [reason]
+        if log.isEnabledFor(logging.DEBUG):
+            payload: dict[str, object] = {
+                "triangle": f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac}",
+                "reasons": reasons_snapshot,
+                "net_est": net_estimate,
+                "prices": {
+                    "ab_ask": askAB,
+                    "bc_bid": bidBC,
+                    "ac_bid": bidAC,
+                },
+            }
+            if extra:
+                payload["extra"] = extra
+            log.debug("try_triangle skip %s", payload)
         return None
+
+    if None in (askAB, bidBC, bidAC):
+        return _record_skip("incomplete_book")
 
     # Use per-leg taker fees for a more accurate net estimate
     try:
@@ -93,10 +123,9 @@ def try_triangle(
     net = net_edge_cycle(
         [1.0 / askAB, bidBC, bidAC, (1 - fee_ab), (1 - fee_bc), (1 - fee_ac)]
     )
+    net_estimate = net
     if net < threshold:
-        if skip_reasons is not None:
-            skip_reasons.append("below_threshold")
-        return None
+        return _record_skip("below_threshold", threshold=threshold)
 
     # Determine executable size from top-of-book depth
     ask_price = askAB
@@ -115,9 +144,9 @@ def try_triangle(
         max_qty_by_notional = max_notional / ask_price
         qtyB = min(qtyB, max_qty_by_notional)
         if qtyB <= 0:
-            if skip_reasons is not None:
-                skip_reasons.append("notional_cap")
-            return None
+            return _record_skip(
+                "notional_cap", max_notional=max_notional, ask_price=ask_price
+            )
 
     # Enforce account reserve so a portion of balance is held back
     quote = tri.leg_ab.split("/")[1]
@@ -136,9 +165,11 @@ def try_triangle(
         max_qty_by_balance = available / ask_price
         qtyB = min(qtyB, max_qty_by_balance)
         if qtyB <= 0:
-            if skip_reasons is not None:
-                skip_reasons.append("reserve")
-            return None
+            return _record_skip(
+                "reserve",
+                available=available,
+                reserve_amount=float(getattr(settings, "reserve_amount_usd", 0.0)),
+            )
 
     # Enforce exchange min-notional for AB leg
     try:
@@ -148,9 +179,9 @@ def try_triangle(
     if min_cost_ab > 0 and ask_price > 0:
         min_qty_ab = min_cost_ab / ask_price
         if qtyB < min_qty_ab:
-            if skip_reasons is not None:
-                skip_reasons.append("min_notional_ab")
-            return None
+            return _record_skip(
+                "min_notional_ab", min_cost=min_cost_ab, ask_price=ask_price
+            )
 
     # Simple slippage guard before placing AB order
     slip_frac = max(float(getattr(settings, "max_slippage_bps", 0)) / 10000.0, 0.0)
@@ -158,17 +189,17 @@ def try_triangle(
         obAB_now = adapter.fetch_orderbook(tri.leg_ab, 1)
         ask_now = obAB_now.get("asks", [[ask_price]])[0][0]
         if ask_price > 0 and (ask_now - ask_price) / ask_price > slip_frac:
-            if skip_reasons is not None:
-                skip_reasons.append("slippage_ab")
-            return None
+            return _record_skip(
+                "slippage_ab", ask_now=ask_now, ask_price=ask_price, slip_frac=slip_frac
+            )
     try:
         min_cost_ab2 = float(adapter.min_notional(tri.leg_ab))
     except Exception:
         min_cost_ab2 = 0.0
     if (qtyB * ask_price) < min_cost_ab2:
-        if skip_reasons is not None:
-            skip_reasons.append("min_notional_ab")
-        return None
+        return _record_skip(
+            "min_notional_ab", min_cost=min_cost_ab2, ask_price=ask_price
+        )
 
     # Three IOC market legs
     f1 = adapter.create_order(OrderSpec(tri.leg_ab, "buy", qtyB, "IOC", "market"))
@@ -181,9 +212,9 @@ def try_triangle(
     obBC_now = adapter.fetch_orderbook(tri.leg_bc, 1)
     bidBC_now = obBC_now.get("bids", [[bidBC]])[0][0]
     if slip_frac > 0 and bidBC > 0 and (bidBC - bidBC_now) / bidBC > slip_frac:
-        if skip_reasons is not None:
-            skip_reasons.append("slippage_bc")
-        return None
+        return _record_skip(
+            "slippage_bc", bid_now=bidBC_now, bid_then=bidBC, slip_frac=slip_frac
+        )
     try:
         min_cost_bc = float(adapter.min_notional(tri.leg_bc))
     except Exception:
@@ -191,9 +222,9 @@ def try_triangle(
     if min_cost_bc > 0 and bidBC_now > 0:
         # cost = price * amount in quote currency
         if qtyB * bidBC_now < min_cost_bc:
-            if skip_reasons is not None:
-                skip_reasons.append("min_notional_bc")
-            return None
+            return _record_skip(
+                "min_notional_bc", min_cost=min_cost_bc, bid_price=bidBC_now
+            )
     f2 = adapter.create_order(OrderSpec(tri.leg_bc, "sell", qtyB, "IOC", "market"))
     try:
         fee_rate_bc = adapter.fetch_fees(tri.leg_bc)[1]
@@ -205,18 +236,18 @@ def try_triangle(
     obAC_now = adapter.fetch_orderbook(tri.leg_ac, 1)
     bidAC_now = obAC_now.get("bids", [[bidAC]])[0][0]
     if slip_frac > 0 and bidAC > 0 and (bidAC - bidAC_now) / bidAC > slip_frac:
-        if skip_reasons is not None:
-            skip_reasons.append("slippage_ac")
-        return None
+        return _record_skip(
+            "slippage_ac", bid_now=bidAC_now, bid_then=bidAC, slip_frac=slip_frac
+        )
     try:
         min_cost_ac = float(adapter.min_notional(tri.leg_ac))
     except Exception:
         min_cost_ac = 0.0
     if min_cost_ac > 0 and bidAC_now > 0:
         if qtyC_est * bidAC_now < min_cost_ac:
-            if skip_reasons is not None:
-                skip_reasons.append("min_notional_ac")
-            return None
+            return _record_skip(
+                "min_notional_ac", min_cost=min_cost_ac, bid_price=bidAC_now
+            )
     f3 = adapter.create_order(OrderSpec(tri.leg_ac, "sell", qtyC_est, "IOC", "market"))
     try:
         fee_rate_ac = adapter.fetch_fees(tri.leg_ac)[1]
