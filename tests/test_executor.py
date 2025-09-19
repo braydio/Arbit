@@ -5,6 +5,9 @@ import types
 
 # ruff: noqa: E402
 
+import logging
+
+
 sys.modules["arbit.config"] = types.SimpleNamespace(
     settings=types.SimpleNamespace(
         notional_per_trade_usd=200.0,
@@ -117,6 +120,29 @@ def test_try_triangle_skips_when_unprofitable() -> None:
     res = try_triangle(adapter, tri, books, thresh)
     assert res is None
     assert len(adapter.orders) == 0
+
+
+def test_try_triangle_logs_skip_details(caplog) -> None:
+    """Debug logging captures pricing context when a cycle is skipped."""
+
+    tri = Triangle("ETH/USDT", "ETH/BTC", "BTC/USDT")
+    books = unprofitable_books()
+    adapter = DummyAdapter(books)
+    thresh = sys.modules["arbit.config"].settings.net_threshold_bps / 10000.0
+    skips: list[str] = []
+    with caplog.at_level(logging.DEBUG, logger="arbit.engine.executor"):
+        res = try_triangle(adapter, tri, books, thresh, skips)
+    assert res is None
+    assert skips == ["below_threshold"]
+    executor_records = [
+        rec
+        for rec in caplog.records
+        if rec.name == "arbit.engine.executor" and "try_triangle skip" in rec.message
+    ]
+    assert executor_records, "expected try_triangle skip debug log"
+    msg = executor_records[-1].message
+    assert "below_threshold" in msg
+    assert "ab_ask" in msg and "bc_bid" in msg and "ac_bid" in msg
 
 
 def test_try_triangle_executes_without_opposite_sides() -> None:

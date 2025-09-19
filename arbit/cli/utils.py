@@ -153,7 +153,9 @@ async def _live_run_for_venue(
     Notes
     -----
     Per-attempt Discord and console logs include the cumulative attempt
-    counter so operators can monitor trading cadence remotely.
+    counter so operators can monitor trading cadence remotely.  When debug
+    logging is enabled each skipped triangle additionally records the latest
+    per-leg top-of-book snapshot (or a ``"stale"`` marker) to aid diagnosis.
     """
 
     adapter = _build_adapter(venue, settings)
@@ -283,6 +285,37 @@ async def _live_run_for_venue(
     net_total = 0.0
     latency_total = 0.0
     skip_counts: dict[str, int] = {}
+
+    def _top_of_book_for(symbol: str) -> dict[str, float | None | str]:
+        """Return the best bid/ask for ``symbol`` as floats where possible."""
+
+        try:
+            ob = adapter.fetch_orderbook(symbol, 1) or {}
+        except Exception as exc:  # pragma: no cover - defensive logging aid
+            return {"error": str(exc)}
+
+        def _best(levels) -> float | None:
+            if not levels:
+                return None
+            level = levels[0]
+            if isinstance(level, (list, tuple)) and level:
+                try:
+                    return float(level[0])
+                except (TypeError, ValueError):
+                    return None
+            if isinstance(level, dict):
+                price = level.get("price")
+                try:
+                    return float(price) if price is not None else None
+                except (TypeError, ValueError):
+                    return None
+            return None
+
+        return {
+            "bid": _best(ob.get("bids") or []),
+            "ask": _best(ob.get("asks") or []),
+        }
+
     try:
         async for tri, res, reasons, latency in stream_triangles(
             adapter,
@@ -295,6 +328,22 @@ async def _live_run_for_venue(
             if res is None:
                 for reason in reasons or ["unknown"]:
                     skip_counts[reason] = skip_counts.get(reason, 0) + 1
+                if log.isEnabledFor(logging.DEBUG):
+                    stale = "stale_book" in (reasons or [])
+                    tob = {}
+                    for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac):
+                        if stale:
+                            tob[leg] = "stale"
+                        else:
+                            tob[leg] = _top_of_book_for(leg)
+                    log.debug(
+                        "live@%s skip attempt#%d %s reasons=%s tob=%s",
+                        venue,
+                        attempts_total,
+                        tri,
+                        reasons or ["unknown"],
+                        tob,
+                    )
                 if (
                     attempt_notify
                     and (time.time() - last_attempt_notify_at) > min_interval
