@@ -20,7 +20,9 @@ class DummyExchange:
         self.options: dict | None = {}
         self.fees = {"trading": {"maker": 0.0, "taker": 0.0}}
 
-    def fetch_order_book(self, symbol: str, depth: int) -> dict:  # pragma: no cover - defensive
+    def fetch_order_book(
+        self, symbol: str, depth: int
+    ) -> dict:  # pragma: no cover - defensive
         raise AssertionError("REST fallback should not be exercised in websocket tests")
 
     def market(self, symbol: str) -> dict:  # pragma: no cover - defensive
@@ -32,7 +34,9 @@ class FakeProClient:
 
     def __init__(self, symbols: Iterable[str]):
         self.symbols = list(symbols)
-        self.waiters: dict[str, list[asyncio.Future]] = {sym: [] for sym in self.symbols}
+        self.waiters: dict[str, list[asyncio.Future]] = {
+            sym: [] for sym in self.symbols
+        }
         self.cancelled: dict[str, int] = {sym: 0 for sym in self.symbols}
         self.calls: dict[str, int] = {sym: 0 for sym in self.symbols}
 
@@ -54,12 +58,16 @@ class FakeProClient:
 
 
 @pytest.mark.asyncio
-async def test_orderbook_stream_keeps_symbol_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_orderbook_stream_keeps_symbol_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Websocket order books restart per symbol without cancelling other watchers."""
 
     symbols = ["BTC/USDT", "ETH/USDT", "LTC/USDT"]
 
-    monkeypatch.setattr(ccxt_adapter_module, "creds_for", lambda ex_id: ("key", "secret"))
+    monkeypatch.setattr(
+        ccxt_adapter_module, "creds_for", lambda ex_id: ("key", "secret")
+    )
     monkeypatch.setattr(ccxt_adapter_module.ccxt, "dummy", DummyExchange)
 
     adapter = ccxt_adapter_module.CCXTAdapter("dummy")
@@ -73,7 +81,9 @@ async def test_orderbook_stream_keeps_symbol_tasks(monkeypatch: pytest.MonkeyPat
         await fake_ws.publish(symbols[0], {"bids": [[1, 1]], "asks": [[1, 1]]})
         sym, _ = await asyncio.wait_for(first, timeout=1)
         assert sym == symbols[0]
-        assert fake_ws.calls[symbols[0]] == 2  # watcher restarted only for the active symbol
+        assert (
+            fake_ws.calls[symbols[0]] == 2
+        )  # watcher restarted only for the active symbol
         assert fake_ws.calls[symbols[1]] == 1
         assert fake_ws.calls[symbols[2]] == 1
         assert fake_ws.cancelled[symbols[1]] == 0

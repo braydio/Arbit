@@ -227,9 +227,7 @@ class CCXTAdapter(ExchangeAdapter):
 
             try:
                 for sym in symbols:
-                    task = asyncio.create_task(
-                        self.ex_ws.watch_order_book(sym, depth)
-                    )
+                    task = asyncio.create_task(self.ex_ws.watch_order_book(sym, depth))
                     tasks_by_sym[sym] = task
                     task_to_sym[task] = sym
 
@@ -302,7 +300,9 @@ class CCXTAdapter(ExchangeAdapter):
                     for task in list(tasks_by_sym.values()):
                         task.cancel()
                     if tasks_by_sym:
-                        await asyncio.gather(*tasks_by_sym.values(), return_exceptions=True)
+                        await asyncio.gather(
+                            *tasks_by_sym.values(), return_exceptions=True
+                        )
                 except Exception:
                     pass
                 try:
