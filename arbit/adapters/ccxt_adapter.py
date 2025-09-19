@@ -256,9 +256,6 @@ class CCXTAdapter(ExchangeAdapter):
                         t.cancel()
                     if pending:
                         await asyncio.gather(*pending, return_exceptions=True)
-
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 # fallback to REST polling
                 pass
@@ -280,30 +277,27 @@ class CCXTAdapter(ExchangeAdapter):
                     pass
 
         # REST polling fallback
-        try:
-            while True:
-                for sym in symbols:
+        while True:
+            for sym in symbols:
+                try:
+                    ob = self.fetch_orderbook(sym, depth)
+                except Exception as e:
+                    ob = {"bids": [], "asks": [], "error": str(e)}
+
+                now = asyncio.get_event_loop().time()
+                prev = last_ts.get(sym)
+                if prev is not None:
                     try:
-                        ob = self.fetch_orderbook(sym, depth)
-                    except Exception as e:
-                        ob = {"bids": [], "asks": [], "error": str(e)}
+                        from arbit.metrics.exporter import ORDERBOOK_STALENESS
 
-                    now = asyncio.get_event_loop().time()
-                    prev = last_ts.get(sym)
-                    if prev is not None:
-                        try:
-                            from arbit.metrics.exporter import ORDERBOOK_STALENESS
-
-                            ORDERBOOK_STALENESS.labels(venue).observe(
-                                max(now - prev, 0.0)
-                            )
-                        except Exception:
-                            pass
-                    last_ts[sym] = now
-                    yield sym, ob
-                await asyncio.sleep(poll_interval)
-        except asyncio.CancelledError:
-            raise
+                        ORDERBOOK_STALENESS.labels(venue).observe(
+                            max(now - prev, 0.0)
+                        )
+                    except Exception:
+                        pass
+                last_ts[sym] = now
+                yield sym, ob
+            await asyncio.sleep(poll_interval)
 
     async def close(self) -> None:
         """Close underlying exchange resources (REST + WebSocket)."""
