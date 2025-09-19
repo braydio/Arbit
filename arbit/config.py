@@ -170,6 +170,8 @@ class Settings(BaseSettings):
     alpaca_base_url: str = "https://api.alpaca.markets"
     # Websocket endpoint for crypto order book streams.
     alpaca_ws_crypto_url: str = "wss://stream.data.alpaca.markets/v1beta3/crypto/us"
+    # Streaming data feed selection (``us`` retail by default, ``sip`` for paid).
+    alpaca_data_feed: str = "us"
 
     kraken_api_key: str | None = None
     kraken_api_secret: str | None = None
@@ -321,6 +323,17 @@ class Settings(BaseSettings):
             "alpaca_map_usdt_to_usd",
         ):
             _coerce_bool(b)
+
+        def _coerce_lower(attr: str, default: str | None = None) -> None:
+            v = getattr(self, attr, None)
+            if v is None:
+                return
+            cleaned = str(v).strip()
+            if not cleaned and default is None:
+                return
+            setattr(self, attr, (cleaned or default or "").lower())
+
+        _coerce_lower("alpaca_data_feed", default="us")
 
         if isinstance(self.exchanges, str):
             try:
