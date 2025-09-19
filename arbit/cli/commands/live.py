@@ -40,9 +40,7 @@ def live(
         raise SystemExit(0)
 
     venue_list = [
-        v.strip()
-        for v in (venues.split(",") if venues else [venue])
-        if v.strip()
+        v.strip() for v in (venues.split(",") if venues else [venue]) if v.strip()
     ]
     if not venue_list:
         venue_list = [venue]
