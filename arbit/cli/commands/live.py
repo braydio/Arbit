@@ -39,11 +39,20 @@ def live(
         app.print_verbose_help_for("live")
         raise SystemExit(0)
 
-    venue_list = [
-        v.strip() for v in (venues.split(",") if venues else [venue]) if v.strip()
-    ]
+    raw_venues = venues.split(",") if venues else [venue]
+    venue_list: list[str] = []
+    for entry in raw_venues:
+        cleaned = entry.strip()
+        if cleaned and cleaned not in venue_list:
+            venue_list.append(cleaned)
     if not venue_list:
         venue_list = [venue]
+
+    run_kwargs = {
+        "symbols": symbols,
+        "auto_suggest_top": auto_suggest_top,
+        "attempt_notify_override": attempt_notify,
+    }
 
     try:
         start_metrics_server(settings.prom_port)
@@ -52,21 +61,14 @@ def live(
 
     async def _run_for_all() -> None:
         if len(venue_list) == 1:
-            await _live_run_for_venue(
-                venue_list[0],
-                symbols=symbols,
-                auto_suggest_top=auto_suggest_top,
-                attempt_notify_override=attempt_notify,
-            )
+            await _live_run_for_venue(venue_list[0], **run_kwargs)
             return
 
         tasks = [
             asyncio.create_task(
                 _live_run_for_venue(
                     venue_name,
-                    symbols=symbols,
-                    auto_suggest_top=auto_suggest_top,
-                    attempt_notify_override=attempt_notify,
+                    **run_kwargs,
                 )
             )
             for venue_name in venue_list

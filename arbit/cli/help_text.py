@@ -64,8 +64,8 @@ VERBOSE_COMMAND_HELP: dict[str, str] = {
             Continuously evaluate live triangles and place orders when the net spread beats
             configured thresholds. Intended for production once fitness results look healthy.
           Key flags:
-            --venues TEXT         CSV list of venues to trade concurrently.
-            --venue TEXT           Venue to trade (default: alpaca).
+            --venues TEXT         CSV list of venues to trade concurrently (overrides --venue).
+            --venue TEXT           Single venue fallback when --venues is omitted (default: alpaca).
             --symbols TEXT         CSV leg filter applied before triangle selection.
             --auto-suggest-top INT Auto-generate a shortlist of triangles when config is empty.
             --attempt-notify       Send Discord updates on every attempt (noisy, opt-in).
