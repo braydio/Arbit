@@ -5,7 +5,7 @@ from typing import AsyncGenerator, Iterable
 
 from arbit.adapters.base import ExchangeAdapter, OrderSpec
 from arbit.config import settings
-from arbit.engine.triangle import net_edge, net_edge_cycle, size_from_depth, top
+from arbit.engine.triangle import net_edge_cycle, size_from_depth
 from arbit.models import Triangle
 
 
@@ -42,20 +42,37 @@ def try_triangle(
     obBC = books.get(tri.leg_bc, {"bids": [], "asks": []})
     obAC = books.get(tri.leg_ac, {"bids": [], "asks": []})
 
-    levelsAB = [
-        (b[0], a[0]) for b, a in zip(obAB.get("bids", []), obAB.get("asks", []))
-    ]
-    levelsBC = [
-        (b[0], a[0]) for b, a in zip(obBC.get("bids", []), obBC.get("asks", []))
-    ]
-    levelsAC = [
-        (b[0], a[0]) for b, a in zip(obAC.get("bids", []), obAC.get("asks", []))
-    ]
+    asks_ab = obAB.get("asks", []) or []
+    bids_bc = obBC.get("bids", []) or []
+    bids_ac = obAC.get("bids", []) or []
 
-    bidAB, askAB = top(levelsAB)
-    bidBC, askBC = top(levelsBC)
-    bidAC, askAC = top(levelsAC)
-    if None in (bidAB, askAB, bidBC, askBC, bidAC, askAC):
+    ask_level_ab = asks_ab[0] if asks_ab else None
+    bid_level_bc = bids_bc[0] if bids_bc else None
+    bid_level_ac = bids_ac[0] if bids_ac else None
+
+    def _price_from_level(level):
+        if level is None:
+            return None
+        if isinstance(level, (list, tuple)) and level:
+            try:
+                return float(level[0])
+            except (TypeError, ValueError):
+                return None
+        if isinstance(level, dict):
+            price = level.get("price")
+            if price is None:
+                return None
+            try:
+                return float(price)
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    askAB = _price_from_level(ask_level_ab)
+    bidBC = _price_from_level(bid_level_bc)
+    bidAC = _price_from_level(bid_level_ac)
+
+    if None in (askAB, bidBC, bidAC):
         if skip_reasons is not None:
             skip_reasons.append("incomplete_book")
         return None
@@ -82,8 +99,11 @@ def try_triangle(
         return None
 
     # Determine executable size from top-of-book depth
-    ask_price = obAB["asks"][0][0]
-    qtyB = size_from_depth([obAB["asks"][0], obBC["bids"][0], obAC["bids"][0]])
+    ask_price = askAB
+    qty_levels = [
+        lvl for lvl in (ask_level_ab, bid_level_bc, bid_level_ac) if lvl is not None
+    ]
+    qtyB = size_from_depth(qty_levels)
 
     # Enforce per-trade notional cap using AB quote currency price
     # If AB is quoted in a stablecoin (USDT/USDC), limit quantity accordingly
