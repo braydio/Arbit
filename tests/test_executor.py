@@ -77,6 +77,26 @@ def unprofitable_books() -> dict[str, dict[str, list[tuple[float, float]]]]:
     return data
 
 
+def books_missing_opposite_sides() -> dict[str, dict[str, list[tuple[float, float]]]]:
+    """Return books where sell legs lack asks but still have bids."""
+
+    return {
+        "ETH/USDT": {"asks": [(100.0, 10.0)], "bids": [(99.0, 10.0)]},
+        "ETH/BTC": {"bids": [(0.1, 10.0)], "asks": []},
+        "BTC/USDT": {"bids": [(1100.0, 10.0)], "asks": []},
+    }
+
+
+def books_missing_required_side() -> dict[str, dict[str, list[tuple[float, float]]]]:
+    """Return books where a required bid side is absent."""
+
+    return {
+        "ETH/USDT": {"asks": [(100.0, 10.0)], "bids": [(99.0, 10.0)]},
+        "ETH/BTC": {"asks": [(0.2, 10.0)], "bids": []},
+        "BTC/USDT": {"bids": [(1100.0, 10.0)], "asks": [(1101.0, 10.0)]},
+    }
+
+
 def test_try_triangle_executes_on_profit() -> None:
     """Arbitrage cycle executes when net edge exceeds threshold."""
     tri = Triangle("ETH/USDT", "ETH/BTC", "BTC/USDT")
@@ -96,6 +116,32 @@ def test_try_triangle_skips_when_unprofitable() -> None:
     thresh = sys.modules["arbit.config"].settings.net_threshold_bps / 10000.0
     res = try_triangle(adapter, tri, books, thresh)
     assert res is None
+    assert len(adapter.orders) == 0
+
+
+def test_try_triangle_executes_without_opposite_sides() -> None:
+    """Executor ignores missing asks on sell legs when bids are present."""
+
+    tri = Triangle("ETH/USDT", "ETH/BTC", "BTC/USDT")
+    books = books_missing_opposite_sides()
+    adapter = DummyAdapter(books)
+    thresh = sys.modules["arbit.config"].settings.net_threshold_bps / 10000.0
+    result = try_triangle(adapter, tri, books, thresh)
+    assert result is not None
+    assert len(adapter.orders) == 3
+
+
+def test_try_triangle_skips_when_required_side_missing() -> None:
+    """Executor skips when necessary bids are absent on a sell leg."""
+
+    tri = Triangle("ETH/USDT", "ETH/BTC", "BTC/USDT")
+    books = books_missing_required_side()
+    adapter = DummyAdapter(books)
+    thresh = sys.modules["arbit.config"].settings.net_threshold_bps / 10000.0
+    skips: list[str] = []
+    result = try_triangle(adapter, tri, books, thresh, skips)
+    assert result is None
+    assert "incomplete_book" in skips
     assert len(adapter.orders) == 0
 
 
