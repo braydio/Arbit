@@ -246,12 +246,10 @@ class CCXTAdapter(ExchangeAdapter):
 
                     done, _ = await asyncio.wait(
                         set(tasks_by_sym.values()),
-
                         return_when=asyncio.FIRST_COMPLETED,
                     )
 
                     for task in done:
-
                         sym = next(
                             (s for s, t in tasks_by_sym.items() if t is task),
                             None,
@@ -265,7 +263,6 @@ class CCXTAdapter(ExchangeAdapter):
                         except Exception as exc:
                             logger.warning("ws watch_order_book error %s: %s", sym, exc)
                             ob = {"bids": [], "asks": [], "error": str(exc)}
-
 
                         prev = last_ts.get(sym)
                         now = loop.time()
@@ -281,7 +278,6 @@ class CCXTAdapter(ExchangeAdapter):
                         last_ts[sym] = now
 
                         try:
-
                             tasks_by_sym[sym] = asyncio.create_task(
                                 self.ex_ws.watch_order_book(sym, depth)
                             )
