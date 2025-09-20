@@ -62,6 +62,7 @@ net   = gross * (1 - fee)^3 - 1
 **Alpaca Settings:**
 - `ALPACA_BASE_URL` to select paper or live API endpoint
 - `ALPACA_WS_CRYPTO_URL` to override websocket endpoint
+- `ALPACA_DATA_FEED` to choose between retail ``us`` and paid ``sip`` streams
 - `ALPACA_MAP_USDT_TO_USD` to treat `/USDT` symbols as `/USD`
 
 **Models:**
@@ -182,7 +183,11 @@ net   = gross * (1 - fee)^3 - 1
 ### Alpaca Settings
 - `ALPACA_BASE_URL` controls paper vs live REST endpoint
 - `ALPACA_WS_CRYPTO_URL` overrides websocket stream
+- `ALPACA_DATA_FEED` selects `us` (default retail) vs `sip` (paid low-latency)
 - Enable `ALPACA_MAP_USDT_TO_USD` to map `/USDT` pairs to `/USD`
+- Pair `ALPACA_DATA_FEED=sip` with the SIP websocket URL
+  (`wss://stream.data.alpaca.markets/v1beta3/crypto/sip`) when entitled to the
+  faster feed; otherwise keep the defaults for the standard retail stream.
 
 ### CCXT Errors (Kraken)
 - Keep `enableRateLimit=True`; reduce polling frequency if rate-limited

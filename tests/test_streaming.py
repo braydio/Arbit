@@ -6,14 +6,24 @@ from types import SimpleNamespace
 
 from arbit.engine import executor
 from arbit.models import Triangle
-from tests.alpaca_mocks import MockDataStream, MockHistClient, MockTradingClient
+from tests.alpaca_mocks import MockDataStream
 
 
 class DummyStream:
     """Minimal Alpaca websocket stub."""
 
-    def __init__(self, key: str, secret: str) -> None:  # pragma: no cover - trivial
+    def __init__(
+        self,
+        key: str,
+        secret: str,
+        *,
+        url: str | None = None,
+        data_feed: str | None = None,
+        **_: object,
+    ) -> None:  # pragma: no cover - trivial
         self.handler = None
+        self.url = url
+        self.data_feed = data_feed
 
     def subscribe_orderbooks(self, handler, *symbols) -> None:
         self.handler = handler
@@ -46,7 +56,12 @@ def test_orderbook_stream_emits_updates(monkeypatch) -> None:
     monkeypatch.setattr(
         aa,
         "settings",
-        SimpleNamespace(alpaca_base_url="", alpaca_map_usdt_to_usd=False),
+        SimpleNamespace(
+            alpaca_base_url="",
+            alpaca_map_usdt_to_usd=False,
+            alpaca_ws_crypto_url="wss://stream.data.alpaca.markets/v1beta3/crypto/us",
+            alpaca_data_feed="us",
+        ),
     )
     monkeypatch.setattr(aa, "creds_for", lambda ex: ("k", "s"))
 
@@ -71,8 +86,18 @@ def test_orderbook_stream_quiet_symbol(monkeypatch) -> None:
     import arbit.adapters.alpaca_adapter as aa
 
     class QuietStream:
-        def __init__(self, key: str, secret: str) -> None:
+        def __init__(
+            self,
+            key: str,
+            secret: str,
+            *,
+            url: str | None = None,
+            data_feed: str | None = None,
+            **_: object,
+        ) -> None:
             self.handler = None
+            self.url = url
+            self.data_feed = data_feed
 
         def subscribe_orderbooks(self, handler, *symbols) -> None:
             self.handler = handler
@@ -92,7 +117,12 @@ def test_orderbook_stream_quiet_symbol(monkeypatch) -> None:
     monkeypatch.setattr(
         aa,
         "settings",
-        SimpleNamespace(alpaca_base_url="", alpaca_map_usdt_to_usd=False),
+        SimpleNamespace(
+            alpaca_base_url="",
+            alpaca_map_usdt_to_usd=False,
+            alpaca_ws_crypto_url="wss://stream.data.alpaca.markets/v1beta3/crypto/us",
+            alpaca_data_feed="us",
+        ),
     )
     monkeypatch.setattr(aa, "creds_for", lambda ex: ("k", "s"))
     adapter = aa.AlpacaAdapter()
@@ -106,6 +136,49 @@ def test_orderbook_stream_quiet_symbol(monkeypatch) -> None:
         await stream.aclose()
 
     asyncio.run(run())
+
+
+def test_orderbook_stream_uses_configured_feed(monkeypatch) -> None:
+    """Adapter passes configured websocket URL and data feed to Alpaca."""
+
+    import sys
+
+    sys.modules.pop("arbit.adapters.alpaca_adapter", None)
+    import arbit.adapters.alpaca_adapter as aa
+
+    MockDataStream.instances.clear()
+    MockDataStream.updates_runs = [
+        [SimpleNamespace(symbol="BTC/USDT", bids=[], asks=[])]
+    ]
+    MockDataStream.run_index = 0
+
+    monkeypatch.setattr(aa, "TradingClient", DummyClient)
+    monkeypatch.setattr(aa, "CryptoHistoricalDataClient", DummyClient)
+    monkeypatch.setattr(aa, "CryptoDataStream", MockDataStream)
+    monkeypatch.setattr(
+        aa,
+        "settings",
+        SimpleNamespace(
+            alpaca_base_url="",
+            alpaca_map_usdt_to_usd=False,
+            alpaca_ws_crypto_url="wss://example.test/crypto",
+            alpaca_data_feed="sip",
+        ),
+    )
+    monkeypatch.setattr(aa, "creds_for", lambda ex: ("k", "s"))
+
+    adapter = aa.AlpacaAdapter()
+
+    async def run() -> None:
+        stream = adapter.orderbook_stream(["BTC/USDT"], depth=1, reconnect_delay=0)
+        await anext(stream)
+        await stream.aclose()
+
+    asyncio.run(run())
+
+    instance = MockDataStream.instances[-1]
+    assert instance.url == "wss://example.test/crypto"
+    assert instance.data_feed == "sip"
 
 
 class DummyAdapter:

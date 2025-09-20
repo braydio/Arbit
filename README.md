@@ -230,6 +230,7 @@ export ALPACA_API_KEY=your_alpaca_key
 export ALPACA_API_SECRET=your_alpaca_secret
 export ALPACA_BASE_URL=https://paper-api.alpaca.markets  # Paper trading
 export ALPACA_WS_CRYPTO_URL=wss://stream.data.alpaca.markets/v1beta3/crypto/us  # optional
+export ALPACA_DATA_FEED=us  # optional: set "sip" for the paid low-latency feed
 export ALPACA_MAP_USDT_TO_USD=true  # treat /USDT pairs as /USD
 
 # Kraken
@@ -243,6 +244,11 @@ export DISCORD_TRADE_NOTIFY=false                                  # trade-only 
 export DISCORD_ATTEMPT_NOTIFY=false                                # per-attempt alerts (noisy)
 export DISCORD_MIN_NOTIFY_INTERVAL_SECS=10                         # rate limit seconds
 ```
+
+Set ``ALPACA_DATA_FEED=sip`` together with the corresponding SIP websocket
+endpoint (``wss://stream.data.alpaca.markets/v1beta3/crypto/sip``) to use the
+low-latency data feed when your account is entitled to it; the defaults point to
+the standard retail ``us`` feed.
 
 ### Using .env Files
 

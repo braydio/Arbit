@@ -337,14 +337,19 @@ async def _live_run_for_venue(
                     net_meta = None
                 for reason in reasons or ["unknown"]:
                     skip_counts[reason] = skip_counts.get(reason, 0) + 1
+
+                tob_snapshot = {
+                    tri.leg_ab: _top_of_book_for(tri.leg_ab),
+                    tri.leg_bc: _top_of_book_for(tri.leg_bc),
+                    tri.leg_ac: _top_of_book_for(tri.leg_ac),
+                }
+
                 if log.isEnabledFor(logging.DEBUG):
-                    stale = "stale_book" in (reasons or [])
-                    tob = {}
-                    for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac):
-                        if stale:
-                            tob[leg] = "stale"
-                        else:
-                            tob[leg] = _top_of_book_for(leg)
+                    stale = "stale_book" in reason_list
+                    tob_log = {
+                        leg: "stale" if stale else tob_snapshot[leg]
+                        for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac)
+                    }
                     log.debug(
                         "live@%s skip attempt#%d %s reasons=%s tob=%s net_est=%s",
                         venue,
@@ -353,7 +358,10 @@ async def _live_run_for_venue(
                         reasons or ["unknown"],
                         tob,
                         (f"{net_meta * 100:.3f}%" if net_meta is not None else "n/a"),
+
                     )
+                except Exception:
+                    pass
                 if (
                     attempt_notify
                     and (time.time() - last_attempt_notify_at) > min_interval
@@ -365,6 +373,7 @@ async def _live_run_for_venue(
                             if net_meta is not None
                             else ""
                         )
+
                         notify_discord(
                             venue,
                             (
