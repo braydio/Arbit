@@ -153,9 +153,11 @@ async def _live_run_for_venue(
     Notes
     -----
     Per-attempt Discord and console logs include the cumulative attempt
-    counter so operators can monitor trading cadence remotely.  When debug
-    logging is enabled each skipped triangle additionally records the latest
-    per-leg top-of-book snapshot (or a ``"stale"`` marker) to aid diagnosis.
+    counter so operators can monitor trading cadence remotely.  Skipped
+    attempts are also persisted with the most recent top-of-book snapshot so
+    operators can inspect pricing context after the fact.  When debug logging
+    is enabled each skipped triangle additionally records the latest per-leg
+    top-of-book snapshot (or a ``"stale"`` marker) to aid diagnosis.
     """
 
     adapter = _build_adapter(venue, settings)
@@ -326,30 +328,87 @@ async def _live_run_for_venue(
             attempts_total += 1
             latency_total += float(latency or 0.0)
             if res is None:
-                for reason in reasons or ["unknown"]:
+                reason_list = reasons or ["unknown"]
+                for reason in reason_list:
                     skip_counts[reason] = skip_counts.get(reason, 0) + 1
+
+                tob_snapshot = {
+                    tri.leg_ab: _top_of_book_for(tri.leg_ab),
+                    tri.leg_bc: _top_of_book_for(tri.leg_bc),
+                    tri.leg_ac: _top_of_book_for(tri.leg_ac),
+                }
+
                 if log.isEnabledFor(logging.DEBUG):
-                    stale = "stale_book" in (reasons or [])
-                    tob = {}
-                    for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac):
-                        if stale:
-                            tob[leg] = "stale"
-                        else:
-                            tob[leg] = _top_of_book_for(leg)
+                    stale = "stale_book" in reason_list
+                    tob_log = {
+                        leg: "stale" if stale else tob_snapshot[leg]
+                        for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac)
+                    }
                     log.debug(
                         "live@%s skip attempt#%d %s reasons=%s tob=%s",
                         venue,
                         attempts_total,
                         tri,
-                        reasons or ["unknown"],
-                        tob,
+                        reason_list,
+                        tob_log,
                     )
+
+                skip_reason_str = ",".join(reason_list)
+
+                def _price(
+                    snapshot: dict[str, float | None | str] | None, key: str
+                ) -> float | None:
+                    if not isinstance(snapshot, dict):
+                        return None
+                    value = snapshot.get(key)
+                    try:
+                        return float(value) if value is not None else None
+                    except (TypeError, ValueError):
+                        return None
+
+                try:
+                    insert_attempt(
+                        conn,
+                        TriangleAttempt(
+                            ts_iso=datetime.now(timezone.utc).isoformat(),
+                            venue=venue,
+                            leg_ab=tri.leg_ab,
+                            leg_bc=tri.leg_bc,
+                            leg_ac=tri.leg_ac,
+                            ok=False,
+                            net_est=None,
+                            realized_usdt=None,
+                            threshold_bps=float(
+                                getattr(settings, "net_threshold_bps", 0.0) or 0.0
+                            ),
+                            notional_usd=float(
+                                getattr(settings, "notional_per_trade_usd", 0.0) or 0.0
+                            ),
+                            slippage_bps=float(
+                                getattr(settings, "max_slippage_bps", 0.0) or 0.0
+                            ),
+                            dry_run=bool(getattr(settings, "dry_run", True)),
+                            latency_ms=(
+                                float(latency) * 1000.0 if latency is not None else None
+                            ),
+                            skip_reasons=skip_reason_str,
+                            ab_bid=_price(tob_snapshot.get(tri.leg_ab), "bid"),
+                            ab_ask=_price(tob_snapshot.get(tri.leg_ab), "ask"),
+                            bc_bid=_price(tob_snapshot.get(tri.leg_bc), "bid"),
+                            bc_ask=_price(tob_snapshot.get(tri.leg_bc), "ask"),
+                            ac_bid=_price(tob_snapshot.get(tri.leg_ac), "bid"),
+                            ac_ask=_price(tob_snapshot.get(tri.leg_ac), "ask"),
+                            qty_base=None,
+                        ),
+                    )
+                except Exception:
+                    pass
                 if (
                     attempt_notify
                     and (time.time() - last_attempt_notify_at) > min_interval
                 ):
                     try:
-                        reason_summary = ",".join(reasons or ["unknown"])[:200]
+                        reason_summary = skip_reason_str[:200]
                         notify_discord(
                             venue,
                             (
