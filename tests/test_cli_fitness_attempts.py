@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 import arbit.cli.commands.fitness as fitness_mod
 
 
@@ -41,7 +43,9 @@ def test_fitness_attempt_logs_include_counters(monkeypatch, caplog):
     )
     monkeypatch.setattr(fitness_mod, "_log_balances", lambda *_a, **_k: None)
 
-    def fake_try_triangle(_adapter, _tri, _books, _threshold, _reasons):
+    def fake_try_triangle(
+        _adapter, _tri, _books, _threshold, _reasons, _meta=None
+    ):
         clock.value = 1.0
         return {
             "net_est": 0.123,
@@ -82,3 +86,74 @@ def test_fitness_attempt_logs_include_counters(monkeypatch, caplog):
     assert any("attempt#1" in msg for msg in messages)
     assert any("sim_trades_total=1" in msg for msg in messages)
     assert any("attempt#1" in rec.message for rec in caplog.records)
+
+
+def test_fitness_persist_skip_records_net(monkeypatch):
+    """Skipped attempts should persist the estimated net edge when available."""
+
+    clock = _FakeClock()
+    monkeypatch.setattr(fitness_mod.time, "time", clock.time)
+    monkeypatch.setattr(fitness_mod.time, "sleep", clock.sleep)
+
+    class DummyAdapter:
+        def fetch_orderbook(self, _symbol: str, _depth: int) -> dict:
+            return {"bids": [[1.0, 1.0]], "asks": [[1.01, 1.0]]}
+
+    monkeypatch.setattr(
+        fitness_mod,
+        "_build_adapter",
+        lambda _venue, _settings: DummyAdapter(),
+    )
+    tri = fitness_mod.Triangle("A/B", "B/C", "A/C")
+    monkeypatch.setattr(fitness_mod, "_triangles_for", lambda _venue: [tri])
+    monkeypatch.setattr(fitness_mod, "_log_balances", lambda *_a, **_k: None)
+
+    def fake_try_triangle(
+        _adapter, _tri, _books, _threshold, reasons, meta
+    ) -> None:
+        reasons.append("below_threshold")
+        meta["net_est"] = 0.0123
+        return None
+
+    monkeypatch.setattr(fitness_mod, "try_triangle", fake_try_triangle)
+
+    dummy_settings = SimpleNamespace(
+        dry_run=True,
+        sqlite_path=":memory:",
+        net_threshold_bps=0.0,
+        notional_per_trade_usd=0.0,
+        max_slippage_bps=0.0,
+        discord_min_notify_interval_secs=0.0,
+        discord_attempt_notify=False,
+    )
+    monkeypatch.setattr(fitness_mod, "settings", dummy_settings)
+
+    recorded_attempts: list[fitness_mod.TriangleAttempt] = []
+
+    monkeypatch.setattr(
+        fitness_mod,
+        "init_db",
+        lambda *_a, **_k: SimpleNamespace(close=lambda: None),
+    )
+    monkeypatch.setattr(fitness_mod, "insert_triangle", lambda *_a, **_k: None)
+
+    def capture_attempt(_conn, attempt):
+        recorded_attempts.append(attempt)
+        return 1
+
+    monkeypatch.setattr(fitness_mod, "insert_attempt", capture_attempt)
+    monkeypatch.setattr(fitness_mod, "insert_fill", lambda *_a, **_k: None)
+    monkeypatch.setattr(fitness_mod, "notify_discord", lambda *_a, **_k: None)
+
+    fitness_mod.fitness(
+        venue="demo",
+        secs=1,
+        simulate=True,
+        persist=True,
+        attempt_notify=False,
+    )
+
+    assert recorded_attempts, "expected at least one persisted attempt"
+    persisted = recorded_attempts[0]
+    assert not persisted.ok
+    assert persisted.net_est == pytest.approx(0.0123)

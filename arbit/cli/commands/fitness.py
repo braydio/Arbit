@@ -40,7 +40,9 @@ def fitness(
     -----
     Discord notifications and CLI logs emitted per attempt now include the
     cumulative attempt counter to help operators correlate simulation
-    cadence with downstream metrics.
+    cadence with downstream metrics. Skip attempts also capture the estimated
+    net edge when available so persisted rows convey the theoretical
+    profitability of skipped opportunities.
     """
 
     if help_verbose:
@@ -156,6 +158,7 @@ def fitness(
 
                 for tri in triangles:
                     skip_reasons: list[str] = []
+                    skip_meta: dict[str, object] = {}
                     try:
                         t_start = time.time()
                         if injected and tri.leg_ab in injected:
@@ -179,6 +182,7 @@ def fitness(
                             books_cache,
                             settings.net_threshold_bps / 10000.0,
                             skip_reasons,
+                            skip_meta,
                         )
                     except Exception as exc:  # pragma: no cover - defensive
                         log.error("simulate error for %s: %s", tri, exc)
@@ -201,7 +205,17 @@ def fitness(
                         ob_ac = books_cache.get(tri.leg_ac, {})
                         latency_ms = (time.time() - t_start) * 1000.0
                         ok = bool(result)
-                        net_est = float(result.get("net_est", 0.0)) if result else None
+                        net_est = None
+                        if result:
+                            try:
+                                net_est = float(result.get("net_est", 0.0))
+                            except Exception:
+                                net_est = None
+                        elif skip_meta.get("net_est") is not None:
+                            try:
+                                net_est = float(skip_meta["net_est"])
+                            except (TypeError, ValueError):
+                                net_est = None
                         realized = (
                             float(result.get("realized_usdt", 0.0)) if result else None
                         )
@@ -259,11 +273,19 @@ def fitness(
                                     reasons_summary = ",".join(
                                         skip_reasons or ["unknown"]
                                     )[:200]
+                                    net_summary = ""
+                                    if skip_meta.get("net_est") is not None:
+                                        try:
+                                            net_summary = (
+                                                f" net={float(skip_meta['net_est']) * 100:.2f}%"
+                                            )
+                                        except (TypeError, ValueError):
+                                            net_summary = ""
                                     notify_discord(
                                         venue,
                                         (
                                             f"[fitness@{venue}] attempt#{attempts_total} "
-                                            f"SKIP {tri} reasons={reasons_summary}"
+                                            f"SKIP {tri} reasons={reasons_summary}{net_summary}"
                                         ),
                                     )
                                 except Exception:

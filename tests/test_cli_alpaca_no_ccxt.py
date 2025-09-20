@@ -86,7 +86,13 @@ def test_live_alpaca_uses_native_adapter(monkeypatch):
     )
 
     async def fake_stream(adapter, tris, threshold):
-        yield tris[0], {"net_est": 0.0, "fills": [], "realized_usdt": 0.0}, [], 0.0
+        yield (
+            tris[0],
+            {"net_est": 0.0, "fills": [], "realized_usdt": 0.0},
+            [],
+            0.0,
+            {},
+        )
 
     monkeypatch.setattr(cli, "stream_triangles", fake_stream)
 

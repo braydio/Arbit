@@ -156,6 +156,9 @@ async def _live_run_for_venue(
     counter so operators can monitor trading cadence remotely.  When debug
     logging is enabled each skipped triangle additionally records the latest
     per-leg top-of-book snapshot (or a ``"stale"`` marker) to aid diagnosis.
+    Skip diagnostics also surface the estimated net edge when available so
+    operators can gauge theoretical profitability even when execution is
+    bypassed.
     """
 
     adapter = _build_adapter(venue, settings)
@@ -317,7 +320,7 @@ async def _live_run_for_venue(
         }
 
     try:
-        async for tri, res, reasons, latency in stream_triangles(
+        async for tri, res, reasons, latency, meta in stream_triangles(
             adapter,
             triangles,
             float(getattr(settings, "net_threshold_bps", 0) or 0) / 10000.0,
@@ -326,6 +329,12 @@ async def _live_run_for_venue(
             attempts_total += 1
             latency_total += float(latency or 0.0)
             if res is None:
+                net_meta = None
+                try:
+                    if meta and meta.get("net_est") is not None:
+                        net_meta = float(meta["net_est"])
+                except (TypeError, ValueError):
+                    net_meta = None
                 for reason in reasons or ["unknown"]:
                     skip_counts[reason] = skip_counts.get(reason, 0) + 1
                 if log.isEnabledFor(logging.DEBUG):
@@ -337,12 +346,13 @@ async def _live_run_for_venue(
                         else:
                             tob[leg] = _top_of_book_for(leg)
                     log.debug(
-                        "live@%s skip attempt#%d %s reasons=%s tob=%s",
+                        "live@%s skip attempt#%d %s reasons=%s tob=%s net_est=%s",
                         venue,
                         attempts_total,
                         tri,
                         reasons or ["unknown"],
                         tob,
+                        (f"{net_meta * 100:.3f}%" if net_meta is not None else "n/a"),
                     )
                 if (
                     attempt_notify
@@ -350,11 +360,14 @@ async def _live_run_for_venue(
                 ):
                     try:
                         reason_summary = ",".join(reasons or ["unknown"])[:200]
+                        net_summary = (
+                            f" net={net_meta * 100:.2f}%" if net_meta is not None else ""
+                        )
                         notify_discord(
                             venue,
                             (
                                 f"[live@{venue}] attempt#{attempts_total} "
-                                f"SKIP {tri} reasons={reason_summary}"
+                                f"SKIP {tri} reasons={reason_summary}{net_summary}"
                             ),
                         )
                     except Exception:

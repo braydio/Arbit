@@ -117,9 +117,17 @@ def test_try_triangle_skips_when_unprofitable() -> None:
     books = unprofitable_books()
     adapter = DummyAdapter(books)
     thresh = sys.modules["arbit.config"].settings.net_threshold_bps / 10000.0
-    res = try_triangle(adapter, tri, books, thresh)
+    skip_meta: dict[str, object] = {}
+    res = try_triangle(adapter, tri, books, thresh, skip_meta=skip_meta)
     assert res is None
     assert len(adapter.orders) == 0
+    assert "net_est" in skip_meta and isinstance(skip_meta["net_est"], float)
+    assert skip_meta["net_est"] < thresh
+    assert skip_meta.get("prices") == {
+        "ab_ask": 100.0,
+        "bc_bid": 0.1,
+        "ac_bid": 900.0,
+    }
 
 
 def test_try_triangle_logs_skip_details(caplog) -> None:
