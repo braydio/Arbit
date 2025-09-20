@@ -207,9 +207,7 @@ def test_config_discover_writes_env(tmp_path, monkeypatch):
             }
 
     adapter = DummyDiscoverAdapter()
-    monkeypatch.setattr(
-        config_cmds, "_build_adapter", lambda venue, _settings: adapter
-    )
+    monkeypatch.setattr(config_cmds, "_build_adapter", lambda venue, _settings: adapter)
 
     runner = CliRunner()
     result = runner.invoke(
