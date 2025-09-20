@@ -355,7 +355,9 @@ async def _live_run_for_venue(
 
                 skip_reason_str = ",".join(reason_list)
 
-                def _price(snapshot: dict[str, float | None | str] | None, key: str) -> float | None:
+                def _price(
+                    snapshot: dict[str, float | None | str] | None, key: str
+                ) -> float | None:
                     if not isinstance(snapshot, dict):
                         return None
                     value = snapshot.get(key)
@@ -386,7 +388,9 @@ async def _live_run_for_venue(
                                 getattr(settings, "max_slippage_bps", 0.0) or 0.0
                             ),
                             dry_run=bool(getattr(settings, "dry_run", True)),
-                            latency_ms=(float(latency) * 1000.0 if latency is not None else None),
+                            latency_ms=(
+                                float(latency) * 1000.0 if latency is not None else None
+                            ),
                             skip_reasons=skip_reason_str,
                             ab_bid=_price(tob_snapshot.get(tri.leg_ab), "bid"),
                             ab_ask=_price(tob_snapshot.get(tri.leg_ab), "ask"),

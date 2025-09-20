@@ -57,7 +57,9 @@ async def test_live_run_records_skip_attempt(monkeypatch, tmp_path):
 
     monkeypatch.setattr(cli_utils, "settings", dummy_settings)
     monkeypatch.setattr(cli_utils, "_triangles_for", lambda _venue: [triangle])
-    monkeypatch.setattr(cli_utils, "_build_adapter", lambda _venue, _settings: DummyAdapter())
+    monkeypatch.setattr(
+        cli_utils, "_build_adapter", lambda _venue, _settings: DummyAdapter()
+    )
     monkeypatch.setattr(cli_utils, "_log_balances", lambda *_a, **_k: None)
     monkeypatch.setattr(cli_utils, "notify_discord", lambda *_a, **_k: None)
 
