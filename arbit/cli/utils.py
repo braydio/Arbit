@@ -361,7 +361,9 @@ async def _live_run_for_venue(
                     try:
                         reason_summary = ",".join(reasons or ["unknown"])[:200]
                         net_summary = (
-                            f" net={net_meta * 100:.2f}%" if net_meta is not None else ""
+                            f" net={net_meta * 100:.2f}%"
+                            if net_meta is not None
+                            else ""
                         )
                         notify_discord(
                             venue,

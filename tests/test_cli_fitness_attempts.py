@@ -43,9 +43,7 @@ def test_fitness_attempt_logs_include_counters(monkeypatch, caplog):
     )
     monkeypatch.setattr(fitness_mod, "_log_balances", lambda *_a, **_k: None)
 
-    def fake_try_triangle(
-        _adapter, _tri, _books, _threshold, _reasons, _meta=None
-    ):
+    def fake_try_triangle(_adapter, _tri, _books, _threshold, _reasons, _meta=None):
         clock.value = 1.0
         return {
             "net_est": 0.123,
@@ -108,9 +106,7 @@ def test_fitness_persist_skip_records_net(monkeypatch):
     monkeypatch.setattr(fitness_mod, "_triangles_for", lambda _venue: [tri])
     monkeypatch.setattr(fitness_mod, "_log_balances", lambda *_a, **_k: None)
 
-    def fake_try_triangle(
-        _adapter, _tri, _books, _threshold, reasons, meta
-    ) -> None:
+    def fake_try_triangle(_adapter, _tri, _books, _threshold, reasons, meta) -> None:
         reasons.append("below_threshold")
         meta["net_est"] = 0.0123
         return None

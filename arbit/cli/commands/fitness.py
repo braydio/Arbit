@@ -276,9 +276,7 @@ def fitness(
                                     net_summary = ""
                                     if skip_meta.get("net_est") is not None:
                                         try:
-                                            net_summary = (
-                                                f" net={float(skip_meta['net_est']) * 100:.2f}%"
-                                            )
+                                            net_summary = f" net={float(skip_meta['net_est']) * 100:.2f}%"
                                         except (TypeError, ValueError):
                                             net_summary = ""
                                     notify_discord(

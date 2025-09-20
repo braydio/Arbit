@@ -9,7 +9,6 @@ from arbit.config import settings
 from arbit.engine.triangle import net_edge_cycle, size_from_depth
 from arbit.models import Triangle
 
-
 log = logging.getLogger(__name__)
 
 
@@ -310,7 +309,9 @@ async def stream_triangles(
     tris: Iterable[Triangle],
     threshold: float,
     depth: int = 10,
-) -> AsyncGenerator[tuple[Triangle, dict | None, list[str], float, dict[str, object]], None]:
+) -> AsyncGenerator[
+    tuple[Triangle, dict | None, list[str], float, dict[str, object]], None
+]:
     """Yield arbitrage attempts driven by streaming order book updates.
 
     This helper maintains an internal cache of the latest order book for each
