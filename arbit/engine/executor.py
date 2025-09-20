@@ -9,7 +9,6 @@ from arbit.config import settings
 from arbit.engine.triangle import net_edge_cycle, size_from_depth
 from arbit.models import Triangle
 
-
 log = logging.getLogger(__name__)
 
 
@@ -19,6 +18,7 @@ def try_triangle(
     books: dict,
     threshold: float,
     skip_reasons: list[str] | None = None,
+    skip_meta: dict[str, object] | None = None,
 ):
     """Attempt to execute a triangular arbitrage cycle.
 
@@ -34,6 +34,11 @@ def try_triangle(
         Minimum net profit fraction required to execute.
     skip_reasons:
         Optional list to record skip reasons for diagnostics.
+    skip_meta:
+        Optional mapping populated when a skip occurs. The mapping captures the
+        estimated net edge (if available), top-of-book pricing context, and any
+        auxiliary values provided by the skip branch to help downstream
+        consumers persist richer attempt metadata.
 
     Notes
     -----
@@ -88,6 +93,20 @@ def try_triangle(
             reasons_snapshot = list(skip_reasons)
         else:
             reasons_snapshot = [reason]
+        if skip_meta is not None:
+            skip_meta["reasons"] = reasons_snapshot
+            skip_meta["triangle"] = f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac}"
+            if net_estimate is not None:
+                skip_meta["net_est"] = net_estimate
+            skip_meta["prices"] = {
+                "ab_ask": askAB,
+                "bc_bid": bidBC,
+                "ac_bid": bidAC,
+            }
+            if extra:
+                extra_store = skip_meta.setdefault("details", {})
+                if isinstance(extra_store, dict):
+                    extra_store.update(extra)
         if log.isEnabledFor(logging.DEBUG):
             payload: dict[str, object] = {
                 "triangle": f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac}",
@@ -144,6 +163,8 @@ def try_triangle(
         max_qty_by_notional = max_notional / ask_price
         qtyB = min(qtyB, max_qty_by_notional)
         if qtyB <= 0:
+            if skip_meta is not None:
+                skip_meta["qty_base_est"] = qtyB
             return _record_skip(
                 "notional_cap", max_notional=max_notional, ask_price=ask_price
             )
@@ -165,6 +186,8 @@ def try_triangle(
         max_qty_by_balance = available / ask_price
         qtyB = min(qtyB, max_qty_by_balance)
         if qtyB <= 0:
+            if skip_meta is not None:
+                skip_meta["qty_base_est"] = qtyB
             return _record_skip(
                 "reserve",
                 available=available,
@@ -179,6 +202,8 @@ def try_triangle(
     if min_cost_ab > 0 and ask_price > 0:
         min_qty_ab = min_cost_ab / ask_price
         if qtyB < min_qty_ab:
+            if skip_meta is not None:
+                skip_meta["qty_base_est"] = qtyB
             return _record_skip(
                 "min_notional_ab", min_cost=min_cost_ab, ask_price=ask_price
             )
@@ -189,6 +214,8 @@ def try_triangle(
         obAB_now = adapter.fetch_orderbook(tri.leg_ab, 1)
         ask_now = obAB_now.get("asks", [[ask_price]])[0][0]
         if ask_price > 0 and (ask_now - ask_price) / ask_price > slip_frac:
+            if skip_meta is not None:
+                skip_meta["qty_base_est"] = qtyB
             return _record_skip(
                 "slippage_ab", ask_now=ask_now, ask_price=ask_price, slip_frac=slip_frac
             )
@@ -212,6 +239,8 @@ def try_triangle(
     obBC_now = adapter.fetch_orderbook(tri.leg_bc, 1)
     bidBC_now = obBC_now.get("bids", [[bidBC]])[0][0]
     if slip_frac > 0 and bidBC > 0 and (bidBC - bidBC_now) / bidBC > slip_frac:
+        if skip_meta is not None:
+            skip_meta["qty_base_est"] = qtyB
         return _record_skip(
             "slippage_bc", bid_now=bidBC_now, bid_then=bidBC, slip_frac=slip_frac
         )
@@ -222,6 +251,8 @@ def try_triangle(
     if min_cost_bc > 0 and bidBC_now > 0:
         # cost = price * amount in quote currency
         if qtyB * bidBC_now < min_cost_bc:
+            if skip_meta is not None:
+                skip_meta["qty_base_est"] = qtyB
             return _record_skip(
                 "min_notional_bc", min_cost=min_cost_bc, bid_price=bidBC_now
             )
@@ -236,6 +267,9 @@ def try_triangle(
     obAC_now = adapter.fetch_orderbook(tri.leg_ac, 1)
     bidAC_now = obAC_now.get("bids", [[bidAC]])[0][0]
     if slip_frac > 0 and bidAC > 0 and (bidAC - bidAC_now) / bidAC > slip_frac:
+        if skip_meta is not None:
+            skip_meta["qty_base_est"] = qtyB
+            skip_meta["qty_quote_est"] = qtyC_est
         return _record_skip(
             "slippage_ac", bid_now=bidAC_now, bid_then=bidAC, slip_frac=slip_frac
         )
@@ -245,6 +279,9 @@ def try_triangle(
         min_cost_ac = 0.0
     if min_cost_ac > 0 and bidAC_now > 0:
         if qtyC_est * bidAC_now < min_cost_ac:
+            if skip_meta is not None:
+                skip_meta["qty_base_est"] = qtyB
+                skip_meta["qty_quote_est"] = qtyC_est
             return _record_skip(
                 "min_notional_ac", min_cost=min_cost_ac, bid_price=bidAC_now
             )
@@ -272,14 +309,18 @@ async def stream_triangles(
     tris: Iterable[Triangle],
     threshold: float,
     depth: int = 10,
-) -> AsyncGenerator[tuple[Triangle, dict | None, list[str], float], None]:
+) -> AsyncGenerator[
+    tuple[Triangle, dict | None, list[str], float, dict[str, object]], None
+]:
     """Yield arbitrage attempts driven by streaming order book updates.
 
     This helper maintains an internal cache of the latest order book for each
     symbol referenced by ``tris``.  Whenever all three legs of a triangle have
     fresh data an attempt is made via :func:`try_triangle`.  The function yields
-    tuples of ``(triangle, result, skip_reasons, latency)`` where ``result`` is
-    the return value from :func:`try_triangle`.
+    tuples of ``(triangle, result, skip_reasons, latency, skip_meta)`` where
+    ``result`` is the return value from :func:`try_triangle` and ``skip_meta``
+    captures any metadata recorded during skip paths (for example estimated net
+    edge and pricing context).
     """
 
     syms = {s for t in tris for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
@@ -338,7 +379,8 @@ async def stream_triangles(
                         yield tri, None, ["stale_book"], 0.0
                         continue
                 t0 = time.time()
-                skip_reasons = []
+                skip_reasons: list[str] = []
+                skip_meta: dict[str, object] = {}
                 try:
                     res = try_triangle(
                         adapter,
@@ -346,6 +388,7 @@ async def stream_triangles(
                         {s: books[s] for s in legs},
                         threshold,
                         skip_reasons,
+                        skip_meta,
                     )
                 except Exception:
                     # Defensive: surface as a skip rather than letting background
@@ -353,4 +396,4 @@ async def stream_triangles(
                     res = None
                     skip_reasons.append("exec_error")
                 latency = max(time.time() - t0, 0.0)
-                yield tri, res, skip_reasons, latency
+                yield tri, res, skip_reasons, latency, skip_meta

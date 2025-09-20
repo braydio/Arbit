@@ -204,7 +204,7 @@ def test_stream_triangles(monkeypatch) -> None:
 
     adapter = DummyAdapter(updates)
 
-    def fake_try(adapter, tri, books, threshold, skip_reasons):
+    def fake_try(adapter, tri, books, threshold, skip_reasons, skip_meta=None):
         return {"tri": tri, "net_est": 0.0, "fills": [], "realized_usdt": 0.0}
 
     monkeypatch.setattr(executor, "try_triangle", fake_try)
@@ -214,5 +214,6 @@ def test_stream_triangles(monkeypatch) -> None:
         out = await anext(gen)
         assert out[0] == tri
         assert out[1]["tri"] == tri
+        assert isinstance(out[4], dict)
 
     asyncio.run(run())
