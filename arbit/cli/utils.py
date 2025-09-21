@@ -357,7 +357,11 @@ async def _live_run_for_venue(
             executed = bool(res and res.get("executed", True))
             if not executed:
                 reason_list = list(reasons or [])
-                if res and res.get("skip_reason") and res["skip_reason"] not in reason_list:
+                if (
+                    res
+                    and res.get("skip_reason")
+                    and res["skip_reason"] not in reason_list
+                ):
                     reason_list.append(res["skip_reason"])
                 if not reason_list:
                     reason_list = ["unknown"]
@@ -400,9 +404,8 @@ async def _live_run_for_venue(
                         if ask_val is not None:
                             snapshot["ask"] = ask_val
 
-                is_below_threshold = (
-                    "below_threshold" in reason_list
-                    or (res and res.get("skip_reason") == "below_threshold")
+                is_below_threshold = "below_threshold" in reason_list or (
+                    res and res.get("skip_reason") == "below_threshold"
                 )
                 if is_below_threshold:
                     sim_net_raw = None
@@ -472,7 +475,11 @@ async def _live_run_for_venue(
                             tri,
                             reason_list,
                             tob_log,
-                            (f"{net_meta * 100:.3f}%" if net_meta is not None else "n/a"),
+                            (
+                                f"{net_meta * 100:.3f}%"
+                                if net_meta is not None
+                                else "n/a"
+                            ),
                         )
                 except Exception:
                     pass
@@ -653,10 +660,12 @@ async def _live_run_for_venue(
                             ", ".join(f"{k}={v}" for k, v in top),
                         )
                     if below_threshold_count:
-                        avg_sim = below_threshold_total / max(
-                            below_threshold_count, 1
+                        avg_sim = below_threshold_total / max(below_threshold_count, 1)
+                        last_sim = (
+                            below_threshold_recent[-1]
+                            if below_threshold_recent
+                            else None
                         )
-                        last_sim = below_threshold_recent[-1] if below_threshold_recent else None
                         log.info(
                             "live@%s hb: below_threshold=%d avg_pnl=%.4f USDT last_net=%.2f%%",
                             venue,
