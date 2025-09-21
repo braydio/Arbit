@@ -111,7 +111,9 @@ class DummyAccount:
     address = "0xacct"
 
     def sign_transaction(self, tx: dict) -> types.SimpleNamespace:
-        return types.SimpleNamespace(rawTransaction=f"signed-{tx['nonce']}-{tx['kind']}")
+        return types.SimpleNamespace(
+            rawTransaction=f"signed-{tx['nonce']}-{tx['kind']}"
+        )
 
 
 def test_stake_usdc_dry_run_skips_web3(monkeypatch, caplog):
