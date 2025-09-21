@@ -238,6 +238,7 @@ class CCXTAdapter(ExchangeAdapter):
             ws_failed = False
             failed_symbols: set[str] = set()
             active_ws_symbols: set[str] = set(symbols)
+            last_ws_error: Exception | None = None
             try:
                 while True:
                     for sym in symbols:
@@ -253,10 +254,15 @@ class CCXTAdapter(ExchangeAdapter):
                                 ws_failed = True
                                 failed_symbols.add(sym)
                                 active_ws_symbols.discard(sym)
+                                last_ws_error = exc
                                 logger.error(
                                     "ws watch_order_book setup failed %s: %s", sym, exc
                                 )
-                                raise
+
+                                break
+
+                    if ws_failed:
+                        break
 
                     if not tasks_by_sym:
                         break
@@ -281,6 +287,7 @@ class CCXTAdapter(ExchangeAdapter):
                             ws_failed = True
                             failed_symbols.add(sym)
                             active_ws_symbols.discard(sym)
+                            last_ws_error = exc
                             logger.warning("ws watch_order_book error %s: %s", sym, exc)
                             ob = {"bids": [], "asks": [], "error": str(exc)}
 
@@ -311,12 +318,14 @@ class CCXTAdapter(ExchangeAdapter):
                                 ws_failed = True
                                 failed_symbols.add(sym)
                                 active_ws_symbols.discard(sym)
+                                last_ws_error = exc
                                 logger.error(
                                     "ws watch_order_book restart failed %s: %s",
                                     sym,
                                     exc,
                                 )
-                                raise
+
+                                break
 
                         yield sym, ob
 
@@ -327,6 +336,7 @@ class CCXTAdapter(ExchangeAdapter):
                 raise
             except Exception as exc:
                 ws_failed = True
+                last_ws_error = exc
 
                 logger.warning("ws orderbook stream falling back to REST: %s", exc)
             else:
@@ -337,10 +347,13 @@ class CCXTAdapter(ExchangeAdapter):
                             ", ".join(sorted(failed_symbols)),
                         )
                     else:
-                        logger.warning(
+                        message = (
                             "ws orderbook stream falling back to REST after websocket"
                             " errors"
                         )
+                        if last_ws_error is not None:
+                            message = f"{message}: {last_ws_error}"
+                        logger.warning(message)
             finally:
                 try:
                     for task in list(tasks_by_sym.values()):
