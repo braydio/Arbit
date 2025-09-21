@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from arbit.adapters import ExchangeAdapter
 from arbit.config import settings
-from arbit.models import Fill, Triangle, TriangleAttempt
+from arbit.models import Fill, TriangleAttempt
 from arbit.notify import notify_discord
 from arbit.persistence.db import init_db, insert_attempt, insert_fill, insert_triangle
 
