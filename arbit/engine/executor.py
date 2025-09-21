@@ -160,7 +160,9 @@ def try_triangle(
             return None
 
         try:
-            max_notional = float(getattr(settings, "notional_per_trade_usd", 0.0) or 0.0)
+            max_notional = float(
+                getattr(settings, "notional_per_trade_usd", 0.0) or 0.0
+            )
         except Exception:
             max_notional = 0.0
         if max_notional and ask_price > 0:
