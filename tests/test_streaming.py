@@ -42,6 +42,53 @@ class DummyClient:
         pass
 
 
+def test_ccxt_orderbook_stream_falls_back_to_rest(monkeypatch) -> None:
+    """When ``watch_order_book`` errors the CCXT adapter uses REST polling."""
+
+    import arbit.adapters.ccxt_adapter as ca
+
+    class StubRestExchange:
+        def __init__(self, *_: object, **__: object) -> None:
+            self.options: dict[str, object] = {}
+            self.id = "stub"
+
+        def fetch_order_book(self, symbol: str, depth: int) -> dict:
+            return {
+                "symbol": symbol,
+                "bids": [[1.0, depth]],
+                "asks": [[2.0, depth]],
+                "source": "rest",
+            }
+
+    class StubWebSocket:
+        def __init__(self, *_: object, **__: object) -> None:
+            self.closed = False
+
+        async def watch_order_book(self, symbol: str, depth: int) -> dict:
+            raise RuntimeError(f"{symbol} unsupported")
+
+        async def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr(ca, "ccxt", SimpleNamespace(stub=StubRestExchange))
+    monkeypatch.setattr(ca, "ccxtpro", SimpleNamespace(stub=StubWebSocket))
+    monkeypatch.setattr(ca, "creds_for", lambda ex: ("k", "s"))
+
+    adapter = ca.CCXTAdapter("stub")
+
+    async def run() -> None:
+        stream = adapter.orderbook_stream(["BTC/USDT"], depth=1, poll_interval=0.0)
+        sym1, book1 = await asyncio.wait_for(anext(stream), timeout=1.0)
+        assert sym1 == "BTC/USDT"
+        assert "error" in book1
+        sym2, book2 = await asyncio.wait_for(anext(stream), timeout=1.0)
+        assert sym2 == "BTC/USDT"
+        assert book2.get("source") == "rest"
+        await stream.aclose()
+
+    asyncio.run(run())
+
+
 def test_orderbook_stream_emits_updates(monkeypatch) -> None:
     """The Alpaca adapter streams order book updates via websocket."""
 
