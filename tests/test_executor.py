@@ -266,7 +266,9 @@ def test_try_triangle_honours_ccxt_fee_overrides(monkeypatch) -> None:
     threshold = base_settings.net_threshold_bps / 10000.0
     skips: list[str] = []
     result = try_triangle(adapter, tri, books, threshold, skips)
-    assert result is None
+    assert result is not None
+    assert result.get("executed") is False
+    assert result.get("skip_reason") == "below_threshold"
     assert "below_threshold" in skips
 
     override_settings = types.SimpleNamespace(
