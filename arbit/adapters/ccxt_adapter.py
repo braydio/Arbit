@@ -256,7 +256,6 @@ class CCXTAdapter(ExchangeAdapter):
                                 logger.error(
                                     "ws watch_order_book setup failed %s: %s", sym, exc
                                 )
-                                raise
 
                     if not tasks_by_sym:
                         break
@@ -316,7 +315,6 @@ class CCXTAdapter(ExchangeAdapter):
                                     sym,
                                     exc,
                                 )
-                                raise
 
                         yield sym, ob
 
