@@ -44,6 +44,80 @@ class DummyClient:
         pass
 
 
+class MappingStream:
+    """Stream stub that records subscriptions and emits a single update."""
+
+    instances: list["MappingStream"] = []
+
+    def __init__(
+        self,
+        key: str,
+        secret: str,
+        *,
+        url: str | None = None,
+        data_feed: str | None = None,
+        **_: object,
+    ) -> None:
+        self.handler = None
+        self.url = url
+        self.data_feed = data_feed
+        self.symbols: tuple[str, ...] = ()
+        MappingStream.instances.append(self)
+
+    def subscribe_orderbooks(self, handler, *symbols) -> None:
+        self.handler = handler
+        self.symbols = symbols
+
+    async def _run_forever(self) -> None:
+        await self.handler(
+            SimpleNamespace(
+                symbol="BTC/USD",
+                bids=[SimpleNamespace(p=1.0, s=2.0)],
+                asks=[SimpleNamespace(p=2.0, s=3.0)],
+            )
+        )
+
+    def stop(self) -> None:  # pragma: no cover - trivial
+        pass
+
+
+class FlakyStream:
+    """Stream stub that fails first and succeeds on subsequent attempts."""
+
+    behaviors: list[object] = []
+    instances: list["FlakyStream"] = []
+    run_index = 0
+
+    def __init__(
+        self,
+        key: str,
+        secret: str,
+        *,
+        url: str | None = None,
+        data_feed: str | None = None,
+        **_: object,
+    ) -> None:
+        self.handler = None
+        self.url = url
+        self.data_feed = data_feed
+        self.idx = FlakyStream.run_index
+        FlakyStream.run_index += 1
+        FlakyStream.instances.append(self)
+
+    def subscribe_orderbooks(self, handler, *symbols) -> None:
+        self.handler = handler
+
+    async def _run_forever(self) -> None:
+        behavior = FlakyStream.behaviors[self.idx]
+        if isinstance(behavior, Exception):
+            raise behavior
+        for event in behavior:
+            await self.handler(event)
+
+    def stop(self) -> None:  # pragma: no cover - trivial
+        pass
+
+
 def test_ccxt_orderbook_stream_falls_back_to_rest(monkeypatch) -> None:
     """When ``watch_order_book`` errors the CCXT adapter uses REST polling."""
 
@@ -280,6 +354,96 @@ def test_orderbook_stream_uses_configured_feed(monkeypatch) -> None:
     instance = MockDataStream.instances[-1]
     assert instance.url == "wss://example.test/crypto"
     assert instance.data_feed == "sip"
+
+
+def test_orderbook_stream_maps_usdt_symbols(monkeypatch) -> None:
+    """Adapter subscribes to USD pairs while exposing USDT to callers."""
+
+    import sys
+
+    sys.modules.pop("arbit.adapters.alpaca_adapter", None)
+    import arbit.adapters.alpaca_adapter as aa
+
+    MappingStream.instances.clear()
+
+    monkeypatch.setattr(aa, "TradingClient", DummyClient)
+    monkeypatch.setattr(aa, "CryptoHistoricalDataClient", DummyClient)
+    monkeypatch.setattr(aa, "CryptoDataStream", MappingStream)
+    monkeypatch.setattr(
+        aa,
+        "settings",
+        SimpleNamespace(
+            alpaca_base_url="",
+            alpaca_map_usdt_to_usd=True,
+            alpaca_ws_crypto_url="wss://example.test/crypto",
+            alpaca_data_feed="us",
+        ),
+    )
+    monkeypatch.setattr(aa, "creds_for", lambda ex: ("k", "s"))
+
+    adapter = aa.AlpacaAdapter()
+
+    async def run() -> None:
+        stream = adapter.orderbook_stream(["BTC/USDT"], depth=1, reconnect_delay=0)
+        symbol, book = await asyncio.wait_for(anext(stream), timeout=1.0)
+        assert symbol == "BTC/USDT"
+        assert book == {"bids": [[1.0, 2.0]], "asks": [[2.0, 3.0]]}
+        await stream.aclose()
+
+    asyncio.run(run())
+
+    instance = MappingStream.instances[-1]
+    assert instance.symbols == ("BTC/USD",)
+
+
+def test_orderbook_stream_reconnects_after_failure(monkeypatch) -> None:
+    """Adapter recreates the websocket stream when it fails."""
+
+    import sys
+
+    sys.modules.pop("arbit.adapters.alpaca_adapter", None)
+    import arbit.adapters.alpaca_adapter as aa
+
+    FlakyStream.behaviors = [
+        RuntimeError("boom"),
+        [
+            SimpleNamespace(
+                symbol="BTC/USDT",
+                bids=[SimpleNamespace(p=1.0, s=1.0)],
+                asks=[SimpleNamespace(p=2.0, s=2.0)],
+            )
+        ],
+    ]
+    FlakyStream.instances.clear()
+    FlakyStream.run_index = 0
+
+    monkeypatch.setattr(aa, "TradingClient", DummyClient)
+    monkeypatch.setattr(aa, "CryptoHistoricalDataClient", DummyClient)
+    monkeypatch.setattr(aa, "CryptoDataStream", FlakyStream)
+    monkeypatch.setattr(
+        aa,
+        "settings",
+        SimpleNamespace(
+            alpaca_base_url="",
+            alpaca_map_usdt_to_usd=False,
+            alpaca_ws_crypto_url="wss://example.test/crypto",
+            alpaca_data_feed="us",
+        ),
+    )
+    monkeypatch.setattr(aa, "creds_for", lambda ex: ("k", "s"))
+
+    adapter = aa.AlpacaAdapter()
+
+    async def run() -> None:
+        stream = adapter.orderbook_stream(["BTC/USDT"], depth=1, reconnect_delay=0)
+        symbol, book = await asyncio.wait_for(anext(stream), timeout=1.0)
+        assert symbol == "BTC/USDT"
+        assert book["bids"][0] == [1.0, 1.0]
+        await stream.aclose()
+
+    asyncio.run(run())
+
+    assert len(FlakyStream.instances) == 2
 
 
 class DummyAdapter:

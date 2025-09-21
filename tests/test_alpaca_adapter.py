@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 from arbit.adapters.base import OrderSpec
@@ -68,3 +69,27 @@ def test_balances_and_fetch_balance(monkeypatch) -> None:
     bal = adapter.fetch_balance("BTCUSD")
     assert bal == 0.5
     assert tc.positions_called == 2 and tc.account_called == 2
+
+
+def test_close_stops_active_stream(monkeypatch) -> None:
+    """The ``close`` helper should stop and clear the active stream."""
+
+    aa = _setup(monkeypatch)
+    adapter = aa.AlpacaAdapter()
+
+    class StopSignal:
+        """Simple stub tracking whether ``stop`` was invoked."""
+
+        def __init__(self) -> None:
+            self.stopped = False
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    stream = StopSignal()
+    adapter._stream = stream  # type: ignore[attr-defined]
+
+    asyncio.run(adapter.close())
+
+    assert stream.stopped
+    assert adapter._stream is None  # type: ignore[attr-defined]
