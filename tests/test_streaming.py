@@ -4,6 +4,8 @@ import asyncio
 from builtins import anext
 from types import SimpleNamespace
 
+import pytest
+
 from arbit.engine import executor
 from arbit.models import Triangle
 from tests.alpaca_mocks import MockDataStream
@@ -87,6 +89,58 @@ def test_ccxt_orderbook_stream_falls_back_to_rest(monkeypatch) -> None:
         await stream.aclose()
 
     asyncio.run(run())
+
+
+@pytest.mark.asyncio
+async def test_ccxt_orderbook_stream_ws_failure_breaks_loop(monkeypatch) -> None:
+    """A websocket failure should not be retried endlessly for the same symbol."""
+
+    import arbit.adapters.ccxt_adapter as ca
+
+    class StubRestExchange:
+        def __init__(self, *_: object, **__: object) -> None:
+            self.options: dict[str, object] = {}
+            self.id = "stub"
+
+        def fetch_order_book(self, symbol: str, depth: int) -> dict:
+            return {
+                "symbol": symbol,
+                "bids": [[1.0, depth]],
+                "asks": [[2.0, depth]],
+                "source": "rest",
+            }
+
+    class CountingWebSocket:
+        def __init__(self, *_: object, **__: object) -> None:
+            self.closed = False
+            self.call_count = 0
+
+        async def watch_order_book(self, symbol: str, depth: int) -> dict:
+            self.call_count += 1
+            raise RuntimeError(f"{symbol} unsupported")
+
+        async def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr(ca, "ccxt", SimpleNamespace(stub=StubRestExchange))
+    monkeypatch.setattr(ca, "ccxtpro", SimpleNamespace(stub=CountingWebSocket))
+    monkeypatch.setattr(ca, "creds_for", lambda ex: ("k", "s"))
+
+    adapter = ca.CCXTAdapter("stub")
+    ws_client = adapter.ex_ws
+    assert ws_client is not None
+
+    stream = adapter.orderbook_stream(["BTC/USDT"], depth=1, poll_interval=0.0)
+    sym1, book1 = await asyncio.wait_for(anext(stream), timeout=1.0)
+    assert sym1 == "BTC/USDT"
+    assert "error" in book1
+
+    sym2, book2 = await asyncio.wait_for(anext(stream), timeout=1.0)
+    assert sym2 == "BTC/USDT"
+    assert book2.get("source") == "rest"
+    assert ws_client.call_count == 1
+
+    await stream.aclose()
 
 
 def test_orderbook_stream_emits_updates(monkeypatch) -> None:
