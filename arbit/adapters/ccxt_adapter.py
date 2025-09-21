@@ -266,9 +266,7 @@ class CCXTAdapter(ExchangeAdapter):
                         except Exception as exc:
                             ws_failed = True
                             failed_symbols.add(sym)
-                            logger.warning(
-                                "ws watch_order_book error %s: %s", sym, exc
-                            )
+                            logger.warning("ws watch_order_book error %s: %s", sym, exc)
                             ob = {"bids": [], "asks": [], "error": str(exc)}
 
                         prev = last_ts.get(sym)
@@ -286,7 +284,8 @@ class CCXTAdapter(ExchangeAdapter):
 
                         if sym in failed_symbols:
                             logger.debug(
-                                "ws skipping %s after failure; will fall back to REST", sym
+                                "ws skipping %s after failure; will fall back to REST",
+                                sym,
                             )
                         else:
                             try:
@@ -296,7 +295,9 @@ class CCXTAdapter(ExchangeAdapter):
                             except Exception as exc:
                                 ws_failed = True
                                 logger.error(
-                                    "ws watch_order_book restart failed %s: %s", sym, exc
+                                    "ws watch_order_book restart failed %s: %s",
+                                    sym,
+                                    exc,
                                 )
                                 raise
 
