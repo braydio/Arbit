@@ -347,7 +347,7 @@ asyncio.run(main())
 
 **Supported Venues**: `alpaca`, `kraken`
 
-**Note**: Ensure triangle symbols exist on your chosen venue (e.g., ETH/USDT, ETH/BTC, BTC/USDT; SOL/USDT, SOL/BTC, BTC/USDT on supported venues like Kraken). See [WARP.md CLI Commands](docs/WARP.md#cli-commands) for full documentation.
+**Note**: Ensure triangle symbols exist on your chosen venue (e.g., ETH/USDT, ETH/BTC, BTC/USDT; SOL/USDT, SOL/BTC, BTC/USDT on supported venues like Kraken). See [WARP.md CLI Commands](docs/WARP.md#cli-commands) for full documentation. Alpaca's configuration intentionally ships with no default triangles to avoid unsupported crypto-to-crypto crosses, so set `TRIANGLES_BY_VENUE` (or pass `--symbols`) when you're ready to trade there.
 
 Customizing triangles (advanced): set `TRIANGLES_BY_VENUE` as JSON in `.env` to override defaults, e.g.
 ```

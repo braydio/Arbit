@@ -56,7 +56,11 @@ def format_live_heartbeat(
 
 
 def _triangles_for(venue: str) -> list[Triangle]:
-    """Return configured triangles for *venue*, falling back to defaults."""
+    """Return configured triangles for *venue*, falling back to defaults.
+
+    Explicit empty lists (e.g., Alpaca's default configuration) are respected so
+    operators can opt-in with venue-specific triangles when ready.
+    """
 
     data_raw = getattr(settings, "triangles_by_venue", {}) or {}
     data = data_raw
@@ -79,7 +83,7 @@ def _triangles_for(venue: str) -> list[Triangle]:
         data = {}
 
     triples = data.get(venue)
-    if not isinstance(triples, list) or not triples:
+    if not isinstance(triples, list):
         triples = [
             ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
             ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
