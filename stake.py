@@ -12,8 +12,11 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 # Minimal ABIs for the functions we invoke.  Keeping these inline avoids the
 # need to distribute separate JSON artefacts.
@@ -61,6 +64,31 @@ POOL_ABI = [
 ]
 
 
+def _init_web3_clients(settings: Any) -> tuple[Any, Any, Any, Any]:
+    """Return Web3 helpers initialised with configured contract addresses."""
+
+    rpc_url = os.getenv("RPC_URL")
+    private_key = os.getenv("PRIVATE_KEY")
+    if not rpc_url or not private_key:
+        raise EnvironmentError("RPC_URL and PRIVATE_KEY must be configured")
+
+    from web3 import Web3
+
+    w3 = Web3(Web3.HTTPProvider(rpc_url))
+    acct = w3.eth.account.from_key(private_key)
+    usdc = w3.eth.contract(address=settings.usdc_address, abi=ERC20_ABI)
+    pool = w3.eth.contract(address=settings.pool_address, abi=POOL_ABI)
+    return w3, acct, usdc, pool
+
+
+def _load_settings() -> Any:
+    """Return a configured :class:`arbit.config.Settings` instance."""
+
+    from arbit.config import Settings
+
+    return Settings()
+
+
 def ensure_account_ready(
     w3: Any,
     acct: Any,
@@ -88,19 +116,16 @@ def ensure_account_ready(
 def stake_usdc(amount: int) -> None:
     """Approve and deposit ``amount`` of USDC into Aave v3."""
 
-    # Import ``Web3`` lazily so the rest of the project does not depend on the
-    # package unless staking is invoked.
-    from web3 import Web3
+    settings = _load_settings()
 
-    from arbit.config import Settings
+    if bool(getattr(settings, "dry_run", True)):
+        log.info(
+            "[dry-run] would stake %.2f USDC to Aave",
+            float(amount) / 1_000_000.0,
+        )
+        return
 
-    settings = Settings()
-
-    w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
-    acct = w3.eth.account.from_key(os.getenv("PRIVATE_KEY"))
-
-    usdc = w3.eth.contract(address=settings.usdc_address, abi=ERC20_ABI)
-    pool = w3.eth.contract(address=settings.pool_address, abi=POOL_ABI)
+    w3, acct, usdc, pool = _init_web3_clients(settings)
 
     ensure_account_ready(
         w3,
@@ -134,17 +159,16 @@ def stake_usdc(amount: int) -> None:
 def withdraw_usdc(amount: int) -> None:
     """Withdraw ``amount`` of USDC from Aave v3 Pool to the wallet."""
 
-    from web3 import Web3
+    settings = _load_settings()
 
-    from arbit.config import Settings
+    if bool(getattr(settings, "dry_run", True)):
+        log.info(
+            "[dry-run] would withdraw %.2f USDC from Aave",
+            float(amount) / 1_000_000.0,
+        )
+        return
 
-    settings = Settings()
-
-    w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
-    acct = w3.eth.account.from_key(os.getenv("PRIVATE_KEY"))
-
-    usdc = w3.eth.contract(address=settings.usdc_address, abi=ERC20_ABI)
-    pool = w3.eth.contract(address=settings.pool_address, abi=POOL_ABI)
+    w3, acct, usdc, pool = _init_web3_clients(settings)
 
     gas_price = w3.eth.gas_price
     if gas_price > settings.max_gas_price_gwei * 10**9:
