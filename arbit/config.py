@@ -11,15 +11,21 @@ import os
 from pathlib import Path
 from typing import Any, List
 
+_settings_config_dict: Any | None
+
 try:  # Support Pydantic v1 and v2 (via pydantic-settings)
-    from pydantic import BaseSettings  # type: ignore
+    from pydantic import BaseSettings  # type: ignore[attr-defined]
 except Exception:  # pragma: no cover - fallback for Pydantic v2
     try:
-        from pydantic_settings import BaseSettings  # type: ignore
+        from pydantic_settings import BaseSettings, SettingsConfigDict  # type: ignore
     except Exception as e:  # pragma: no cover
         raise ImportError(
             "BaseSettings not available; install pydantic (v1) or pydantic-settings (v2)"
         ) from e
+    else:  # pragma: no cover - executed only on Pydantic v2
+        _settings_config_dict = SettingsConfigDict
+else:
+    _settings_config_dict = None
 
 
 def _load_env_file(path: str = ".env") -> None:
@@ -250,11 +256,20 @@ class Settings(BaseSettings):
     # Optional per-venue fee overrides with basis point inputs.
     fee_overrides: dict[str, dict[str, dict[str, float]]] | None = None
 
-    class Config(BaseSettings.Config):
-        """Pydantic settings configuration."""
+    if hasattr(BaseSettings, "Config"):
 
-        env_file = ".env"
-        env_prefix = ""
+        class Config(BaseSettings.Config):
+            """Pydantic v1 settings configuration."""
+
+            env_file = ".env"
+            env_prefix = ""
+
+    else:
+        # Pydantic v2 uses ``model_config`` instead of an inner ``Config`` class.
+        if _settings_config_dict is not None:
+            model_config = _settings_config_dict(env_file=".env", env_prefix="")
+        else:  # pragma: no cover - defensive fallback
+            model_config = {"env_file": ".env", "env_prefix": ""}
 
     def __init__(self, **kwargs: Any) -> None:
         """Normalise environment-provided configuration values.
