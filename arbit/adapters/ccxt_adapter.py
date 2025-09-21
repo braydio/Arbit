@@ -225,9 +225,12 @@ class CCXTAdapter(ExchangeAdapter):
             logger = logging.getLogger("arbit")
             tasks_by_sym: dict[str, asyncio.Task] = {}
             ws_failed = False
+            failed_symbols: set[str] = set()
             try:
                 while True:
                     for sym in symbols:
+                        if sym in failed_symbols:
+                            continue
                         task = tasks_by_sym.get(sym)
                         if task is None or task.done():
                             try:
@@ -261,6 +264,8 @@ class CCXTAdapter(ExchangeAdapter):
                         try:
                             ob = task.result()
                         except Exception as exc:
+                            ws_failed = True
+                            failed_symbols.add(sym)
                             logger.warning("ws watch_order_book error %s: %s", sym, exc)
                             ob = {"bids": [], "asks": [], "error": str(exc)}
 
@@ -277,18 +282,29 @@ class CCXTAdapter(ExchangeAdapter):
                                 pass
                         last_ts[sym] = now
 
-                        try:
-                            tasks_by_sym[sym] = asyncio.create_task(
-                                self.ex_ws.watch_order_book(sym, depth)
+                        if sym in failed_symbols:
+                            logger.debug(
+                                "ws skipping %s after failure; will fall back to REST",
+                                sym,
                             )
-                        except Exception as exc:
-                            ws_failed = True
-                            logger.error(
-                                "ws watch_order_book restart failed %s: %s", sym, exc
-                            )
-                            raise
+                        else:
+                            try:
+                                tasks_by_sym[sym] = asyncio.create_task(
+                                    self.ex_ws.watch_order_book(sym, depth)
+                                )
+                            except Exception as exc:
+                                ws_failed = True
+                                logger.error(
+                                    "ws watch_order_book restart failed %s: %s",
+                                    sym,
+                                    exc,
+                                )
+                                raise
 
                         yield sym, ob
+
+                    if ws_failed:
+                        break
 
             except asyncio.CancelledError:
                 raise
@@ -296,6 +312,18 @@ class CCXTAdapter(ExchangeAdapter):
                 ws_failed = True
 
                 logger.warning("ws orderbook stream falling back to REST: %s", exc)
+            else:
+                if ws_failed:
+                    if failed_symbols:
+                        logger.warning(
+                            "ws orderbook stream falling back to REST after %s failures",
+                            ", ".join(sorted(failed_symbols)),
+                        )
+                    else:
+                        logger.warning(
+                            "ws orderbook stream falling back to REST after websocket"
+                            " errors"
+                        )
             finally:
                 try:
                     for task in list(tasks_by_sym.values()):
