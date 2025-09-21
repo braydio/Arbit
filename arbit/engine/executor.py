@@ -85,6 +85,8 @@ def try_triangle(
 
     net_estimate: float | None = None
 
+    quote = tri.leg_ab.split("/")[1]
+
     def _record_skip(reason: str, **extra) -> None:
         """Append *reason* to ``skip_reasons`` and emit debug diagnostics."""
 
@@ -143,8 +145,119 @@ def try_triangle(
         [1.0 / askAB, bidBC, bidAC, (1 - fee_ab), (1 - fee_bc), (1 - fee_ac)]
     )
     net_estimate = net
+
+    def _build_simulated_result() -> dict | None:
+        """Construct a hypothetical fill summary without hitting the venue."""
+
+        ask_price = askAB
+        if ask_price is None or ask_price <= 0:
+            return None
+        qty_levels = [
+            lvl for lvl in (ask_level_ab, bid_level_bc, bid_level_ac) if lvl is not None
+        ]
+        qtyB = size_from_depth(qty_levels)
+        if qtyB is None or qtyB <= 0:
+            return None
+
+        try:
+            max_notional = float(getattr(settings, "notional_per_trade_usd", 0.0) or 0.0)
+        except Exception:
+            max_notional = 0.0
+        if max_notional and ask_price > 0:
+            qtyB = min(qtyB, max_notional / ask_price)
+            if qtyB <= 0:
+                return None
+
+        available = None
+        if hasattr(adapter, "fetch_balance"):
+            try:
+                bal = float(adapter.fetch_balance(quote))
+                reserve = float(getattr(settings, "reserve_amount_usd", 0.0) or 0.0)
+                pct = float(getattr(settings, "reserve_percent", 0.0) or 0.0)
+                if pct > 0:
+                    reserve = max(reserve, bal * pct / 100.0)
+                available = max(bal - reserve, 0.0)
+            except Exception:
+                available = None
+        if available is not None and ask_price > 0:
+            qtyB = min(qtyB, available / ask_price)
+            if qtyB <= 0:
+                return None
+
+        try:
+            min_cost_ab = float(adapter.min_notional(tri.leg_ab))
+        except Exception:
+            min_cost_ab = 0.0
+        if min_cost_ab > 0 and ask_price > 0 and qtyB * ask_price < min_cost_ab:
+            return None
+
+        if bidBC is None or bidBC <= 0 or bidAC is None or bidAC <= 0:
+            return None
+
+        qtyC_est = qtyB * bidBC
+        fee_ab_amt = ask_price * qtyB * (fee_ab or 0.0)
+        fee_bc_amt = qtyB * bidBC * (fee_bc or 0.0)
+        fee_ac_amt = qtyC_est * bidAC * (fee_ac or 0.0)
+
+        f1 = {
+            "id": "simulated",
+            "symbol": tri.leg_ab,
+            "side": "buy",
+            "price": ask_price,
+            "qty": qtyB,
+            "fee": fee_ab_amt,
+            "leg": "AB",
+            "fee_rate": fee_ab,
+            "tif": "IOC",
+            "type": "market",
+        }
+        f2 = {
+            "id": "simulated",
+            "symbol": tri.leg_bc,
+            "side": "sell",
+            "price": bidBC,
+            "qty": qtyB,
+            "fee": fee_bc_amt,
+            "leg": "BC",
+            "fee_rate": fee_bc,
+            "tif": "IOC",
+            "type": "market",
+        }
+        f3 = {
+            "id": "simulated",
+            "symbol": tri.leg_ac,
+            "side": "sell",
+            "price": bidAC,
+            "qty": qtyC_est,
+            "fee": fee_ac_amt,
+            "leg": "AC",
+            "fee_rate": fee_ac,
+            "tif": "IOC",
+            "type": "market",
+        }
+        usdt_out = f1["price"] * f1["qty"] + f1["fee"]
+        usdt_in = f3["price"] * f3["qty"] - f3["fee"]
+        realized = usdt_in - usdt_out
+        return {
+            "fills": [f1, f2, f3],
+            "realized_usdt": realized,
+            "qty_base": qtyB,
+            "qty_intermediate": qtyC_est,
+        }
+
     if net < threshold:
-        return _record_skip("below_threshold", threshold=threshold)
+        simulated = _build_simulated_result()
+        _record_skip("below_threshold", threshold=threshold)
+        if simulated is not None:
+            return {
+                "tri": tri,
+                "net_est": net,
+                "fills": simulated["fills"],
+                "realized_usdt": simulated["realized_usdt"],
+                "executed": False,
+                "skip_reason": "below_threshold",
+            }
+        return None
 
     # Determine executable size from top-of-book depth
     ask_price = askAB
@@ -170,7 +283,7 @@ def try_triangle(
             )
 
     # Enforce account reserve so a portion of balance is held back
-    quote = tri.leg_ab.split("/")[1]
+    # quote already computed earlier
     available = None
     if hasattr(adapter, "fetch_balance"):
         try:
@@ -301,6 +414,7 @@ def try_triangle(
         "net_est": net,
         "fills": [f1, f2, f3],
         "realized_usdt": realized,
+        "executed": True,
     }
 
 
