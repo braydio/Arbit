@@ -82,12 +82,20 @@ def _triangles_for(venue: str) -> list[Triangle]:
     if not isinstance(data, dict):
         data = {}
 
-    triples = data.get(venue)
-    if not isinstance(triples, list):
-        triples = [
-            ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
-            ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
-        ]
+    fallback_triples = [
+        ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
+        ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
+    ]
+    triples_raw = data.get(venue, None)
+    if triples_raw is None:
+        triples = fallback_triples
+    elif isinstance(triples_raw, list):
+        triples = triples_raw
+    else:
+        log.warning(
+            "triangles configured for venue %s but not a list; using defaults", venue
+        )
+        triples = fallback_triples
     out: list[Triangle] = []
     for t in triples:
         if isinstance(t, (list, tuple)) and len(t) == 3:
@@ -348,22 +356,26 @@ async def _live_run_for_venue(
                     tri.leg_ac: _top_of_book_for(tri.leg_ac),
                 }
 
-                if log.isEnabledFor(logging.DEBUG):
-                    stale = "stale_book" in reason_list
-                    tob_log = {
-                        leg: "stale" if stale else tob_snapshot[leg]
-                        for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac)
-                    }
-                    log.debug(
-                        "live@%s skip attempt#%d %s reasons=%s tob=%s net_est=%s",
-                        venue,
-                        attempts_total,
-                        tri,
-                        reasons or ["unknown"],
-                        tob,
-                        (f"{net_meta * 100:.3f}%" if net_meta is not None else "n/a"),
-
-                    )
+                try:
+                    if log.isEnabledFor(logging.DEBUG):
+                        stale = "stale_book" in reason_list
+                        tob_log = {
+                            leg: "stale" if stale else tob_snapshot[leg]
+                            for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac)
+                        }
+                        log.debug(
+                            "live@%s skip attempt#%d %s reasons=%s tob=%s net_est=%s",
+                            venue,
+                            attempts_total,
+                            tri,
+                            reasons or ["unknown"],
+                            tob_log,
+                            (
+                                f"{net_meta * 100:.3f}%"
+                                if net_meta is not None
+                                else "n/a"
+                            ),
+                        )
                 except Exception:
                     pass
                 if (
