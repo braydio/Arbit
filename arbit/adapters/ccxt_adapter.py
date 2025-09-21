@@ -212,7 +212,8 @@ class CCXTAdapter(ExchangeAdapter):
         Uses a websocket client if ``self.ex_ws`` is available. Each watched
         symbol maintains its own persistent :class:`asyncio.Task` so that
         updates for quiet markets do not interrupt active ones. When the
-        websocket client is unavailable or fails, the method falls back to
+        websocket client is unavailable or fails for a symbol, that market is
+        removed from the websocket rotation and the method falls back to
         polling REST with ``poll_interval`` seconds between cycles.
         """
         loop = asyncio.get_event_loop()
@@ -226,10 +227,11 @@ class CCXTAdapter(ExchangeAdapter):
             tasks_by_sym: dict[str, asyncio.Task] = {}
             ws_failed = False
             failed_symbols: set[str] = set()
+            active_ws_symbols: set[str] = set(symbols)
             try:
                 while True:
                     for sym in symbols:
-                        if sym in failed_symbols:
+                        if sym not in active_ws_symbols:
                             continue
                         task = tasks_by_sym.get(sym)
                         if task is None or task.done():
@@ -239,6 +241,8 @@ class CCXTAdapter(ExchangeAdapter):
                                 )
                             except Exception as exc:
                                 ws_failed = True
+                                failed_symbols.add(sym)
+                                active_ws_symbols.discard(sym)
                                 logger.error(
                                     "ws watch_order_book setup failed %s: %s", sym, exc
                                 )
@@ -266,6 +270,7 @@ class CCXTAdapter(ExchangeAdapter):
                         except Exception as exc:
                             ws_failed = True
                             failed_symbols.add(sym)
+                            active_ws_symbols.discard(sym)
                             logger.warning("ws watch_order_book error %s: %s", sym, exc)
                             ob = {"bids": [], "asks": [], "error": str(exc)}
 
@@ -282,7 +287,7 @@ class CCXTAdapter(ExchangeAdapter):
                                 pass
                         last_ts[sym] = now
 
-                        if sym in failed_symbols:
+                        if sym not in active_ws_symbols:
                             logger.debug(
                                 "ws skipping %s after failure; will fall back to REST",
                                 sym,
@@ -294,6 +299,8 @@ class CCXTAdapter(ExchangeAdapter):
                                 )
                             except Exception as exc:
                                 ws_failed = True
+                                failed_symbols.add(sym)
+                                active_ws_symbols.discard(sym)
                                 logger.error(
                                     "ws watch_order_book restart failed %s: %s",
                                     sym,
