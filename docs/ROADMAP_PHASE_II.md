@@ -29,9 +29,13 @@ This document expands Phase II into concrete, testable deliverables needed to ru
 
 Progress
 - [x] Stream API surface in adapter (`orderbook_stream`) with REST fallback.
-- [ ] Initialize `ccxt.pro` client (`ex_ws`) when present; per-symbol watch with retries.
-- [ ] Add `orderbook_staleness_seconds` histogram; measure inter-update deltas.
-- [ ] Tests with fake stream to validate staleness and fallback behavior.
+- [x] Initialize `ccxt.pro` client (`ex_ws`) when present; per-symbol watch with retries.
+- [x] Add `orderbook_staleness_seconds` histogram; measure inter-update deltas.
+- [x] Tests with fake stream to validate staleness and fallback behavior.
+
+Automated coverage:
+- `tests/test_ccxt_adapter_stream.py` validates per-symbol websocket tasks and graceful closure.
+- `tests/test_streaming.py` exercises websocket failures, REST fallback, and staleness metric emissions.
 
 ### 2) Execution Engine Hardening
 - Place IOC limit orders for all legs; enforce per-leg `max_slippage_bps` and `min_notional`.
