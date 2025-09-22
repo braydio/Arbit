@@ -259,6 +259,7 @@ class CCXTAdapter(ExchangeAdapter):
                                     "ws watch_order_book setup failed %s: %s", sym, exc
                                 )
 
+
                                 break
 
                     if ws_failed:
