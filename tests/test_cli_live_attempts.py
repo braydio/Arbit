@@ -88,3 +88,70 @@ async def test_live_run_records_skip_attempt(monkeypatch, tmp_path):
     assert (ab_bid, ab_ask) == (1.0, 1.1)
     assert (bc_bid, bc_ask) == (2.0, 2.1)
     assert (ac_bid, ac_ask) == (3.0, 3.1)
+
+
+
+@pytest.mark.asyncio
+async def test_live_run_closes_adapter_and_db(monkeypatch):
+    """Adapter close coroutine should be awaited and DB handle closed."""
+
+    class DummyAdapter:
+        """Adapter stub with async close for cleanup verification."""
+
+        def __init__(self) -> None:
+            self.close_calls = 0
+            self.closed = False
+
+        def name(self) -> str:
+            return "dummy"
+
+        @staticmethod
+        def balances() -> dict[str, float]:
+            return {}
+
+        @staticmethod
+        def load_markets() -> dict[str, dict[str, float]]:
+            return {}
+
+        async def close(self) -> None:
+            self.close_calls += 1
+            self.closed = True
+
+    class DummyConn:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    dummy_adapter = DummyAdapter()
+    dummy_conn = DummyConn()
+
+    dummy_settings = SimpleNamespace(
+        sqlite_path=":memory:",
+        dry_run=True,
+        net_threshold_bps=0.0,
+        notional_per_trade_usd=100.0,
+        max_slippage_bps=5.0,
+        discord_min_notify_interval_secs=0.0,
+        discord_attempt_notify=False,
+        discord_trade_notify=False,
+        discord_heartbeat_secs=0.0,
+        alpaca_map_usdt_to_usd=False,
+    )
+
+    monkeypatch.setattr(cli_utils, "settings", dummy_settings)
+    monkeypatch.setattr(cli_utils, "_triangles_for", lambda _venue: [])
+    monkeypatch.setattr(
+        cli_utils, "_build_adapter", lambda _venue, _settings: dummy_adapter
+    )
+    monkeypatch.setattr(cli_utils, "_log_balances", lambda *_a, **_k: None)
+    monkeypatch.setattr(cli_utils, "notify_discord", lambda *_a, **_k: None)
+    monkeypatch.setattr(cli_utils, "_discover_triangles_from_markets", lambda *_a, **_k: [])
+    monkeypatch.setattr(cli_utils, "init_db", lambda _path: dummy_conn)
+
+    await cli_utils._live_run_for_venue("demo")
+
+    assert dummy_conn.closed is True
+    assert dummy_adapter.closed is True
+    assert dummy_adapter.close_calls == 1
