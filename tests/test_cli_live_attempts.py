@@ -90,7 +90,6 @@ async def test_live_run_records_skip_attempt(monkeypatch, tmp_path):
     assert (ac_bid, ac_ask) == (3.0, 3.1)
 
 
-
 @pytest.mark.asyncio
 async def test_live_run_closes_adapter_and_db(monkeypatch):
     """Adapter close coroutine should be awaited and DB handle closed."""
@@ -147,7 +146,9 @@ async def test_live_run_closes_adapter_and_db(monkeypatch):
     )
     monkeypatch.setattr(cli_utils, "_log_balances", lambda *_a, **_k: None)
     monkeypatch.setattr(cli_utils, "notify_discord", lambda *_a, **_k: None)
-    monkeypatch.setattr(cli_utils, "_discover_triangles_from_markets", lambda *_a, **_k: [])
+    monkeypatch.setattr(
+        cli_utils, "_discover_triangles_from_markets", lambda *_a, **_k: []
+    )
     monkeypatch.setattr(cli_utils, "init_db", lambda _path: dummy_conn)
 
     await cli_utils._live_run_for_venue("demo")

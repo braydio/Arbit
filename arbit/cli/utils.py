@@ -189,7 +189,9 @@ async def _live_run_for_venue(
                 triangles = [
                     tri
                     for tri in triangles
-                    if all(leg in allowed for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac))
+                    if all(
+                        leg in allowed for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac)
+                    )
                 ]
         try:
             markets = adapter.load_markets()
@@ -197,7 +199,7 @@ async def _live_run_for_venue(
             kept: list[Triangle] = []
             is_alpaca = adapter.name().lower() == "alpaca"
             map_usdt = bool(getattr(settings, "alpaca_map_usdt_to_usd", False))
-    
+
             def _supported(leg: str) -> bool:
                 if leg in markets:
                     return True
@@ -210,7 +212,7 @@ async def _live_run_for_venue(
                     alt = leg[:-5] + "/USD"
                     return alt in markets
                 return False
-    
+
             for tri in triangles:
                 legs = [tri.leg_ab, tri.leg_bc, tri.leg_ac]
                 miss = [leg for leg in legs if not _supported(leg)]
@@ -257,7 +259,11 @@ async def _live_run_for_venue(
                         if "missing" in locals() and missing
                         else "n/a"
                     ),
-                    ("; ".join("|".join(t) for t in suggestions) if suggestions else "n/a"),
+                    (
+                        "; ".join("|".join(t) for t in suggestions)
+                        if suggestions
+                        else "n/a"
+                    ),
                 )
                 try:
                     notify_discord(
@@ -275,7 +281,9 @@ async def _live_run_for_venue(
             tri_list = ", ".join(
                 f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac}" for tri in triangles
             )
-            log.info("live@%s active triangles=%d -> %s", venue, len(triangles), tri_list)
+            log.info(
+                "live@%s active triangles=%d -> %s", venue, len(triangles), tri_list
+            )
             try:
                 notify_discord(
                     venue,
@@ -310,7 +318,7 @@ async def _live_run_for_venue(
         below_threshold_total = 0.0
         below_threshold_recent: list[dict[str, float]] = []
         below_threshold_log_path = Path("data") / f"below_threshold_{venue}.log"
-    
+
         def _persist_simulated_skip(record: dict) -> None:
             try:
                 below_threshold_log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -318,15 +326,15 @@ async def _live_run_for_venue(
                     fh.write(json.dumps(record) + "\n")
             except Exception:
                 pass
-    
+
         def _top_of_book_for(symbol: str) -> dict[str, float | None | str]:
             """Return the best bid/ask for ``symbol`` as floats where possible."""
-    
+
             try:
                 ob = adapter.fetch_orderbook(symbol, 1) or {}
             except Exception as exc:  # pragma: no cover - defensive logging aid
                 return {"error": str(exc)}
-    
+
             def _best(levels) -> float | None:
                 if not levels:
                     return None
@@ -343,12 +351,12 @@ async def _live_run_for_venue(
                     except (TypeError, ValueError):
                         return None
                 return None
-    
+
             return {
                 "bid": _best(ob.get("bids") or []),
                 "ask": _best(ob.get("asks") or []),
             }
-    
+
         try:
             async for tri, res, reasons, latency, meta in stream_triangles(
                 adapter,
@@ -369,10 +377,10 @@ async def _live_run_for_venue(
                         reason_list.append(res["skip_reason"])
                     if not reason_list:
                         reason_list = ["unknown"]
-    
+
                     for reason in reason_list:
                         skip_counts[reason] = skip_counts.get(reason, 0) + 1
-    
+
                     net_meta = None
                     source_net = None
                     if res and res.get("net_est") is not None:
@@ -384,7 +392,7 @@ async def _live_run_for_venue(
                             net_meta = float(source_net)
                         except (TypeError, ValueError):
                             net_meta = None
-    
+
                     tob_snapshot = {
                         tri.leg_ab: _top_of_book_for(tri.leg_ab),
                         tri.leg_bc: _top_of_book_for(tri.leg_bc),
@@ -407,7 +415,7 @@ async def _live_run_for_venue(
                                 snapshot["bid"] = bid_val
                             if ask_val is not None:
                                 snapshot["ask"] = ask_val
-    
+
                     is_below_threshold = "below_threshold" in reason_list or (
                         res and res.get("skip_reason") == "below_threshold"
                     )
@@ -540,7 +548,9 @@ async def _live_run_for_venue(
                             ac_bid=None,
                             ac_ask=None,
                             qty_base=(
-                                float(res["fills"][0]["qty"]) if res.get("fills") else None
+                                float(res["fills"][0]["qty"])
+                                if res.get("fills")
+                                else None
                             ),
                         ),
                     )
@@ -664,7 +674,9 @@ async def _live_run_for_venue(
                                 ", ".join(f"{k}={v}" for k, v in top),
                             )
                         if below_threshold_count:
-                            avg_sim = below_threshold_total / max(below_threshold_count, 1)
+                            avg_sim = below_threshold_total / max(
+                                below_threshold_count, 1
+                            )
                             last_sim = (
                                 below_threshold_recent[-1]
                                 if below_threshold_recent
@@ -699,7 +711,7 @@ async def _live_run_for_venue(
                     last_hb_at = time.time()
         except Exception:
             pass
-    
+
     finally:
         if conn is not None:
             try:
