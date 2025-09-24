@@ -380,15 +380,9 @@ Inspect market limits and fees for sizing notional:
 python -m arbit.cli markets:limits --venue alpaca --symbols ETH/USDT,BTC/USDT
 ```
 
-Kraken tiers that waive maker/taker pricing can be reflected in `.env` with:
-
-```bash
-KRAKEN_MAKER_FEE_BPS=0
-KRAKEN_TAKER_FEE_BPS=0
-```
-
-The engine multiplies each leg by `(1 - fee)` when estimating `net`, so lower
-fees raise the threshold-adjusted profitability for a triangle.
+Kraken maker/taker fees are sourced directly from Kraken via CCXT. The engine
+applies `(1 - fee)` to each leg when estimating `net`, so expect promotional
+web tiers that do not apply to the API to be ignored.
 
 Get recommended starter Strategy settings based on venue data:
 

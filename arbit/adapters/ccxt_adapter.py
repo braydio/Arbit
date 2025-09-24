@@ -141,13 +141,6 @@ class CCXTAdapter(ExchangeAdapter):
                 taker = float(taker_override)
             except (TypeError, ValueError):
                 pass
-        if getattr(self.ex, "id", "") == "kraken":
-            override_maker = getattr(settings, "kraken_maker_fee_bps", None)
-            override_taker = getattr(settings, "kraken_taker_fee_bps", None)
-            if override_maker is not None:
-                maker = float(override_maker) / 10000.0
-            if override_taker is not None:
-                taker = float(override_taker) / 10000.0
         self._fee[symbol] = (maker, taker)
         return maker, taker
 
