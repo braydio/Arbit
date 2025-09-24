@@ -158,7 +158,9 @@ See `ROADMAP_PHASE_II.md` for detailed Phase II deliverables, acceptance criteri
 - [ ] Paper test in `fitness --simulate` and persist to SQLite for sizing review
 - [ ] Tune `NET_THRESHOLD_BPS` and `MAX_SLIPPAGE_BPS` per venue for SOL triangle
 - [ ] Monitor `min_notional` and taker fees per leg; document venue-specific quirks
-- [ ] Consider adding XRP/BTC/USDT as a next candidate pending liquidity checks
+- [ ] Venue-specific next coin rollout:
+  - **Alpaca**: Add USDT coverage by validating the `BTC/USDT` – `BTC/USD` – `USDT/USD` triangle. This cycle leans on Alpaca's deep BTC liquidity while exercising the existing `ALPACA_MAP_USDT_TO_USD` switch so the engine can reuse the USD order book without code churn.
+  - **Kraken**: Promote XRP as the next production triangle (`XRP/USDT`, `XRP/BTC`, `BTC/USDT`). Kraken's books for XRP across USDT and BTC have consistent depth, giving us a liquid altcoin leg that still closes back into BTC/USDT for predictable inventory management.
  - [ ] Dry-run execution mode for controlled live trading
  - [ ] Strict notional caps and IOC-only orders
  - [ ] Automated stablecoin allocator with thresholds
@@ -190,6 +192,7 @@ This section tracks what remains to make yield commands robust for dev/live test
 - [x] Provider interface for yield (`arbit/yield/providers.py`) with AaveProvider wrapper.
 - [ ] APR source clients with schema validation, retries, and jitter backoff.
 - [x] Wallet accounting hook to read aToken balance when `atoken_address` is configured.
+- [ ] Reserve planner that reconciles on-chain balances vs configured `reserve_percent` and produces actionable deposit/withdraw suggestions for the CLI. This unlocks automated guardrails so `yield:collect` and `yield:withdraw` can respect treasury buffers without manual math.
 - [ ] Gas strategy (EIP-1559) and chain-specific fee modeling.
 
 ### CLI Commands
