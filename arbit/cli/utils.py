@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import logging
 import time
@@ -176,531 +178,558 @@ async def _live_run_for_venue(
     """
 
     adapter = _build_adapter(venue, settings)
-    _log_balances(venue, adapter)
-    conn = init_db(settings.sqlite_path)
-    triangles = _triangles_for(venue)
-    if symbols:
-        allowed = {s.strip() for s in symbols.split(",") if s.strip()}
-        if allowed:
-            triangles = [
-                tri
-                for tri in triangles
-                if all(leg in allowed for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac))
-            ]
+    conn = None
     try:
-        markets = adapter.load_markets()
-        missing: list[tuple[Triangle, list[str]]] = []
-        kept: list[Triangle] = []
-        is_alpaca = adapter.name().lower() == "alpaca"
-        map_usdt = bool(getattr(settings, "alpaca_map_usdt_to_usd", False))
-
-        def _supported(leg: str) -> bool:
-            if leg in markets:
-                return True
-            if (
-                is_alpaca
-                and map_usdt
-                and isinstance(leg, str)
-                and leg.upper().endswith("/USDT")
-            ):
-                alt = leg[:-5] + "/USD"
-                return alt in markets
-            return False
-
-        for tri in triangles:
-            legs = [tri.leg_ab, tri.leg_bc, tri.leg_ac]
-            miss = [leg for leg in legs if not _supported(leg)]
-            if miss:
-                missing.append((tri, miss))
-            else:
-                kept.append(tri)
-        triangles = kept
-    except Exception:
-        pass
-    if not triangles:
-        suggestions: list[list[str]] = []
+        _log_balances(venue, adapter)
+        conn = init_db(settings.sqlite_path)
+        triangles = _triangles_for(venue)
+        if symbols:
+            allowed = {s.strip() for s in symbols.split(",") if s.strip()}
+            if allowed:
+                triangles = [
+                    tri
+                    for tri in triangles
+                    if all(
+                        leg in allowed for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac)
+                    )
+                ]
         try:
             markets = adapter.load_markets()
-            suggestions = _discover_triangles_from_markets(markets)[:3]
-        except Exception:
-            suggestions = []
-        use_count = int(auto_suggest_top or 0)
-        if use_count > 0 and suggestions:
-            chosen = suggestions[:use_count]
-            triangles = [Triangle(*t) for t in chosen]
-            try:
-                notify_discord(
-                    venue,
-                    (
-                        f"[live@{venue}] using auto-suggested triangles for session: "
-                        f"{'; '.join('|'.join(t) for t in chosen)} | {_balances_brief(adapter)}"
-                    ),
-                )
-            except Exception:
-                pass
-        else:
-            log.error(
-                (
-                    "live@%s no supported triangles after filtering; missing=%s "
-                    "suggestions=%s"
-                ),
-                venue,
-                (
-                    "; ".join(
-                        f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac} -> missing {','.join(miss)}"
-                        for tri, miss in (missing if "missing" in locals() else [])
-                    )
-                    if "missing" in locals() and missing
-                    else "n/a"
-                ),
-                ("; ".join("|".join(t) for t in suggestions) if suggestions else "n/a"),
-            )
-            try:
-                notify_discord(
-                    venue,
-                    (
-                        f"[live@{venue}] no supported triangles; "
-                        f"suggestions={('; '.join('|'.join(t) for t in suggestions)) if suggestions else 'n/a'}"
-                        f" | {_balances_brief(adapter)}"
-                    ),
-                )
-            except Exception:
-                pass
-            return
-    if triangles:
-        tri_list = ", ".join(
-            f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac}" for tri in triangles
-        )
-        log.info("live@%s active triangles=%d -> %s", venue, len(triangles), tri_list)
-        try:
-            notify_discord(
-                venue,
-                f"[live@{venue}] active triangles={len(triangles)} -> {tri_list} | {_balances_brief(adapter)}",
-            )
-        except Exception:
-            pass
-    for tri in triangles:
-        try:
-            insert_triangle(conn, tri)
-        except Exception:
-            pass
-    log.info("live@%s dry_run=%s", venue, settings.dry_run)
-    last_hb_at = time.time()
-    last_trade_notify_at = 0.0
-    last_attempt_notify_at = 0.0
-    min_interval = float(
-        getattr(settings, "discord_min_notify_interval_secs", 10.0) or 10.0
-    )
-    attempt_notify = (
-        bool(attempt_notify_override)
-        if attempt_notify_override is not None
-        else bool(getattr(settings, "discord_attempt_notify", False))
-    )
-    start_time = time.time()
-    attempts_total = 0
-    successes_total = 0
-    net_total = 0.0
-    latency_total = 0.0
-    skip_counts: dict[str, int] = {}
-    below_threshold_count = 0
-    below_threshold_total = 0.0
-    below_threshold_recent: list[dict[str, float]] = []
-    below_threshold_log_path = Path("data") / f"below_threshold_{venue}.log"
+            missing: list[tuple[Triangle, list[str]]] = []
+            kept: list[Triangle] = []
+            is_alpaca = adapter.name().lower() == "alpaca"
+            map_usdt = bool(getattr(settings, "alpaca_map_usdt_to_usd", False))
 
-    def _persist_simulated_skip(record: dict) -> None:
-        try:
-            below_threshold_log_path.parent.mkdir(parents=True, exist_ok=True)
-            with below_threshold_log_path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record) + "\n")
-        except Exception:
-            pass
-
-    def _top_of_book_for(symbol: str) -> dict[str, float | None | str]:
-        """Return the best bid/ask for ``symbol`` as floats where possible."""
-
-        try:
-            ob = adapter.fetch_orderbook(symbol, 1) or {}
-        except Exception as exc:  # pragma: no cover - defensive logging aid
-            return {"error": str(exc)}
-
-        def _best(levels) -> float | None:
-            if not levels:
-                return None
-            level = levels[0]
-            if isinstance(level, (list, tuple)) and level:
-                try:
-                    return float(level[0])
-                except (TypeError, ValueError):
-                    return None
-            if isinstance(level, dict):
-                price = level.get("price")
-                try:
-                    return float(price) if price is not None else None
-                except (TypeError, ValueError):
-                    return None
-            return None
-
-        return {
-            "bid": _best(ob.get("bids") or []),
-            "ask": _best(ob.get("asks") or []),
-        }
-
-    try:
-        async for tri, res, reasons, latency, meta in stream_triangles(
-            adapter,
-            triangles,
-            float(getattr(settings, "net_threshold_bps", 0) or 0) / 10000.0,
-        ):
-            CYCLE_LATENCY.labels(venue).observe(latency)
-            attempts_total += 1
-            latency_total += float(latency or 0.0)
-            executed = bool(res and res.get("executed", True))
-            if not executed:
-                reason_list = list(reasons or [])
+            def _supported(leg: str) -> bool:
+                if leg in markets:
+                    return True
                 if (
-                    res
-                    and res.get("skip_reason")
-                    and res["skip_reason"] not in reason_list
+                    is_alpaca
+                    and map_usdt
+                    and isinstance(leg, str)
+                    and leg.upper().endswith("/USDT")
                 ):
-                    reason_list.append(res["skip_reason"])
-                if not reason_list:
-                    reason_list = ["unknown"]
+                    alt = leg[:-5] + "/USD"
+                    return alt in markets
+                return False
 
-                for reason in reason_list:
-                    skip_counts[reason] = skip_counts.get(reason, 0) + 1
-
-                net_meta = None
-                source_net = None
-                if res and res.get("net_est") is not None:
-                    source_net = res.get("net_est")
-                elif meta and meta.get("net_est") is not None:
-                    source_net = meta.get("net_est")
-                if source_net is not None:
-                    try:
-                        net_meta = float(source_net)
-                    except (TypeError, ValueError):
-                        net_meta = None
-
-                tob_snapshot = {
-                    tri.leg_ab: _top_of_book_for(tri.leg_ab),
-                    tri.leg_bc: _top_of_book_for(tri.leg_bc),
-                    tri.leg_ac: _top_of_book_for(tri.leg_ac),
-                }
-                if meta and isinstance(meta.get("prices"), dict):
-                    prices = meta["prices"]
-                    leg_price_keys = {
-                        tri.leg_ab: ("ab_bid", "ab_ask"),
-                        tri.leg_bc: ("bc_bid", "bc_ask"),
-                        tri.leg_ac: ("ac_bid", "ac_ask"),
-                    }
-                    for leg, (bid_key, ask_key) in leg_price_keys.items():
-                        snapshot = tob_snapshot.get(leg, {})
-                        if not isinstance(snapshot, dict):
-                            continue
-                        bid_val = prices.get(bid_key)
-                        ask_val = prices.get(ask_key)
-                        if bid_val is not None:
-                            snapshot["bid"] = bid_val
-                        if ask_val is not None:
-                            snapshot["ask"] = ask_val
-
-                is_below_threshold = "below_threshold" in reason_list or (
-                    res and res.get("skip_reason") == "below_threshold"
-                )
-                if is_below_threshold:
-                    sim_net_raw = None
-                    sim_pnl_raw = None
-                    if res is not None:
-                        sim_net_raw = res.get("net_est")
-                        sim_pnl_raw = res.get("realized_usdt")
-                    if sim_net_raw is None:
-                        sim_net_raw = net_meta
-                    sim_net = 0.0
-                    sim_pnl = 0.0
-                    try:
-                        if sim_net_raw is not None:
-                            sim_net = float(sim_net_raw)
-                    except (TypeError, ValueError):
-                        sim_net = 0.0
-                    try:
-                        if sim_pnl_raw is not None:
-                            sim_pnl = float(sim_pnl_raw)
-                    except (TypeError, ValueError):
-                        sim_pnl = 0.0
-                    below_threshold_count += 1
-                    below_threshold_total += sim_pnl
-                    below_threshold_recent.append(
-                        {"net": sim_net, "pnl": sim_pnl, "attempt": attempts_total}
-                    )
-                    if len(below_threshold_recent) > 25:
-                        below_threshold_recent.pop(0)
-                    log.info(
-                        "%s attempt#%d %s net=%.3f%% (sim) PnL=%.4f USDT below_threshold",
-                        venue,
-                        attempts_total,
-                        tri,
-                        sim_net * 100.0,
-                        sim_pnl,
-                    )
-                    if res and res.get("fills"):
-                        try:
-                            _persist_simulated_skip(
-                                {
-                                    "ts": datetime.now(timezone.utc).isoformat(),
-                                    "venue": venue,
-                                    "attempt": attempts_total,
-                                    "triangle": {
-                                        "ab": tri.leg_ab,
-                                        "bc": tri.leg_bc,
-                                        "ac": tri.leg_ac,
-                                    },
-                                    "net_est": sim_net,
-                                    "realized_usdt": sim_pnl,
-                                    "fills": res.get("fills"),
-                                }
-                            )
-                        except Exception:
-                            pass
-                try:
-                    if log.isEnabledFor(logging.DEBUG):
-                        stale = "stale_book" in reason_list
-                        tob_log = {
-                            leg: "stale" if stale else tob_snapshot[leg]
-                            for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac)
-                        }
-                        log.debug(
-                            "live@%s skip attempt#%d %s reasons=%s tob=%s net_est=%s",
-                            venue,
-                            attempts_total,
-                            tri,
-                            reason_list,
-                            tob_log,
-                            (
-                                f"{net_meta * 100:.3f}%"
-                                if net_meta is not None
-                                else "n/a"
-                            ),
-                        )
-                except Exception:
-                    pass
-                if (
-                    attempt_notify
-                    and (time.time() - last_attempt_notify_at) > min_interval
-                ):
-                    try:
-                        reason_summary = ",".join(reason_list)[:200]
-                        net_summary = (
-                            f" net={net_meta * 100:.2f}%"
-                            if net_meta is not None
-                            else ""
-                        )
-                        notify_discord(
-                            venue,
-                            (
-                                f"[live@{venue}] attempt#{attempts_total} "
-                                f"SKIP {tri} reasons={reason_summary}{net_summary}"
-                            ),
-                        )
-                    except Exception:
-                        pass
-                    last_attempt_notify_at = time.time()
-                continue
+            for tri in triangles:
+                legs = [tri.leg_ab, tri.leg_bc, tri.leg_ac]
+                miss = [leg for leg in legs if not _supported(leg)]
+                if miss:
+                    missing.append((tri, miss))
+                else:
+                    kept.append(tri)
+            triangles = kept
+        except Exception:
+            pass
+        if not triangles:
+            suggestions: list[list[str]] = []
             try:
-                attempt_id = insert_attempt(
-                    conn,
-                    TriangleAttempt(
-                        ts_iso=datetime.now(timezone.utc).isoformat(),
-                        venue=venue,
-                        leg_ab=tri.leg_ab,
-                        leg_bc=tri.leg_bc,
-                        leg_ac=tri.leg_ac,
-                        ok=True,
-                        net_est=res["net_est"],
-                        realized_usdt=res["realized_usdt"],
-                        threshold_bps=float(
-                            getattr(settings, "net_threshold_bps", 0.0) or 0.0
-                        ),
-                        notional_usd=float(
-                            getattr(settings, "notional_per_trade_usd", 0.0) or 0.0
-                        ),
-                        slippage_bps=float(
-                            getattr(settings, "max_slippage_bps", 0.0) or 0.0
-                        ),
-                        dry_run=bool(getattr(settings, "dry_run", True)),
-                        latency_ms=latency * 1000.0,
-                        skip_reasons=None,
-                        ab_bid=None,
-                        ab_ask=None,
-                        bc_bid=None,
-                        bc_ask=None,
-                        ac_bid=None,
-                        ac_ask=None,
-                        qty_base=(
-                            float(res["fills"][0]["qty"]) if res.get("fills") else None
-                        ),
-                    ),
-                )
+                markets = adapter.load_markets()
+                suggestions = _discover_triangles_from_markets(markets)[:3]
             except Exception:
-                attempt_id = None
-            successes_total += 1
-            try:
-                net_total += float(res.get("net_est", 0.0) or 0.0)
-            except Exception:
-                pass
-            try:
-                PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
-                ORDERS_TOTAL.labels(venue, "ok").inc()
-            except Exception:
-                pass
-            for fill in res.get("fills") or []:
-                try:
-                    insert_fill(
-                        conn,
-                        Fill(
-                            order_id=str(fill.get("id", "")),
-                            symbol=str(fill.get("symbol", "")),
-                            side=str(fill.get("side", "")),
-                            price=float(fill.get("price", 0.0)),
-                            quantity=float(fill.get("qty", 0.0)),
-                            fee=float(fill.get("fee", 0.0)),
-                            timestamp=None,
-                            venue=venue,
-                            leg=str(fill.get("leg") or ""),
-                            tif=str(fill.get("tif") or ""),
-                            order_type=str(fill.get("type") or ""),
-                            fee_rate=(
-                                float(fill.get("fee_rate"))
-                                if fill.get("fee_rate") is not None
-                                else None
-                            ),
-                            notional=float(fill.get("price", 0.0))
-                            * float(fill.get("qty", 0.0)),
-                            dry_run=bool(getattr(settings, "dry_run", True)),
-                            attempt_id=attempt_id,
-                        ),
-                    )
-                    FILLS_TOTAL.labels(venue).inc()
-                except Exception as exc:
-                    log.error("persist fill error: %s", exc)
-            log.info(
-                "%s attempt#%d %s net=%.3f%% (est. profit after fees) PnL=%.2f USDT",
-                venue,
-                attempts_total,
-                tri,
-                res["net_est"] * 100,
-                res["realized_usdt"],
-            )
-            if (time.time() - last_trade_notify_at) > min_interval:
-                try:
-                    qty = (
-                        float(res["fills"][0]["qty"])
-                        if res and res.get("fills")
-                        else None
-                    )
-                    if attempt_notify:
-                        msg = (
-                            f"[live@{venue}] attempt#{attempts_total} OK {tri} "
-                            f"net={res['net_est'] * 100:.2f}% "
-                            f"pnl={res['realized_usdt']:.4f} USDT "
-                        )
-                        if attempt_id is not None:
-                            msg += f"attempt_id={attempt_id} "
-                        msg += f"successes_total={successes_total} "
-                        if qty is not None:
-                            msg += f"qty={qty:.6g} "
-                        msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(adapter)}"
-                        notify_discord(venue, msg)
-                        last_trade_notify_at = time.time()
-                    elif bool(getattr(settings, "discord_trade_notify", False)):
-                        msg = (
-                            f"[{venue}] TRADE attempt#{attempts_total} {tri} "
-                            f"net={res['net_est'] * 100:.2f}% "
-                            f"pnl={res['realized_usdt']:.4f} USDT "
-                        )
-                        if attempt_id is not None:
-                            msg += f"attempt_id={attempt_id} "
-                        msg += f"successes_total={successes_total} "
-                        if qty is not None:
-                            msg += f"qty={qty:.6g} "
-                        msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(adapter)}"
-                        notify_discord(venue, msg)
-                        last_trade_notify_at = time.time()
-                except Exception:
-                    pass
-            hb_interval = float(
-                getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0
-            )
-            if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
-                try:
-                    succ_rate = (
-                        (successes_total / attempts_total * 100.0)
-                        if attempts_total
-                        else 0.0
-                    )
-                    log.info(
-                        (
-                            "live@%s hb: dry_run=%s attempts=%d successes=%d (%.2f%%) "
-                            "last_net=%.2f%% last_pnl=%.4f USDT"
-                        ),
-                        venue,
-                        getattr(settings, "dry_run", True),
-                        attempts_total,
-                        successes_total,
-                        succ_rate,
-                        (res["net_est"] * 100.0 if res else 0.0),
-                        (res["realized_usdt"] if res else 0.0),
-                    )
-                    if skip_counts:
-                        top = sorted(
-                            skip_counts.items(), key=lambda kv: kv[1], reverse=True
-                        )[:3]
-                        log.info(
-                            "live@%s hb: top_skips=%s",
-                            venue,
-                            ", ".join(f"{k}={v}" for k, v in top),
-                        )
-                    if below_threshold_count:
-                        avg_sim = below_threshold_total / max(below_threshold_count, 1)
-                        last_sim = (
-                            below_threshold_recent[-1]
-                            if below_threshold_recent
-                            else None
-                        )
-                        log.info(
-                            "live@%s hb: below_threshold=%d avg_pnl=%.4f USDT last_net=%.2f%%",
-                            venue,
-                            below_threshold_count,
-                            avg_sim,
-                            (last_sim.get("net", 0.0) * 100.0 if last_sim else 0.0),
-                        )
-                except Exception:
-                    pass
+                suggestions = []
+            use_count = int(auto_suggest_top or 0)
+            if use_count > 0 and suggestions:
+                chosen = suggestions[:use_count]
+                triangles = [Triangle(*t) for t in chosen]
                 try:
                     notify_discord(
                         venue,
-                        format_live_heartbeat(
+                        (
+                            f"[live@{venue}] using auto-suggested triangles for session: "
+                            f"{'; '.join('|'.join(t) for t in chosen)} | {_balances_brief(adapter)}"
+                        ),
+                    )
+                except Exception:
+                    pass
+            else:
+                log.error(
+                    (
+                        "live@%s no supported triangles after filtering; missing=%s "
+                        "suggestions=%s"
+                    ),
+                    venue,
+                    (
+                        "; ".join(
+                            f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac} -> missing {','.join(miss)}"
+                            for tri, miss in (missing if "missing" in locals() else [])
+                        )
+                        if "missing" in locals() and missing
+                        else "n/a"
+                    ),
+                    (
+                        "; ".join("|".join(t) for t in suggestions)
+                        if suggestions
+                        else "n/a"
+                    ),
+                )
+                try:
+                    notify_discord(
+                        venue,
+                        (
+                            f"[live@{venue}] no supported triangles; "
+                            f"suggestions={('; '.join('|'.join(t) for t in suggestions)) if suggestions else 'n/a'}"
+                            f" | {_balances_brief(adapter)}"
+                        ),
+                    )
+                except Exception:
+                    pass
+                return
+        if triangles:
+            tri_list = ", ".join(
+                f"{tri.leg_ab}|{tri.leg_bc}|{tri.leg_ac}" for tri in triangles
+            )
+            log.info(
+                "live@%s active triangles=%d -> %s", venue, len(triangles), tri_list
+            )
+            try:
+                notify_discord(
+                    venue,
+                    f"[live@{venue}] active triangles={len(triangles)} -> {tri_list} | {_balances_brief(adapter)}",
+                )
+            except Exception:
+                pass
+        for tri in triangles:
+            try:
+                insert_triangle(conn, tri)
+            except Exception:
+                pass
+        log.info("live@%s dry_run=%s", venue, settings.dry_run)
+        last_hb_at = time.time()
+        last_trade_notify_at = 0.0
+        last_attempt_notify_at = 0.0
+        min_interval = float(
+            getattr(settings, "discord_min_notify_interval_secs", 10.0) or 10.0
+        )
+        attempt_notify = (
+            bool(attempt_notify_override)
+            if attempt_notify_override is not None
+            else bool(getattr(settings, "discord_attempt_notify", False))
+        )
+        start_time = time.time()
+        attempts_total = 0
+        successes_total = 0
+        net_total = 0.0
+        latency_total = 0.0
+        skip_counts: dict[str, int] = {}
+        below_threshold_count = 0
+        below_threshold_total = 0.0
+        below_threshold_recent: list[dict[str, float]] = []
+        below_threshold_log_path = Path("data") / f"below_threshold_{venue}.log"
+
+        def _persist_simulated_skip(record: dict) -> None:
+            try:
+                below_threshold_log_path.parent.mkdir(parents=True, exist_ok=True)
+                with below_threshold_log_path.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(record) + "\n")
+            except Exception:
+                pass
+
+        def _top_of_book_for(symbol: str) -> dict[str, float | None | str]:
+            """Return the best bid/ask for ``symbol`` as floats where possible."""
+
+            try:
+                ob = adapter.fetch_orderbook(symbol, 1) or {}
+            except Exception as exc:  # pragma: no cover - defensive logging aid
+                return {"error": str(exc)}
+
+            def _best(levels) -> float | None:
+                if not levels:
+                    return None
+                level = levels[0]
+                if isinstance(level, (list, tuple)) and level:
+                    try:
+                        return float(level[0])
+                    except (TypeError, ValueError):
+                        return None
+                if isinstance(level, dict):
+                    price = level.get("price")
+                    try:
+                        return float(price) if price is not None else None
+                    except (TypeError, ValueError):
+                        return None
+                return None
+
+            return {
+                "bid": _best(ob.get("bids") or []),
+                "ask": _best(ob.get("asks") or []),
+            }
+
+        try:
+            async for tri, res, reasons, latency, meta in stream_triangles(
+                adapter,
+                triangles,
+                float(getattr(settings, "net_threshold_bps", 0) or 0) / 10000.0,
+            ):
+                CYCLE_LATENCY.labels(venue).observe(latency)
+                attempts_total += 1
+                latency_total += float(latency or 0.0)
+                executed = bool(res and res.get("executed", True))
+                if not executed:
+                    reason_list = list(reasons or [])
+                    if (
+                        res
+                        and res.get("skip_reason")
+                        and res["skip_reason"] not in reason_list
+                    ):
+                        reason_list.append(res["skip_reason"])
+                    if not reason_list:
+                        reason_list = ["unknown"]
+
+                    for reason in reason_list:
+                        skip_counts[reason] = skip_counts.get(reason, 0) + 1
+
+                    net_meta = None
+                    source_net = None
+                    if res and res.get("net_est") is not None:
+                        source_net = res.get("net_est")
+                    elif meta and meta.get("net_est") is not None:
+                        source_net = meta.get("net_est")
+                    if source_net is not None:
+                        try:
+                            net_meta = float(source_net)
+                        except (TypeError, ValueError):
+                            net_meta = None
+
+                    tob_snapshot = {
+                        tri.leg_ab: _top_of_book_for(tri.leg_ab),
+                        tri.leg_bc: _top_of_book_for(tri.leg_bc),
+                        tri.leg_ac: _top_of_book_for(tri.leg_ac),
+                    }
+                    if meta and isinstance(meta.get("prices"), dict):
+                        prices = meta["prices"]
+                        leg_price_keys = {
+                            tri.leg_ab: ("ab_bid", "ab_ask"),
+                            tri.leg_bc: ("bc_bid", "bc_ask"),
+                            tri.leg_ac: ("ac_bid", "ac_ask"),
+                        }
+                        for leg, (bid_key, ask_key) in leg_price_keys.items():
+                            snapshot = tob_snapshot.get(leg, {})
+                            if not isinstance(snapshot, dict):
+                                continue
+                            bid_val = prices.get(bid_key)
+                            ask_val = prices.get(ask_key)
+                            if bid_val is not None:
+                                snapshot["bid"] = bid_val
+                            if ask_val is not None:
+                                snapshot["ask"] = ask_val
+
+                    is_below_threshold = "below_threshold" in reason_list or (
+                        res and res.get("skip_reason") == "below_threshold"
+                    )
+                    if is_below_threshold:
+                        sim_net_raw = None
+                        sim_pnl_raw = None
+                        if res is not None:
+                            sim_net_raw = res.get("net_est")
+                            sim_pnl_raw = res.get("realized_usdt")
+                        if sim_net_raw is None:
+                            sim_net_raw = net_meta
+                        sim_net = 0.0
+                        sim_pnl = 0.0
+                        try:
+                            if sim_net_raw is not None:
+                                sim_net = float(sim_net_raw)
+                        except (TypeError, ValueError):
+                            sim_net = 0.0
+                        try:
+                            if sim_pnl_raw is not None:
+                                sim_pnl = float(sim_pnl_raw)
+                        except (TypeError, ValueError):
+                            sim_pnl = 0.0
+                        below_threshold_count += 1
+                        below_threshold_total += sim_pnl
+                        below_threshold_recent.append(
+                            {"net": sim_net, "pnl": sim_pnl, "attempt": attempts_total}
+                        )
+                        if len(below_threshold_recent) > 25:
+                            below_threshold_recent.pop(0)
+                        log.info(
+                            "%s attempt#%d %s net=%.3f%% (sim) PnL=%.4f USDT below_threshold",
+                            venue,
+                            attempts_total,
+                            tri,
+                            sim_net * 100.0,
+                            sim_pnl,
+                        )
+                        if res and res.get("fills"):
+                            try:
+                                _persist_simulated_skip(
+                                    {
+                                        "ts": datetime.now(timezone.utc).isoformat(),
+                                        "venue": venue,
+                                        "attempt": attempts_total,
+                                        "triangle": {
+                                            "ab": tri.leg_ab,
+                                            "bc": tri.leg_bc,
+                                            "ac": tri.leg_ac,
+                                        },
+                                        "net_est": sim_net,
+                                        "realized_usdt": sim_pnl,
+                                        "fills": res.get("fills"),
+                                    }
+                                )
+                            except Exception:
+                                pass
+                    try:
+                        if log.isEnabledFor(logging.DEBUG):
+                            stale = "stale_book" in reason_list
+                            tob_log = {
+                                leg: "stale" if stale else tob_snapshot[leg]
+                                for leg in (tri.leg_ab, tri.leg_bc, tri.leg_ac)
+                            }
+                            log.debug(
+                                "live@%s skip attempt#%d %s reasons=%s tob=%s net_est=%s",
+                                venue,
+                                attempts_total,
+                                tri,
+                                reason_list,
+                                tob_log,
+                                (
+                                    f"{net_meta * 100:.3f}%"
+                                    if net_meta is not None
+                                    else "n/a"
+                                ),
+                            )
+                    except Exception:
+                        pass
+                    if (
+                        attempt_notify
+                        and (time.time() - last_attempt_notify_at) > min_interval
+                    ):
+                        try:
+                            reason_summary = ",".join(reason_list)[:200]
+                            net_summary = (
+                                f" net={net_meta * 100:.2f}%"
+                                if net_meta is not None
+                                else ""
+                            )
+                            notify_discord(
+                                venue,
+                                (
+                                    f"[live@{venue}] attempt#{attempts_total} "
+                                    f"SKIP {tri} reasons={reason_summary}{net_summary}"
+                                ),
+                            )
+                        except Exception:
+                            pass
+                        last_attempt_notify_at = time.time()
+                    continue
+                try:
+                    attempt_id = insert_attempt(
+                        conn,
+                        TriangleAttempt(
+                            ts_iso=datetime.now(timezone.utc).isoformat(),
+                            venue=venue,
+                            leg_ab=tri.leg_ab,
+                            leg_bc=tri.leg_bc,
+                            leg_ac=tri.leg_ac,
+                            ok=True,
+                            net_est=res["net_est"],
+                            realized_usdt=res["realized_usdt"],
+                            threshold_bps=float(
+                                getattr(settings, "net_threshold_bps", 0.0) or 0.0
+                            ),
+                            notional_usd=float(
+                                getattr(settings, "notional_per_trade_usd", 0.0) or 0.0
+                            ),
+                            slippage_bps=float(
+                                getattr(settings, "max_slippage_bps", 0.0) or 0.0
+                            ),
+                            dry_run=bool(getattr(settings, "dry_run", True)),
+                            latency_ms=latency * 1000.0,
+                            skip_reasons=None,
+                            ab_bid=None,
+                            ab_ask=None,
+                            bc_bid=None,
+                            bc_ask=None,
+                            ac_bid=None,
+                            ac_ask=None,
+                            qty_base=(
+                                float(res["fills"][0]["qty"])
+                                if res.get("fills")
+                                else None
+                            ),
+                        ),
+                    )
+                except Exception:
+                    attempt_id = None
+                successes_total += 1
+                try:
+                    net_total += float(res.get("net_est", 0.0) or 0.0)
+                except Exception:
+                    pass
+                try:
+                    PROFIT_TOTAL.labels(venue).set(res["realized_usdt"])
+                    ORDERS_TOTAL.labels(venue, "ok").inc()
+                except Exception:
+                    pass
+                for fill in res.get("fills") or []:
+                    try:
+                        insert_fill(
+                            conn,
+                            Fill(
+                                order_id=str(fill.get("id", "")),
+                                symbol=str(fill.get("symbol", "")),
+                                side=str(fill.get("side", "")),
+                                price=float(fill.get("price", 0.0)),
+                                quantity=float(fill.get("qty", 0.0)),
+                                fee=float(fill.get("fee", 0.0)),
+                                timestamp=None,
+                                venue=venue,
+                                leg=str(fill.get("leg") or ""),
+                                tif=str(fill.get("tif") or ""),
+                                order_type=str(fill.get("type") or ""),
+                                fee_rate=(
+                                    float(fill.get("fee_rate"))
+                                    if fill.get("fee_rate") is not None
+                                    else None
+                                ),
+                                notional=float(fill.get("price", 0.0))
+                                * float(fill.get("qty", 0.0)),
+                                dry_run=bool(getattr(settings, "dry_run", True)),
+                                attempt_id=attempt_id,
+                            ),
+                        )
+                        FILLS_TOTAL.labels(venue).inc()
+                    except Exception as exc:
+                        log.error("persist fill error: %s", exc)
+                log.info(
+                    "%s attempt#%d %s net=%.3f%% (est. profit after fees) PnL=%.2f USDT",
+                    venue,
+                    attempts_total,
+                    tri,
+                    res["net_est"] * 100,
+                    res["realized_usdt"],
+                )
+                if (time.time() - last_trade_notify_at) > min_interval:
+                    try:
+                        qty = (
+                            float(res["fills"][0]["qty"])
+                            if res and res.get("fills")
+                            else None
+                        )
+                        if attempt_notify:
+                            msg = (
+                                f"[live@{venue}] attempt#{attempts_total} OK {tri} "
+                                f"net={res['net_est'] * 100:.2f}% "
+                                f"pnl={res['realized_usdt']:.4f} USDT "
+                            )
+                            if attempt_id is not None:
+                                msg += f"attempt_id={attempt_id} "
+                            msg += f"successes_total={successes_total} "
+                            if qty is not None:
+                                msg += f"qty={qty:.6g} "
+                            msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(adapter)}"
+                            notify_discord(venue, msg)
+                            last_trade_notify_at = time.time()
+                        elif bool(getattr(settings, "discord_trade_notify", False)):
+                            msg = (
+                                f"[{venue}] TRADE attempt#{attempts_total} {tri} "
+                                f"net={res['net_est'] * 100:.2f}% "
+                                f"pnl={res['realized_usdt']:.4f} USDT "
+                            )
+                            if attempt_id is not None:
+                                msg += f"attempt_id={attempt_id} "
+                            msg += f"successes_total={successes_total} "
+                            if qty is not None:
+                                msg += f"qty={qty:.6g} "
+                            msg += f"slip_bps={getattr(settings, 'max_slippage_bps', 0)} | {_balances_brief(adapter)}"
+                            notify_discord(venue, msg)
+                            last_trade_notify_at = time.time()
+                    except Exception:
+                        pass
+                hb_interval = float(
+                    getattr(settings, "discord_heartbeat_secs", 60.0) or 60.0
+                )
+                if hb_interval > 0 and time.time() - last_hb_at > hb_interval:
+                    try:
+                        succ_rate = (
+                            (successes_total / attempts_total * 100.0)
+                            if attempts_total
+                            else 0.0
+                        )
+                        log.info(
+                            (
+                                "live@%s hb: dry_run=%s attempts=%d successes=%d (%.2f%%) "
+                                "last_net=%.2f%% last_pnl=%.4f USDT"
+                            ),
                             venue,
                             getattr(settings, "dry_run", True),
                             attempts_total,
                             successes_total,
-                            res["net_est"] if res else 0.0,
-                            res["realized_usdt"] if res else 0.0,
-                            net_total,
-                            latency_total,
-                            start_time,
-                        ),
-                    )
-                except Exception:
-                    pass
-                last_hb_at = time.time()
-    except Exception:
-        pass
-
-    if conn is not None:
-        try:
-            conn.close()
+                            succ_rate,
+                            (res["net_est"] * 100.0 if res else 0.0),
+                            (res["realized_usdt"] if res else 0.0),
+                        )
+                        if skip_counts:
+                            top = sorted(
+                                skip_counts.items(), key=lambda kv: kv[1], reverse=True
+                            )[:3]
+                            log.info(
+                                "live@%s hb: top_skips=%s",
+                                venue,
+                                ", ".join(f"{k}={v}" for k, v in top),
+                            )
+                        if below_threshold_count:
+                            avg_sim = below_threshold_total / max(
+                                below_threshold_count, 1
+                            )
+                            last_sim = (
+                                below_threshold_recent[-1]
+                                if below_threshold_recent
+                                else None
+                            )
+                            log.info(
+                                "live@%s hb: below_threshold=%d avg_pnl=%.4f USDT last_net=%.2f%%",
+                                venue,
+                                below_threshold_count,
+                                avg_sim,
+                                (last_sim.get("net", 0.0) * 100.0 if last_sim else 0.0),
+                            )
+                    except Exception:
+                        pass
+                    try:
+                        notify_discord(
+                            venue,
+                            format_live_heartbeat(
+                                venue,
+                                getattr(settings, "dry_run", True),
+                                attempts_total,
+                                successes_total,
+                                res["net_est"] if res else 0.0,
+                                res["realized_usdt"] if res else 0.0,
+                                net_total,
+                                latency_total,
+                                start_time,
+                            ),
+                        )
+                    except Exception:
+                        pass
+                    last_hb_at = time.time()
         except Exception:
             pass
+
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        close_attr = getattr(adapter, "close", None)
+        if close_attr is not None:
+            try:
+                result = close_attr() if callable(close_attr) else close_attr
+            except Exception:
+                pass
+            else:
+                if asyncio.iscoroutine(result) or inspect.isawaitable(result):
+                    try:
+                        await result
+                    except Exception:
+                        pass
 
 
 __all__ = [
