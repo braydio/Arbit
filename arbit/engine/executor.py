@@ -430,16 +430,45 @@ async def stream_triangles(
 ]:
     """Yield arbitrage attempts driven by streaming order book updates.
 
-    This helper maintains an internal cache of the latest order book for each
-    symbol referenced by ``tris``.  Whenever all three legs of a triangle have
-    fresh data an attempt is made via :func:`try_triangle`.  The function yields
-    tuples of ``(triangle, result, skip_reasons, latency, skip_meta)`` where
-    ``result`` is the return value from :func:`try_triangle` and ``skip_meta``
-    captures any metadata recorded during skip paths (for example estimated net
-    edge and pricing context).
+    Triangles are grouped by their constituent symbols so that each update only
+    re-evaluates the triangles affected by that symbol.  This keeps per-update
+    work bounded even when many triangles are configured, addressing the
+    roadmap's push toward multi-symbol rotation without incurring quadratic
+    growth in CPU usage.
+
+    Parameters
+    ----------
+    adapter:
+        Exchange adapter providing :meth:`orderbook_stream`.
+    tris:
+        Iterable of :class:`~arbit.models.Triangle` definitions to monitor.
+    threshold:
+        Minimum net edge required to consider execution.
+    depth:
+        Book depth passed to :meth:`orderbook_stream`.
+
+    Yields
+    ------
+    tuple
+        Tuples of ``(triangle, result, skip_reasons, latency, skip_meta)`` where
+        ``result`` mirrors the return value of :func:`try_triangle` and
+        ``skip_meta`` includes any diagnostic metadata captured during skip
+        paths.
     """
 
-    syms = {s for t in tris for s in (t.leg_ab, t.leg_bc, t.leg_ac)}
+    tri_list = tuple(tris)
+    if not tri_list:
+        return
+
+    legs_by_tri: dict[Triangle, tuple[str, str, str]] = {
+        tri: (tri.leg_ab, tri.leg_bc, tri.leg_ac) for tri in tri_list
+    }
+    symbol_to_tris: dict[str, list[Triangle]] = {}
+    for tri, legs in legs_by_tri.items():
+        for leg in legs:
+            symbol_to_tris.setdefault(leg, []).append(tri)
+
+    syms = set(symbol_to_tris)
     books: dict[str, dict] = {}
     seen_at: dict[str, float] = {}
     last_refreshed: dict[str, float] = {}
@@ -449,8 +478,11 @@ async def stream_triangles(
     async for sym, ob in adapter.orderbook_stream(syms, depth):
         books[sym] = ob
         seen_at[sym] = time.time()
-        for tri in tris:
-            legs = (tri.leg_ab, tri.leg_bc, tri.leg_ac)
+        relevant_tris = symbol_to_tris.get(sym)
+        if relevant_tris is None:
+            relevant_tris = tri_list
+        for tri in relevant_tris:
+            legs = legs_by_tri[tri]
             if all(b in books for b in legs):
                 # Staleness guard across the three legs with optional refresh
                 now = time.time()

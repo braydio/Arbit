@@ -482,3 +482,37 @@ def test_stream_triangles(monkeypatch) -> None:
         assert isinstance(out[4], dict)
 
     asyncio.run(run())
+
+
+def test_stream_triangles_skips_unrelated_triangles(monkeypatch) -> None:
+    """Only triangles containing the updated symbol should be re-evaluated."""
+
+    tri_one = Triangle("A/B", "B/C", "A/C")
+    tri_two = Triangle("D/E", "E/F", "D/F")
+    updates = [
+        ("A/B", {"bids": [[1, 1]], "asks": [[1, 1]]}),
+        ("B/C", {"bids": [[1, 1]], "asks": [[1, 1]]}),
+        ("A/C", {"bids": [[1, 1]], "asks": [[1, 1]]}),
+        ("D/E", {"bids": [[2, 2]], "asks": [[2, 2]]}),
+        ("E/F", {"bids": [[2, 2]], "asks": [[2, 2]]}),
+        ("D/F", {"bids": [[2, 2]], "asks": [[2, 2]]}),
+        ("A/B", {"bids": [[1, 1]], "asks": [[1, 1]]}),
+    ]
+
+    adapter = DummyAdapter(updates)
+    call_order: list[Triangle] = []
+
+    def fake_try(adapter, tri, books, threshold, skip_reasons, skip_meta=None):
+        call_order.append(tri)
+        return {"tri": tri, "net_est": 0.0, "fills": [], "realized_usdt": 0.0}
+
+    monkeypatch.setattr(executor, "try_triangle", fake_try)
+
+    async def run() -> None:
+        gen = executor.stream_triangles(adapter, [tri_one, tri_two], 0.0, depth=1)
+        # Consume the three expected attempts (tri_one, tri_two, tri_one)
+        for _ in range(3):
+            await anext(gen)
+
+    asyncio.run(run())
+    assert call_order == [tri_one, tri_two, tri_one]
