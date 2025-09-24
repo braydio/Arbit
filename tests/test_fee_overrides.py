@@ -2,12 +2,13 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from arbit.adapters.ccxt_adapter import CCXTAdapter
-from arbit.config import settings
 
 
-def test_kraken_fee_override(monkeypatch):
-    """Custom BPS overrides should replace ccxt-derived maker/taker fees."""
+def test_kraken_fees_use_market_rates():
+    """Kraken fees should come directly from ccxt market metadata."""
 
     adapter = object.__new__(CCXTAdapter)
     adapter._fee = {}
@@ -21,15 +22,12 @@ def test_kraken_fee_override(monkeypatch):
         market=market,
     )
 
-    monkeypatch.setattr(settings, "kraken_maker_fee_bps", 0.0)
-    monkeypatch.setattr(settings, "kraken_taker_fee_bps", 0.0)
-
     maker, taker = CCXTAdapter.fetch_fees(adapter, "ETH/USDT")
 
-    assert maker == 0.0
-    assert taker == 0.0
+    assert maker == pytest.approx(0.0015)
+    assert taker == pytest.approx(0.0026)
 
-    # Cached path should still honor overrides
+    # Cached path should still return the same market-derived fees.
     maker_cached, taker_cached = CCXTAdapter.fetch_fees(adapter, "ETH/USDT")
-    assert maker_cached == 0.0
-    assert taker_cached == 0.0
+    assert maker_cached == pytest.approx(0.0015)
+    assert taker_cached == pytest.approx(0.0026)

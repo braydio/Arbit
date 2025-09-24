@@ -181,8 +181,6 @@ class Settings(BaseSettings):
 
     kraken_api_key: str | None = None
     kraken_api_secret: str | None = None
-    kraken_maker_fee_bps: float | None = None
-    kraken_taker_fee_bps: float | None = None
 
     # Legacy fallback (ARBIT_* → use for both if set)
     arbit_api_key: str | None = None
@@ -311,8 +309,6 @@ class Settings(BaseSettings):
             "notional_per_trade_usd",
             "net_threshold_bps",
             "max_slippage_bps",
-            "kraken_maker_fee_bps",
-            "kraken_taker_fee_bps",
         ):
             _coerce_float(f)
         for f in ("reserve_amount_usd", "reserve_percent"):
