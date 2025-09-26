@@ -45,9 +45,7 @@ def test_yield_collect_dry_run_persists_op(monkeypatch, tmp_path):
 
     events = []
 
-    def _capture_notify(
-        venue, message, url=None, *, severity=None, extra=None
-    ):  # noqa: D401 - simple collector
+    def _capture_notify(venue, message, url=None, *, severity=None, extra=None):  # noqa: D401 - simple collector
         events.append(
             {
                 "venue": venue,
@@ -101,9 +99,7 @@ def test_yield_withdraw_all_excess_dry_run_persists(monkeypatch, tmp_path):
 
     events = []
 
-    def _capture_notify(
-        venue, message, url=None, *, severity=None, extra=None
-    ):  # noqa: D401 - simple collector
+    def _capture_notify(venue, message, url=None, *, severity=None, extra=None):  # noqa: D401 - simple collector
         events.append(
             {
                 "venue": venue,
