@@ -26,6 +26,175 @@ from ..core import app, log
 from ..utils import AaveProvider
 
 
+def _raw_to_usd(raw: int | None) -> float | None:
+    """Return USD-denominated float for six-decimal stablecoin *raw* units.
+
+    Parameters
+    ----------
+    raw:
+        Balance expressed in raw integer units (e.g., 6-decimal USDC) or
+        ``None`` when unavailable.
+
+    Returns
+    -------
+    float | None
+        Balance converted to USD and rounded to six decimal places, or
+        ``None`` when the input is ``None``.
+    """
+
+    if raw is None:
+        return None
+    return round(int(raw) / 1_000_000.0, 6)
+
+
+def _round_optional(value: float | None) -> float | None:
+    """Return *value* rounded to six decimals when not ``None``."""
+
+    if value is None:
+        return None
+    return round(float(value), 6)
+
+
+def _yield_status(
+    *,
+    action: str,
+    asset: str,
+    mode: str,
+    stage: str,
+    wallet_raw_before: int,
+    wallet_raw_after: int | None = None,
+    deposit_raw_before: int | None = None,
+    deposit_raw_after: int | None = None,
+    action_amount_raw: int | None = None,
+    reserve_target_usd: float | None = None,
+    reserve_abs_usd: float | None = None,
+    reserve_percent: float | None = None,
+    available_usd: float | None = None,
+    wallet_deficit_usd: float | None = None,
+    min_stake_raw: int | None = None,
+    result: str | None = None,
+    reason: str | None = None,
+    error: str | None = None,
+) -> dict[str, object]:
+    """Return structured status context for yield commands.
+
+    Parameters
+    ----------
+    action:
+        Either ``"deposit"`` or ``"withdraw"`` describing the command.
+    asset:
+        Asset ticker associated with the command (e.g., ``"USDC"``).
+    mode:
+        Execution mode string such as ``"dry_run"`` or ``"live"``.
+    stage:
+        High-level phase identifier (``"plan"``, ``"completed"``,
+        ``"skipped"``).
+    wallet_raw_before:
+        Wallet balance prior to any mutation in raw integer units.
+    wallet_raw_after:
+        Wallet balance after the action completes when available.
+    deposit_raw_before:
+        Interest-bearing token balance before the action.
+    deposit_raw_after:
+        Interest-bearing token balance after the action when available.
+    action_amount_raw:
+        Raw integer amount requested for the action.
+    reserve_target_usd:
+        Reserve target in USD.
+    reserve_abs_usd:
+        Absolute reserve component in USD, if configured.
+    reserve_percent:
+        Reserve percentage component expressed as a percentage.
+    available_usd:
+        Amount of capital available for action (positive for deposits).
+    wallet_deficit_usd:
+        Deficit required to reach the configured reserve for withdrawals.
+    min_stake_raw:
+        Minimum stake requirement in raw integer units, when relevant.
+    result:
+        Outcome indicator such as ``"success"``, ``"simulated"``, or
+        ``"error"``.
+    reason:
+        Optional textual reason for skipped actions or validation failures.
+    error:
+        Optional error string when an exception is raised.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serialisable mapping capturing the supplied context.
+    """
+
+    status: dict[str, object] = {
+        "action": action,
+        "asset": asset,
+        "mode": mode,
+        "stage": stage,
+        "wallet_usd_before": _raw_to_usd(wallet_raw_before),
+    }
+    if result is not None:
+        status["result"] = result
+    if reason is not None:
+        status["reason"] = reason
+    if error is not None:
+        status["error"] = error
+    if wallet_raw_after is not None:
+        status["wallet_usd_after"] = _raw_to_usd(wallet_raw_after)
+    if deposit_raw_before is not None:
+        status["deposit_usd_before"] = _raw_to_usd(deposit_raw_before)
+    if deposit_raw_after is not None:
+        status["deposit_usd_after"] = _raw_to_usd(deposit_raw_after)
+    if action_amount_raw is not None:
+        status["action_amount_usd"] = _raw_to_usd(action_amount_raw)
+    if min_stake_raw is not None:
+        status["min_stake_usd"] = _raw_to_usd(min_stake_raw)
+    if available_usd is not None:
+        status["available_usd"] = _round_optional(available_usd)
+    if wallet_deficit_usd is not None:
+        status["wallet_deficit_usd"] = _round_optional(wallet_deficit_usd)
+    if (
+        reserve_target_usd is not None
+        or reserve_abs_usd is not None
+        or reserve_percent is not None
+    ):
+        if reserve_target_usd is not None:
+            status["reserve_target_usd"] = _round_optional(reserve_target_usd)
+        breakdown: dict[str, float] = {}
+        if reserve_abs_usd is not None:
+            breakdown["absolute_usd"] = float(_round_optional(reserve_abs_usd))
+        if reserve_percent is not None:
+            breakdown["percent"] = float(_round_optional(reserve_percent))
+        if breakdown:
+            status["reserve_breakdown"] = breakdown
+    return status
+
+
+def _emit_status(event: str, context: dict[str, object]) -> None:
+    """Emit *context* as a structured log entry for *event*.
+
+    Parameters
+    ----------
+    event:
+        Label describing the status event (e.g., ``"yield:collect"``).
+    context:
+        Mapping of contextual fields captured via :func:`_yield_status`.
+    """
+
+    try:
+        payload = json.dumps(context, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        payload = str(context)
+    log.info("%s | %s", event, payload)
+
+
+def _fmt_usd_optional(amount: float | None) -> str:
+    """Return :func:`fmt_usd` formatting for optional *amount* values."""
+
+    if amount is None:
+        return "-"
+    return fmt_usd(float(amount))
+
+
 @app.command("yield:collect")
 @app.command("yield_collect")
 def yield_collect(
@@ -34,7 +203,12 @@ def yield_collect(
     reserve_usd: float | None = None,
     help_verbose: bool = False,
 ) -> None:
-    """Deposit idle stablecoin into Aave v3 (beta, USDC only)."""
+    """Deposit idle stablecoin into Aave v3 (beta, USDC only).
+
+    The command emits structured status updates describing reserve
+    configuration, available capital, and post-action balances to both the
+    application log and configured notification channels.
+    """
 
     if help_verbose:
         app.print_verbose_help_for("yield:collect")
@@ -66,9 +240,10 @@ def yield_collect(
     )
     reserve_pct_cfg = getattr(settings, "reserve_percent", 0.0)
     try:
-        reserve_pct = float(reserve_pct_cfg) / 100.0
+        reserve_pct_value = float(reserve_pct_cfg)
     except Exception:
-        reserve_pct = 0.0
+        reserve_pct_value = 0.0
+    reserve_pct = reserve_pct_value / 100.0
     reserve_pct_amt = bal_usd * reserve_pct if reserve_pct > 0 else 0.0
     reserve_final = max(reserve_abs, reserve_pct_amt)
 
@@ -80,20 +255,79 @@ def yield_collect(
         else int(getattr(settings, "min_usdc_stake", 1_000_000))
     )
 
+    mode = "dry_run" if bool(getattr(settings, "dry_run", True)) else "live"
+    plan_context = _yield_status(
+        action="deposit",
+        asset=asset_clean,
+        mode=mode,
+        stage="plan",
+        wallet_raw_before=bal_raw,
+        deposit_raw_before=atoken_before,
+        action_amount_raw=amount_raw,
+        reserve_target_usd=reserve_final,
+        reserve_abs_usd=reserve_abs,
+        reserve_percent=reserve_pct_value,
+        available_usd=available_usd,
+        min_stake_raw=min_units,
+    )
+    _emit_status("yield:collect", plan_context)
+
     if amount_raw < min_units:
+        skip_context = _yield_status(
+            action="deposit",
+            asset=asset_clean,
+            mode=mode,
+            stage="skipped",
+            wallet_raw_before=bal_raw,
+            deposit_raw_before=atoken_before,
+            action_amount_raw=amount_raw,
+            reserve_target_usd=reserve_final,
+            reserve_abs_usd=reserve_abs,
+            reserve_percent=reserve_pct_value,
+            available_usd=available_usd,
+            min_stake_raw=min_units,
+            result="below_minimum",
+            reason="available_below_min_stake",
+        )
+        _emit_status("yield:collect", skip_context)
         log.info(
-            "nothing to do: balance=%.2f USDC reserve=%.2f min_stake=%.2f",
-            bal_usd,
-            reserve_final,
-            min_units / 1_000_000.0,
+            "yield:collect skip | available=%s < min_stake=%s (reserve_target=%s, wallet=%s)",
+            _fmt_usd_optional(skip_context.get("available_usd")),
+            _fmt_usd_optional(skip_context.get("min_stake_usd")),
+            _fmt_usd_optional(skip_context.get("reserve_target_usd")),
+            _fmt_usd_optional(plan_context.get("wallet_usd_before")),
         )
         return
 
-    if bool(getattr(settings, "dry_run", True)):
+    if mode == "dry_run":
+        wallet_after_raw = bal_raw
+        atoken_after_raw = atoken_before
+        status = _yield_status(
+            action="deposit",
+            asset=asset_clean,
+            mode=mode,
+            stage="completed",
+            wallet_raw_before=bal_raw,
+            wallet_raw_after=wallet_after_raw,
+            deposit_raw_before=atoken_before,
+            deposit_raw_after=atoken_after_raw,
+            action_amount_raw=amount_raw,
+            reserve_target_usd=reserve_final,
+            reserve_abs_usd=reserve_abs,
+            reserve_percent=reserve_pct_value,
+            available_usd=available_usd,
+            min_stake_raw=min_units,
+            result="simulated",
+        )
+        _emit_status("yield:collect", status)
         log.info(
-            "[dry-run] would deposit %.2f USDC to Aave (reserve=%.2f)",
-            amount_raw / 1_000_000.0,
-            reserve_final,
+            "[dry-run] would deposit %s to Aave | wallet %s -> %s | deposits %s -> %s | reserve target=%s",
+            _fmt_usd_optional(status.get("action_amount_usd")),
+            _fmt_usd_optional(status.get("wallet_usd_before")),
+            _fmt_usd_optional(status.get("wallet_usd_after")),
+            _fmt_usd_optional(status.get("deposit_usd_before")),
+            _fmt_usd_optional(status.get("deposit_usd_after")),
+            _fmt_usd_optional(status.get("reserve_target_usd")),
         )
         try:
             YIELD_DEPOSITS_TOTAL.labels("aave", "dry_run").inc()
@@ -112,8 +346,8 @@ def yield_collect(
                     error=None,
                     wallet_raw_before=bal_raw,
                     atoken_raw_before=atoken_before,
-                    wallet_raw_after=bal_raw,
-                    atoken_raw_after=atoken_before,
+                    wallet_raw_after=wallet_after_raw,
+                    atoken_raw_after=atoken_after_raw,
                     tx_hash=None,
                 )
         except Exception:
@@ -123,8 +357,12 @@ def yield_collect(
                 "yield",
                 (
                     "[yield] DRY-RUN deposit "
-                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC to Aave | reserve {fmt_usd(reserve_final)} USDC"
+                    f"{_fmt_usd_optional(status.get('action_amount_usd'))} USDC to Aave | "
+                    f"wallet {_fmt_usd_optional(status.get('wallet_usd_before'))} -> {_fmt_usd_optional(status.get('wallet_usd_after'))} | "
+                    f"aToken {_fmt_usd_optional(status.get('deposit_usd_before'))} -> {_fmt_usd_optional(status.get('deposit_usd_after'))} | "
+                    f"reserve target {_fmt_usd_optional(status.get('reserve_target_usd'))}"
                 ),
+                extra=status,
             )
         except Exception:
             pass
@@ -132,10 +370,34 @@ def yield_collect(
 
     try:
         provider.deposit_raw(amount_raw)
+        wallet_after_raw = int(provider.get_wallet_balance_raw())
+        atoken_after_raw = int(provider.get_deposit_balance_raw())
+        status = _yield_status(
+            action="deposit",
+            asset=asset_clean,
+            mode=mode,
+            stage="completed",
+            wallet_raw_before=bal_raw,
+            wallet_raw_after=wallet_after_raw,
+            deposit_raw_before=atoken_before,
+            deposit_raw_after=atoken_after_raw,
+            action_amount_raw=amount_raw,
+            reserve_target_usd=reserve_final,
+            reserve_abs_usd=reserve_abs,
+            reserve_percent=reserve_pct_value,
+            available_usd=available_usd,
+            min_stake_raw=min_units,
+            result="success",
+        )
+        _emit_status("yield:collect", status)
         log.info(
-            "deposited %.2f USDC to Aave (kept reserve=%.2f)",
-            amount_raw / 1_000_000.0,
-            reserve_final,
+            "deposited %s to Aave | wallet %s -> %s | deposits %s -> %s | reserve target=%s",
+            _fmt_usd_optional(status.get("action_amount_usd")),
+            _fmt_usd_optional(status.get("wallet_usd_before")),
+            _fmt_usd_optional(status.get("wallet_usd_after")),
+            _fmt_usd_optional(status.get("deposit_usd_before")),
+            _fmt_usd_optional(status.get("deposit_usd_after")),
+            _fmt_usd_optional(status.get("reserve_target_usd")),
         )
         try:
             YIELD_DEPOSITS_TOTAL.labels("aave", "live").inc()
@@ -154,8 +416,8 @@ def yield_collect(
                     error=None,
                     wallet_raw_before=bal_raw,
                     atoken_raw_before=atoken_before,
-                    wallet_raw_after=int(provider.get_wallet_balance_raw()),
-                    atoken_raw_after=int(provider.get_deposit_balance_raw()),
+                    wallet_raw_after=wallet_after_raw,
+                    atoken_raw_after=atoken_after_raw,
                     tx_hash=None,
                 )
         except Exception:
@@ -165,13 +427,34 @@ def yield_collect(
                 "yield",
                 (
                     "[yield] deposited "
-                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC to Aave | reserve {fmt_usd(reserve_final)} USDC"
+                    f"{_fmt_usd_optional(status.get('action_amount_usd'))} USDC to Aave | "
+                    f"wallet {_fmt_usd_optional(status.get('wallet_usd_before'))} -> {_fmt_usd_optional(status.get('wallet_usd_after'))} | "
+                    f"aToken {_fmt_usd_optional(status.get('deposit_usd_before'))} -> {_fmt_usd_optional(status.get('deposit_usd_after'))} | "
+                    f"reserve target {_fmt_usd_optional(status.get('reserve_target_usd'))}"
                 ),
+                extra=status,
             )
         except Exception:
             pass
     except Exception as exc:  # pragma: no cover - depends on chain state
         log.error("yield:collect deposit error: %s", exc)
+        error_context = _yield_status(
+            action="deposit",
+            asset=asset_clean,
+            mode=mode,
+            stage="completed",
+            wallet_raw_before=bal_raw,
+            deposit_raw_before=atoken_before,
+            action_amount_raw=amount_raw,
+            reserve_target_usd=reserve_final,
+            reserve_abs_usd=reserve_abs,
+            reserve_percent=reserve_pct_value,
+            available_usd=available_usd,
+            min_stake_raw=min_units,
+            result="error",
+            error=str(exc),
+        )
+        _emit_status("yield:collect", error_context)
         try:
             YIELD_ERRORS_TOTAL.labels("deposit").inc()
         except Exception:
@@ -195,6 +478,15 @@ def yield_collect(
                 )
         except Exception:
             pass
+        try:
+            notify_discord(
+                "yield",
+                f"[yield] deposit error: {exc}",
+                severity="error",
+                extra=error_context,
+            )
+        except Exception:
+            pass
 
 
 @app.command("yield:withdraw")
@@ -206,7 +498,12 @@ def yield_withdraw(
     reserve_usd: float | None = None,
     help_verbose: bool = False,
 ) -> None:
-    """Withdraw USDC from Aave v3 Pool back into the wallet."""
+    """Withdraw USDC from Aave v3 Pool back into the wallet.
+
+    Structured status updates mirror the planning and results of the withdrawal
+    so users can track wallet balances, reserve targets, and executed amounts
+    across log output and Discord notifications.
+    """
 
     if help_verbose:
         app.print_verbose_help_for("yield:withdraw")
@@ -230,9 +527,10 @@ def yield_withdraw(
     )
     reserve_pct_cfg = getattr(settings, "reserve_percent", 0.0)
     try:
-        reserve_pct = float(reserve_pct_cfg) / 100.0
+        reserve_pct_value = float(reserve_pct_cfg)
     except Exception:
-        reserve_pct = 0.0
+        reserve_pct_value = 0.0
+    reserve_pct = reserve_pct_value / 100.0
 
     try:
         conn = init_db(settings.sqlite_path)
@@ -240,17 +538,48 @@ def yield_withdraw(
         conn = None
     bal_raw = int(provider.get_wallet_balance_raw())
     bal_usd = bal_raw / 1_000_000.0
+    atoken_before = int(provider.get_deposit_balance_raw())
     reserve_pct_amt = bal_usd * reserve_pct if reserve_pct > 0 else 0.0
     reserve_final = max(reserve_abs, reserve_pct_amt)
 
+    mode = "dry_run" if bool(getattr(settings, "dry_run", True)) else "live"
+
     if amount_usd is None and not all_excess:
+        error_context = _yield_status(
+            action="withdraw",
+            asset=asset_clean,
+            mode=mode,
+            stage="skipped",
+            wallet_raw_before=bal_raw,
+            deposit_raw_before=atoken_before,
+            reserve_target_usd=reserve_final,
+            reserve_abs_usd=reserve_abs,
+            reserve_percent=reserve_pct_value,
+            wallet_deficit_usd=max(reserve_final - bal_usd, 0.0),
+            result="invalid_arguments",
+            reason="missing_amount",
+        )
+        _emit_status("yield:withdraw", error_context)
         log.error("Specify --amount-usd or --all-excess")
         return
 
     if all_excess:
-        atoken_raw = provider.get_deposit_balance_raw()
-        atoken_usd = atoken_raw / 1_000_000.0
         if bal_usd >= reserve_final:
+            skip_context = _yield_status(
+                action="withdraw",
+                asset=asset_clean,
+                mode=mode,
+                stage="skipped",
+                wallet_raw_before=bal_raw,
+                deposit_raw_before=atoken_before,
+                reserve_target_usd=reserve_final,
+                reserve_abs_usd=reserve_abs,
+                reserve_percent=reserve_pct_value,
+                wallet_deficit_usd=0.0,
+                result="reserve_satisfied",
+                reason="wallet_above_reserve",
+            )
+            _emit_status("yield:withdraw", skip_context)
             log.info(
                 "nothing to do: wallet >= reserve (%.2f >= %.2f)",
                 bal_usd,
@@ -258,19 +587,76 @@ def yield_withdraw(
             )
             return
         target = reserve_final - bal_usd
-        if atoken_raw > 0:
+        atoken_usd = atoken_before / 1_000_000.0
+        if atoken_before > 0:
             amount_usd = min(target, atoken_usd)
         else:
             amount_usd = target
 
     amount_raw = int(max(float(amount_usd or 0.0), 0.0) * 1_000_000)
+    plan_context = _yield_status(
+        action="withdraw",
+        asset=asset_clean,
+        mode=mode,
+        stage="plan",
+        wallet_raw_before=bal_raw,
+        deposit_raw_before=atoken_before,
+        action_amount_raw=amount_raw,
+        reserve_target_usd=reserve_final,
+        reserve_abs_usd=reserve_abs,
+        reserve_percent=reserve_pct_value,
+        wallet_deficit_usd=max(reserve_final - bal_usd, 0.0),
+    )
+    _emit_status("yield:withdraw", plan_context)
+
     if amount_raw <= 0:
+        skip_context = _yield_status(
+            action="withdraw",
+            asset=asset_clean,
+            mode=mode,
+            stage="skipped",
+            wallet_raw_before=bal_raw,
+            deposit_raw_before=atoken_before,
+            action_amount_raw=amount_raw,
+            reserve_target_usd=reserve_final,
+            reserve_abs_usd=reserve_abs,
+            reserve_percent=reserve_pct_value,
+            wallet_deficit_usd=max(reserve_final - bal_usd, 0.0),
+            result="invalid_amount",
+            reason="non_positive_amount",
+        )
+        _emit_status("yield:withdraw", skip_context)
         log.error("withdraw amount must be positive")
         return
 
-    if bool(getattr(settings, "dry_run", True)):
+    if mode == "dry_run":
+        wallet_after_raw = bal_raw
+        atoken_after_raw = atoken_before
+        status = _yield_status(
+            action="withdraw",
+            asset=asset_clean,
+            mode=mode,
+            stage="completed",
+            wallet_raw_before=bal_raw,
+            wallet_raw_after=wallet_after_raw,
+            deposit_raw_before=atoken_before,
+            deposit_raw_after=atoken_after_raw,
+            action_amount_raw=amount_raw,
+            reserve_target_usd=reserve_final,
+            reserve_abs_usd=reserve_abs,
+            reserve_percent=reserve_pct_value,
+            wallet_deficit_usd=max(reserve_final - bal_usd, 0.0),
+            result="simulated",
+        )
+        _emit_status("yield:withdraw", status)
         log.info(
-            "[dry-run] would withdraw %.2f USDC from Aave", amount_raw / 1_000_000.0
+            "[dry-run] would withdraw %s from Aave | wallet %s -> %s | deposits %s -> %s | reserve target=%s",
+            _fmt_usd_optional(status.get("action_amount_usd")),
+            _fmt_usd_optional(status.get("wallet_usd_before")),
+            _fmt_usd_optional(status.get("wallet_usd_after")),
+            _fmt_usd_optional(status.get("deposit_usd_before")),
+            _fmt_usd_optional(status.get("deposit_usd_after")),
+            _fmt_usd_optional(status.get("reserve_target_usd")),
         )
         try:
             YIELD_WITHDRAWS_TOTAL.labels("aave", "dry_run").inc()
@@ -288,9 +674,9 @@ def yield_withdraw(
                     mode="dry_run",
                     error=None,
                     wallet_raw_before=bal_raw,
-                    atoken_raw_before=int(provider.get_deposit_balance_raw()),
-                    wallet_raw_after=bal_raw,
-                    atoken_raw_after=int(provider.get_deposit_balance_raw()),
+                    atoken_raw_before=atoken_before,
+                    wallet_raw_after=wallet_after_raw,
+                    atoken_raw_after=atoken_after_raw,
                     tx_hash=None,
                 )
         except Exception:
@@ -300,8 +686,12 @@ def yield_withdraw(
                 "yield",
                 (
                     "[yield] DRY-RUN withdraw "
-                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC from Aave"
+                    f"{_fmt_usd_optional(status.get('action_amount_usd'))} USDC from Aave | "
+                    f"wallet {_fmt_usd_optional(status.get('wallet_usd_before'))} -> {_fmt_usd_optional(status.get('wallet_usd_after'))} | "
+                    f"aToken {_fmt_usd_optional(status.get('deposit_usd_before'))} -> {_fmt_usd_optional(status.get('deposit_usd_after'))} | "
+                    f"reserve target {_fmt_usd_optional(status.get('reserve_target_usd'))}"
                 ),
+                extra=status,
             )
         except Exception:
             pass
@@ -309,7 +699,34 @@ def yield_withdraw(
 
     try:
         provider.withdraw_raw(amount_raw)
-        log.info("withdrew %.2f USDC from Aave", amount_raw / 1_000_000.0)
+        wallet_after_raw = int(provider.get_wallet_balance_raw())
+        atoken_after_raw = int(provider.get_deposit_balance_raw())
+        status = _yield_status(
+            action="withdraw",
+            asset=asset_clean,
+            mode=mode,
+            stage="completed",
+            wallet_raw_before=bal_raw,
+            wallet_raw_after=wallet_after_raw,
+            deposit_raw_before=atoken_before,
+            deposit_raw_after=atoken_after_raw,
+            action_amount_raw=amount_raw,
+            reserve_target_usd=reserve_final,
+            reserve_abs_usd=reserve_abs,
+            reserve_percent=reserve_pct_value,
+            wallet_deficit_usd=max(reserve_final - bal_usd, 0.0),
+            result="success",
+        )
+        _emit_status("yield:withdraw", status)
+        log.info(
+            "withdrew %s from Aave | wallet %s -> %s | deposits %s -> %s | reserve target=%s",
+            _fmt_usd_optional(status.get("action_amount_usd")),
+            _fmt_usd_optional(status.get("wallet_usd_before")),
+            _fmt_usd_optional(status.get("wallet_usd_after")),
+            _fmt_usd_optional(status.get("deposit_usd_before")),
+            _fmt_usd_optional(status.get("deposit_usd_after")),
+            _fmt_usd_optional(status.get("reserve_target_usd")),
+        )
         try:
             YIELD_WITHDRAWS_TOTAL.labels("aave", "live").inc()
         except Exception:
@@ -326,9 +743,9 @@ def yield_withdraw(
                     mode="live",
                     error=None,
                     wallet_raw_before=bal_raw,
-                    atoken_raw_before=int(provider.get_deposit_balance_raw()),
-                    wallet_raw_after=int(provider.get_wallet_balance_raw()),
-                    atoken_raw_after=int(provider.get_deposit_balance_raw()),
+                    atoken_raw_before=atoken_before,
+                    wallet_raw_after=wallet_after_raw,
+                    atoken_raw_after=atoken_after_raw,
                     tx_hash=None,
                 )
         except Exception:
@@ -338,13 +755,33 @@ def yield_withdraw(
                 "yield",
                 (
                     "[yield] withdrew "
-                    f"{fmt_usd(amount_raw / 1_000_000.0)} USDC from Aave"
+                    f"{_fmt_usd_optional(status.get('action_amount_usd'))} USDC from Aave | "
+                    f"wallet {_fmt_usd_optional(status.get('wallet_usd_before'))} -> {_fmt_usd_optional(status.get('wallet_usd_after'))} | "
+                    f"aToken {_fmt_usd_optional(status.get('deposit_usd_before'))} -> {_fmt_usd_optional(status.get('deposit_usd_after'))} | "
+                    f"reserve target {_fmt_usd_optional(status.get('reserve_target_usd'))}"
                 ),
+                extra=status,
             )
         except Exception:
             pass
     except Exception as exc:  # pragma: no cover
         log.error("yield:withdraw error: %s", exc)
+        error_context = _yield_status(
+            action="withdraw",
+            asset=asset_clean,
+            mode=mode,
+            stage="completed",
+            wallet_raw_before=bal_raw,
+            deposit_raw_before=atoken_before,
+            action_amount_raw=amount_raw,
+            reserve_target_usd=reserve_final,
+            reserve_abs_usd=reserve_abs,
+            reserve_percent=reserve_pct_value,
+            wallet_deficit_usd=max(reserve_final - bal_usd, 0.0),
+            result="error",
+            error=str(exc),
+        )
+        _emit_status("yield:withdraw", error_context)
         try:
             YIELD_ERRORS_TOTAL.labels("withdraw").inc()
         except Exception:
@@ -361,11 +798,20 @@ def yield_withdraw(
                     mode="live",
                     error=str(exc),
                     wallet_raw_before=bal_raw,
-                    atoken_raw_before=int(provider.get_deposit_balance_raw()),
+                    atoken_raw_before=atoken_before,
                     wallet_raw_after=None,
                     atoken_raw_after=None,
                     tx_hash=None,
                 )
+        except Exception:
+            pass
+        try:
+            notify_discord(
+                "yield",
+                f"[yield] withdraw error: {exc}",
+                severity="error",
+                extra=error_context,
+            )
         except Exception:
             pass
 
