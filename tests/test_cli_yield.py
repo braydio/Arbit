@@ -43,13 +43,49 @@ def test_yield_collect_dry_run_persists_op(monkeypatch, tmp_path):
     sys.modules.setdefault("ccxt", SimpleNamespace())
     from arbit.cli import app as cli_app  # import after stubbing ccxt
 
+    events = []
+
+    def _capture_notify(venue, message, url=None, *, severity=None, extra=None):  # noqa: D401 - simple collector
+        events.append(
+            {
+                "venue": venue,
+                "message": message,
+                "severity": severity,
+                "extra": extra,
+            }
+        )
+
+    monkeypatch.setattr(
+        "arbit.cli.commands.yield_commands.notify_discord", _capture_notify
+    )
+    monkeypatch.setattr(
+        "arbit.cli.commands.yield_commands.start_metrics_server", lambda *_a, **_k: None
+    )
+
     runner = CliRunner()
     res = runner.invoke(
         cli_app, ["yield:collect", "--reserve-usd", "50"]
     )  # deposit 250
     assert res.exit_code == 0
 
-    assert res.exit_code == 0
+    assert len(events) == 1
+    ctx = events[0]["extra"]
+    assert ctx is not None
+    assert ctx["action"] == "deposit"
+    assert ctx["mode"] == "dry_run"
+    assert ctx["stage"] == "completed"
+    assert ctx["result"] == "simulated"
+    assert ctx["wallet_usd_before"] == 300.0
+    assert ctx["wallet_usd_after"] == 300.0
+    assert ctx["deposit_usd_before"] == 0.0
+    assert ctx["deposit_usd_after"] == 0.0
+    assert ctx["action_amount_usd"] == 250.0
+    assert ctx["reserve_target_usd"] == 50.0
+    assert ctx["available_usd"] == 250.0
+    assert ctx["min_stake_usd"] == 100.0
+    breakdown = ctx.get("reserve_breakdown")
+    assert breakdown["absolute_usd"] == 50.0
+    assert breakdown["percent"] == 0.0
 
 
 def test_yield_withdraw_all_excess_dry_run_persists(monkeypatch, tmp_path):
@@ -61,10 +97,45 @@ def test_yield_withdraw_all_excess_dry_run_persists(monkeypatch, tmp_path):
     sys.modules.setdefault("ccxt", SimpleNamespace())
     from arbit.cli import app as cli_app
 
+    events = []
+
+    def _capture_notify(venue, message, url=None, *, severity=None, extra=None):  # noqa: D401 - simple collector
+        events.append(
+            {
+                "venue": venue,
+                "message": message,
+                "severity": severity,
+                "extra": extra,
+            }
+        )
+
+    monkeypatch.setattr(
+        "arbit.cli.commands.yield_commands.notify_discord", _capture_notify
+    )
+    monkeypatch.setattr(
+        "arbit.cli.commands.yield_commands.start_metrics_server", lambda *_a, **_k: None
+    )
+
     runner = CliRunner()
     res = runner.invoke(
         cli_app, ["yield:withdraw", "--all-excess", "--reserve-usd", "50"]
     )
     assert res.exit_code == 0
 
-    assert res.exit_code == 0
+    assert len(events) == 1
+    ctx = events[0]["extra"]
+    assert ctx is not None
+    assert ctx["action"] == "withdraw"
+    assert ctx["mode"] == "dry_run"
+    assert ctx["stage"] == "completed"
+    assert ctx["result"] == "simulated"
+    assert ctx["wallet_usd_before"] == 10.0
+    assert ctx["wallet_usd_after"] == 10.0
+    assert ctx["deposit_usd_before"] == 200.0
+    assert ctx["deposit_usd_after"] == 200.0
+    assert ctx["action_amount_usd"] == 40.0
+    assert ctx["reserve_target_usd"] == 50.0
+    assert ctx["wallet_deficit_usd"] == 40.0
+    breakdown = ctx.get("reserve_breakdown")
+    assert breakdown["absolute_usd"] == 50.0
+    assert breakdown["percent"] == 0.0
