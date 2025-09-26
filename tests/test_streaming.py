@@ -34,14 +34,14 @@ class DummyStream:
         await self.handler(SimpleNamespace(symbol="BTC/USDT", bids=[], asks=[]))
 
     def stop(self) -> None:  # pragma: no cover - trivial
-        pass
+        raise NotImplementedError()
 
 
 class DummyClient:
     """Minimal client stub used to satisfy adapter dependencies."""
 
     def __init__(self, *args, **kwargs) -> None:  # pragma: no cover - trivial
-        pass
+        raise NotImplementedError()
 
 
 class MappingStream:
@@ -78,7 +78,7 @@ class MappingStream:
         )
 
     def stop(self) -> None:  # pragma: no cover - trivial
-        pass
+        raise NotImplementedError()
 
 
 class FlakyStream:
@@ -115,7 +115,7 @@ class FlakyStream:
             await self.handler(event)
 
     def stop(self) -> None:  # pragma: no cover - trivial
-        pass
+        raise NotImplementedError()
 
 
 def test_ccxt_orderbook_stream_falls_back_to_rest(monkeypatch) -> None:
@@ -284,7 +284,7 @@ def test_orderbook_stream_quiet_symbol(monkeypatch) -> None:
             await self.handler(SimpleNamespace(symbol="ETH/USDT", bids=[], asks=[]))
 
         def stop(self) -> None:  # pragma: no cover - trivial
-            pass
+            raise NotImplementedError()
 
     monkeypatch.setattr(aa, "TradingClient", DummyClient)
     monkeypatch.setattr(aa, "CryptoHistoricalDataClient", DummyClient)
