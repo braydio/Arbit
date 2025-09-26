@@ -29,7 +29,7 @@ class DummyToken:
 
 class DummyEth:
     def __init__(self) -> None:
-        pass
+        raise NotImplementedError()
 
 
 class DummyW3:

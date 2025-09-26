@@ -38,7 +38,7 @@ class MockHistClient:
     """Minimal historical data client."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover - trivial
-        pass
+        raise NotImplementedError()
 
     def get_crypto_latest_orderbook(self, req: Any) -> dict:
         sym = getattr(req, "symbol_or_symbols", "")
@@ -79,4 +79,4 @@ class MockDataStream:
         return
 
     def stop(self) -> None:  # pragma: no cover - trivial
-        pass
+        raise NotImplementedError()
