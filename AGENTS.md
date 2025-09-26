@@ -1,43 +1,19 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `arbit/`: Core package
-  - `engine/`: triangle math and execution
-  - `adapters/`: exchange connectors (CCXT-based)
-  - `metrics/`: Prometheus exporters
-  - `persistence/`: SQLite helpers
-  - `cli/`: Typer CLI package (Typer entry point and commands)
-- `tests/`: Pytest suite (`test_*.py`)
-- `data/`: Local data/DB (gitignored)
-- `Dockerfile`, `docker-compose.yml`: containerization
-- `README.md`, `WARP.md`, `ROADMAP.md`: docs
+`arbit/` contains the core package: `engine/` for triangle math and execution, `adapters/` for CCXT exchange connectors, `metrics/` for Prometheus exporters, `persistence/` for SQLite helpers, and `cli/` for Typer commands. Tests live in `tests/` as `test_*.py`. Local data and SQLite files stay in `data/` (gitignored). Container assets live at `Dockerfile` and `docker-compose.yml`; high-level docs are `README.md`, `WARP.md`, and `ROADMAP.md`.
 
 ## Build, Test, and Development Commands
-- Create venv: `python -m venv .venv && source .venv/bin/activate`
-- Install deps: `pip install -r requirements.txt pytest`
-- Run tests: `pytest -q`
-- Run a specific test: `pytest tests/test_cli.py::test_help`
-- CLI (read-only): `python -m arbit.cli fitness --venue kraken --secs 10`
-- CLI (keys check): `python -m arbit.cli keys:check`
-- CLI (live, caution): `python -m arbit.cli live --venue alpaca`
+Create a virtualenv with `python -m venv .venv && source .venv/bin/activate`. Install tooling via `pip install -r requirements.txt pytest`. Run the full suite with `pytest -q` or a targeted case like `pytest tests/test_cli.py::test_help`. The CLI can be explored read-only through `python -m arbit.cli fitness --venue kraken --secs 10`; verify API credentials using `python -m arbit.cli keys:check` before any live run.
 
 ## Coding Style & Naming Conventions
-- Formatter/lint: Black, isort, Ruff (see `.deepsource.toml`). Use 4-space indents and type hints.
-- Modules/functions: `snake_case`; classes: `PascalCase`; constants: `UPPER_SNAKE`.
-- CLI commands use `name:sub` (e.g., `keys:check`). Keep help strings clear and action-focused.
+Format with Black and isort, lint with Ruff; all use four-space indentation. Favor type hints everywhere. Functions and modules use `snake_case`, classes use `PascalCase`, constants use `UPPER_SNAKE`. CLI commands follow the `name:sub` pattern and should ship with clear help strings.
 
 ## Testing Guidelines
-- Framework: Pytest. Place tests under `tests/` as `test_*.py`.
-- Prefer fast, deterministic tests. Mock network/exchange access; don’t hit real APIs.
-- Use `typer.testing.CliRunner` for CLI tests. Add tests with any user-facing behavior change.
+Use Pytest fixtures and mocks to keep tests deterministic - never hit real exchanges. Name tests `test_*` and colocate them under `tests/`. Prefer `typer.testing.CliRunner` for CLI assertions. Add tests alongside behavior changes, especially around order routing and persistence paths.
 
 ## Commit & Pull Request Guidelines
-- Commits: follow Conventional Commits (`feat:`, `fix:`, `refactor:`, `style:`). Keep focused and descriptive.
-- PRs: include purpose, linked issues, how to test (commands/log samples), and screenshots of CLI output when relevant.
-- Required: passing tests; docs updated (`README.md`/`WARP.md`) if behavior or flags change.
+Commits follow Conventional Commits (e.g., `feat:`, `fix:`, `refactor:`) and stay scope-focused. PRs should link issues, describe the motivation, list validation steps (`pytest -q`, CLI samples), and include CLI screenshots when behavior changes. Ensure all tests pass before requesting review.
 
 ## Security & Configuration Tips
-- Never commit secrets. Copy `.env.example` to `.env` locally; use paper/sandbox keys first.
-- `fitness` is read-only. `live` may place real orders depending on venue/keys; verify symbols and limits.
-- Metrics: exposed on `http://localhost:9109/metrics` by default; set `PROM_PORT` to change.
-
+Copy `.env.example` to `.env`, keep real keys out of git, and start with paper or sandbox credentials. `fitness` is read-only; treat `live` sessions with production keys cautiously. Metrics expose on `http://localhost:9109/metrics`; set `PROM_PORT` if you need a different port.

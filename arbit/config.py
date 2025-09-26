@@ -9,7 +9,34 @@ file.
 import json
 import os
 from pathlib import Path
-from typing import Any, List
+from typing import Annotated, Any, List
+
+validator = None
+field_validator = None
+try:  # Prefer Pydantic v2 validator helper when available
+    from pydantic import field_validator as _pydantic_field_validator  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - dependency optional across versions
+    _pydantic_field_validator = None
+else:  # pragma: no cover - decorator only used when available
+    field_validator = _pydantic_field_validator
+
+if field_validator is None:  # Fallback to Pydantic v1 validator helper
+    try:
+        from pydantic import validator as _pydantic_validator  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover - dependency optional across versions
+        _pydantic_validator = None
+    else:  # pragma: no cover - decorator only used when available
+        validator = _pydantic_validator
+
+try:  # Sentinel to disable env decoding for specific fields (Pydantic v2)
+    from pydantic_settings import NoDecode  # type: ignore
+except Exception:  # pragma: no cover - dependency optional across versions
+    NoDecode = None
+
+if NoDecode is not None:
+    ExchangesFieldType = Annotated[List[str], NoDecode]
+else:
+    ExchangesFieldType = List[str]
 
 _settings_config_dict: Any | None
 
@@ -168,7 +195,7 @@ class Settings(BaseSettings):
     log_file: str | None = "data/arbit.log"
     log_max_bytes: int = 1_000_000
     log_backup_count: int = 3
-    exchanges: List[str] = ["alpaca", "kraken"]  # default venues
+    exchanges: ExchangesFieldType = ["alpaca", "kraken"]  # default venues
 
     # Per-venue keys (preferred)
     alpaca_api_key: str | None = None
@@ -254,6 +281,65 @@ class Settings(BaseSettings):
     # Optional per-venue fee overrides with basis point inputs.
     fee_overrides: dict[str, dict[str, dict[str, float]]] | None = None
 
+    @staticmethod
+    def _normalise_exchanges_value(value: Any) -> list[str]:
+        """Return a cleaned list of exchange identifiers derived from *value*."""
+
+        if value is None:
+            return []
+
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                items = [item.strip() for item in raw.split(",") if item.strip()]
+            else:
+                if isinstance(parsed, str):
+                    items = [part.strip() for part in parsed.split(",") if part.strip()]
+                elif isinstance(parsed, (list, tuple, set)):
+                    items = list(parsed)
+                elif parsed is None:
+                    items = []
+                else:
+                    items = [parsed]
+        elif isinstance(value, (list, tuple, set)):
+            items = list(value)
+        else:
+            items = [value]
+
+        cleaned: list[str] = []
+        for entry in items:
+            if entry is None:
+                continue
+            s = str(entry).strip()
+            if not s:
+                continue
+            s = s.strip("[] ")
+            if (s.startswith('"') and s.endswith('"')) or (
+                s.startswith("'") and s.endswith("'")
+            ):
+                s = s[1:-1]
+            s = s.strip().strip("\"'")
+            if s:
+                cleaned.append(s)
+
+        return cleaned
+
+    if validator is not None:  # pragma: no cover - executed only with Pydantic v1
+
+        @validator("exchanges", pre=True)  # type: ignore[misc]
+        def _validate_exchanges_v1(cls, value: Any) -> list[str]:
+            return cls._normalise_exchanges_value(value)
+
+    if field_validator is not None:  # pragma: no cover - executed only with Pydantic v2
+
+        @field_validator("exchanges", mode="before")  # type: ignore[misc]
+        def _validate_exchanges_v2(cls, value: Any) -> list[str]:
+            return cls._normalise_exchanges_value(value)
+
     if hasattr(BaseSettings, "Config"):
 
         class Config(BaseSettings.Config):
@@ -261,13 +347,18 @@ class Settings(BaseSettings):
 
             env_file = ".env"
             env_prefix = ""
+            extra = "ignore"
 
     else:
         # Pydantic v2 uses ``model_config`` instead of an inner ``Config`` class.
         if _settings_config_dict is not None:
-            model_config = _settings_config_dict(env_file=".env", env_prefix="")
+            model_config = _settings_config_dict(
+                env_file=".env",
+                env_prefix="",
+                extra="ignore",
+            )
         else:  # pragma: no cover - defensive fallback
-            model_config = {"env_file": ".env", "env_prefix": ""}
+            model_config = {"env_file": ".env", "env_prefix": "", "extra": "ignore"}
 
     def __init__(self, **kwargs: Any) -> None:
         """Normalise environment-provided configuration values.
@@ -346,36 +437,7 @@ class Settings(BaseSettings):
 
         _coerce_lower("alpaca_data_feed", default="us")
 
-        if isinstance(self.exchanges, str):
-            try:
-                parsed = json.loads(self.exchanges)
-            except Exception:
-                parsed = [e.strip() for e in self.exchanges.split(",") if e.strip()]
-            else:
-                if isinstance(parsed, str):
-                    parsed = [s.strip() for s in parsed.split(",") if s.strip()]
-            if isinstance(parsed, list):
-                items = parsed
-            else:
-                items = [str(parsed)]
-        else:
-            items = list(self.exchanges)
-
-        # Clean up any stray quotes/brackets from env strings
-        cleaned: list[str] = []
-        for e in items:
-            s = str(e).strip()
-            # remove leading/trailing quotes and brackets
-            s = s.strip("[] ")
-            if (s.startswith('"') and s.endswith('"')) or (
-                s.startswith("'") and s.endswith("'")
-            ):
-                s = s[1:-1]
-            s = s.strip().strip("\"'")
-            if s:
-                cleaned.append(s)
-        if cleaned:
-            self.exchanges = cleaned
+        self.exchanges = self._normalise_exchanges_value(self.exchanges)
 
         self.fee_overrides = _normalize_fee_overrides(self.fee_overrides)
 

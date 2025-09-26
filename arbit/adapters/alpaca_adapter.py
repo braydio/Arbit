@@ -13,6 +13,7 @@ book updates.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from typing import Any, AsyncGenerator, Dict, Iterable, Tuple
 
@@ -46,11 +47,19 @@ class AlpacaAdapter(ExchangeAdapter):
         if key is None or secret is None:
             key, secret = creds_for("alpaca")
         base_url = getattr(settings, "alpaca_base_url", None)
+        paper_mode = "paper" in (base_url or "")
         self._key = key
         self._secret = secret
-        self.trading = TradingClient(
-            key, secret, paper="paper" in (base_url or ""), base_url=base_url
-        )
+        trading_kwargs: dict[str, Any] = {"paper": paper_mode}
+        if base_url:
+            trading_kwargs["base_url"] = base_url
+        try:
+            self.trading = TradingClient(key, secret, **trading_kwargs)
+        except TypeError as exc:  # alpaca-py<=0.18 lacks base_url kwarg
+            if "base_url" not in str(exc) or "base_url" not in trading_kwargs:
+                raise
+            trading_kwargs.pop("base_url", None)
+            self.trading = TradingClient(key, secret, **trading_kwargs)
         self.data = CryptoHistoricalDataClient(key, secret)
         self._stream: CryptoDataStream | None = None
         # expose self as `.ex` so CLI can call `a.ex.load_markets()`
@@ -186,12 +195,42 @@ class AlpacaAdapter(ExchangeAdapter):
             asks = [[a.p, a.s] for a in getattr(data, "asks", [])][:depth]
             await queue.put((out_sym, {"bids": bids, "asks": asks}))
 
+        ws_kwargs: dict[str, Any] = {}
+        ws_url = getattr(settings, "alpaca_ws_crypto_url", None)
+        ws_feed = getattr(settings, "alpaca_data_feed", None)
+        try:
+            sig = inspect.signature(CryptoDataStream)
+        except Exception:
+            sig = None
+        params = sig.parameters if sig else {}
+        if ws_url:
+            if "url_override" in params:
+                ws_kwargs["url_override"] = ws_url
+            elif "url" in params:
+                ws_kwargs["url"] = ws_url
+        if ws_feed:
+            target_key = None
+            if "feed" in params:
+                target_key = "feed"
+            elif "data_feed" in params:
+                target_key = "data_feed"
+            if target_key:
+                try:
+                    from alpaca.data.enums import CryptoFeed  # type: ignore
+
+                    if isinstance(ws_feed, str):
+                        candidate = ws_feed.strip()
+                        ws_kwargs[target_key] = CryptoFeed(candidate)  # type: ignore[arg-type]
+                    else:
+                        ws_kwargs[target_key] = ws_feed
+                except Exception:
+                    ws_kwargs[target_key] = ws_feed
+
         while True:
             stream = CryptoDataStream(
                 self._key,
                 self._secret,
-                url=getattr(settings, "alpaca_ws_crypto_url", None),
-                data_feed=getattr(settings, "alpaca_data_feed", None),
+                **ws_kwargs,
             )
             self._stream = stream
             stream.subscribe_orderbooks(_handler, *sub_syms)
