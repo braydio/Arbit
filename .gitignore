@@ -4,6 +4,7 @@
 *.local
 *.db
 *.log
+.nvimlog
 venv
 .venv
 __pycache__
