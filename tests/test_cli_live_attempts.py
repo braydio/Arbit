@@ -231,6 +231,6 @@ async def test_live_run_defaults_to_suggestions_when_config_missing(monkeypatch)
 
     assert dummy_conn.closed is True
     assert captured["triangles"]
-    assert [
-        (tri.leg_ab, tri.leg_bc, tri.leg_ac) for tri in captured["triangles"]
-    ] == [tuple(row) for row in suggestions]
+    assert [(tri.leg_ab, tri.leg_bc, tri.leg_ac) for tri in captured["triangles"]] == [
+        tuple(row) for row in suggestions
+    ]
