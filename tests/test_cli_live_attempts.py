@@ -156,3 +156,81 @@ async def test_live_run_closes_adapter_and_db(monkeypatch):
     assert dummy_conn.closed is True
     assert dummy_adapter.closed is True
     assert dummy_adapter.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_live_run_defaults_to_suggestions_when_config_missing(monkeypatch):
+    """Auto-discovered suggestions should seed sessions without config."""
+
+    suggestions = [
+        ["SOL/USDT", "SOL/BTC", "BTC/USDT"],
+        ["ADA/USDT", "ADA/BTC", "BTC/USDT"],
+    ]
+
+    class DummyAdapter:
+        """Adapter stub lacking fallback markets to force auto-suggestions."""
+
+        def name(self) -> str:
+            return "dummy"
+
+        @staticmethod
+        def balances() -> dict[str, float]:
+            return {}
+
+        @staticmethod
+        def load_markets() -> dict[str, dict[str, float]]:
+            return {}
+
+    class DummyConn:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    dummy_adapter = DummyAdapter()
+    dummy_conn = DummyConn()
+    captured: dict[str, list[Triangle]] = {}
+
+    dummy_settings = SimpleNamespace(
+        sqlite_path=":memory:",
+        dry_run=True,
+        net_threshold_bps=0.0,
+        notional_per_trade_usd=100.0,
+        max_slippage_bps=5.0,
+        discord_min_notify_interval_secs=0.0,
+        discord_attempt_notify=False,
+        discord_trade_notify=False,
+        discord_heartbeat_secs=0.0,
+        alpaca_map_usdt_to_usd=False,
+        triangles_by_venue={},
+    )
+
+    monkeypatch.setattr(cli_utils, "settings", dummy_settings)
+    monkeypatch.setattr(
+        cli_utils, "_build_adapter", lambda _venue, _settings: dummy_adapter
+    )
+    monkeypatch.setattr(cli_utils, "_log_balances", lambda *_a, **_k: None)
+    monkeypatch.setattr(cli_utils, "notify_discord", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        cli_utils,
+        "_discover_triangles_from_markets",
+        lambda *_a, **_k: suggestions,
+    )
+    monkeypatch.setattr(cli_utils, "init_db", lambda _path: dummy_conn)
+    monkeypatch.setattr(cli_utils, "insert_triangle", lambda *_a, **_k: None)
+
+    async def _fake_stream(adapter, tris, *_args, **_kwargs):
+        captured["triangles"] = tris
+        if False:  # pragma: no cover - ensures function is async generator
+            yield None
+
+    monkeypatch.setattr(cli_utils, "stream_triangles", _fake_stream)
+
+    await cli_utils._live_run_for_venue("demo")
+
+    assert dummy_conn.closed is True
+    assert captured["triangles"]
+    assert [(tri.leg_ab, tri.leg_bc, tri.leg_ac) for tri in captured["triangles"]] == [
+        tuple(row) for row in suggestions
+    ]
