@@ -58,11 +58,20 @@ def format_live_heartbeat(
     )
 
 
-def _triangles_for(venue: str) -> list[Triangle]:
-    """Return configured triangles for *venue*, falling back to defaults.
+def _load_triangles_configuration(venue: str) -> tuple[list[Triangle], bool]:
+    """Return triangles for *venue* and whether they were explicitly configured.
 
-    Explicit empty lists (e.g., Alpaca's default configuration) are respected so
-    operators can opt-in with venue-specific triangles when ready.
+    Parameters
+    ----------
+    venue:
+        Exchange venue name whose triangle configuration should be resolved.
+
+    Returns
+    -------
+    tuple[list[Triangle], bool]
+        The list of configured :class:`~arbit.models.Triangle` instances along
+        with a flag indicating whether the triangles were provided explicitly by
+        the operator (``True``) or fall back to built-in defaults (``False``).
     """
 
     data_raw = getattr(settings, "triangles_by_venue", {}) or {}
@@ -90,6 +99,7 @@ def _triangles_for(venue: str) -> list[Triangle]:
         ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
     ]
     triples_raw = data.get(venue, None)
+    explicit = triples_raw is not None
     if triples_raw is None:
         triples = fallback_triples
     elif isinstance(triples_raw, list):
@@ -103,7 +113,18 @@ def _triangles_for(venue: str) -> list[Triangle]:
     for t in triples:
         if isinstance(t, (list, tuple)) and len(t) == 3:
             out.append(Triangle(str(t[0]), str(t[1]), str(t[2])))
-    return out
+    return out, explicit
+
+
+def _triangles_for(venue: str) -> list[Triangle]:
+    """Return configured triangles for *venue*, falling back to defaults.
+
+    Explicit empty lists (e.g., Alpaca's default configuration) are respected so
+    operators can opt-in with venue-specific triangles when ready.
+    """
+
+    triangles, _ = _load_triangles_configuration(venue)
+    return triangles
 
 
 def _build_adapter(venue: str, _settings=settings) -> ExchangeAdapter:
@@ -167,7 +188,10 @@ async def _live_run_for_venue(
 
     Notes
     -----
-    Per-attempt Discord and console logs include the cumulative attempt
+    When no explicit triangle configuration exists for a venue, the
+    auto-discovery suggestions are used automatically so that operators can
+    bootstrap new exchanges without manual setup.  Per-attempt Discord and
+    console logs include the cumulative attempt
     counter so operators can monitor trading cadence remotely.  When debug
     logging is enabled each skipped triangle additionally records the latest
     per-leg top-of-book snapshot (or a ``"stale"`` marker) to aid diagnosis.
@@ -211,7 +235,7 @@ async def _live_run_for_venue(
             conn = None
         await _close_adapter_only(adapter)
         return
-    configured_triangles = _triangles_for(venue)
+    configured_triangles, triangles_explicit = _load_triangles_configuration(venue)
     triangles: list[Triangle] = []
     missing: list[tuple[Triangle, list[str]]] = []
 
@@ -299,8 +323,12 @@ async def _live_run_for_venue(
         except Exception:
             suggestions = []
         use_count = int(auto_suggest_top or 0)
-        if use_count > 0 and suggestions:
-            chosen = suggestions[:use_count]
+        should_use_suggestions = bool(suggestions) and (
+            use_count > 0 or not triangles_explicit
+        )
+        if should_use_suggestions:
+            chosen_count = use_count if use_count > 0 else len(suggestions)
+            chosen = suggestions[:chosen_count] if chosen_count else suggestions
             triangles = [Triangle(*t) for t in chosen]
             try:
                 notify_discord(
