@@ -211,6 +211,7 @@ async def _live_run_for_venue(
             conn = None
         await _close_adapter_only(adapter)
         return
+
     configured_triangles = _triangles_for(venue)
     triangles: list[Triangle] = []
     missing: list[tuple[Triangle, list[str]]] = []
