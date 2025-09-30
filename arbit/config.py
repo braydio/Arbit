@@ -14,7 +14,9 @@ from typing import Annotated, Any, List
 validator = None
 field_validator = None
 try:  # Prefer Pydantic v2 validator helper when available
-    from pydantic import field_validator as _pydantic_field_validator  # type: ignore[attr-defined]
+    from pydantic import (
+        field_validator as _pydantic_field_validator,  # type: ignore[attr-defined]
+    )
 except Exception:  # pragma: no cover - dependency optional across versions
     _pydantic_field_validator = None
 else:  # pragma: no cover - decorator only used when available
@@ -22,7 +24,9 @@ else:  # pragma: no cover - decorator only used when available
 
 if field_validator is None:  # Fallback to Pydantic v1 validator helper
     try:
-        from pydantic import validator as _pydantic_validator  # type: ignore[attr-defined]
+        from pydantic import (
+            validator as _pydantic_validator,  # type: ignore[attr-defined]
+        )
     except Exception:  # pragma: no cover - dependency optional across versions
         _pydantic_validator = None
     else:  # pragma: no cover - decorator only used when available
@@ -264,9 +268,9 @@ class Settings(BaseSettings):
     # Per-venue triangle definitions (override via JSON in env if desired)
     # Format: { venue: [[leg_ab, leg_bc, leg_ac], ...], ... }
     triangles_by_venue: dict[str, list[list[str]]] = {
-        # Alpaca crypto typically lacks crypto-to-crypto crosses like ETH/BTC.
-        # Leave empty by default to avoid unsupported-symbol errors.
-        "alpaca": [],
+        # Alpaca recently listed SOL/BTC alongside USD legs, unlocking a default
+        # triangle that avoids manual configuration for paper trading.
+        "alpaca": [["SOL/USD", "SOL/BTC", "BTC/USD"]],
         "kraken": [
             ["ETH/USDT", "ETH/BTC", "BTC/USDT"],
             ["ETH/USDC", "ETH/BTC", "BTC/USDC"],
