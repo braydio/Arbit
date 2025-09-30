@@ -347,12 +347,12 @@ asyncio.run(main())
 
 **Supported Venues**: `alpaca`, `kraken`
 
-**Note**: Ensure triangle symbols exist on your chosen venue (e.g., ETH/USDT, ETH/BTC, BTC/USDT; SOL/USDT, SOL/BTC, BTC/USDT on supported venues like Kraken). See [WARP.md CLI Commands](docs/WARP.md#cli-commands) for full documentation. Alpaca's configuration intentionally ships with no default triangles to avoid unsupported crypto-to-crypto crosses. Arbit will not fall back to ETH/BTC templates for Alpaca, so set `TRIANGLES_BY_VENUE` (or pass `--symbols`) once you're ready to trade there.
+**Note**: Ensure triangle symbols exist on your chosen venue (e.g., ETH/USDT, ETH/BTC, BTC/USDT; SOL/USDT, SOL/BTC, BTC/USDT on supported venues like Kraken). See [WARP.md CLI Commands](docs/WARP.md#cli-commands) for full documentation. Alpaca now includes a default SOL/USD → SOL/BTC → BTC/USD template, but verify the legs with `keys:check` before live trading. Override the defaults (or pass `--symbols`) if your venue lists alternate liquidity pairs.
 
 Customizing triangles (advanced): set `TRIANGLES_BY_VENUE` as JSON in `.env` to override defaults, e.g.
 ```
 TRIANGLES_BY_VENUE={
-  "alpaca": [["ETH/USDT","ETH/BTC","BTC/USDT"],["SOL/USDT","SOL/BTC","BTC/USDT"]],
+  "alpaca": [["SOL/USD","SOL/BTC","BTC/USD"]],
   "kraken": [["ETH/USDC","ETH/BTC","BTC/USDC"]]
 }
 ```

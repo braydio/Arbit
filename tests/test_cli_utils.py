@@ -55,12 +55,17 @@ def test_triangles_for_respects_explicit_empty_list(monkeypatch) -> None:
     assert cli_utils._triangles_for("alpaca") == []
 
 
-def test_triangles_for_default_settings_leave_alpaca_empty() -> None:
-    """Default configuration keeps Alpaca triangles empty until configured."""
+def test_triangles_for_default_settings_include_alpaca_sol_triangle() -> None:
+    """Default configuration seeds Alpaca with the SOL/BTC/USD triangle."""
 
     triangles = cli_utils._triangles_for("alpaca")
 
-    assert triangles == []
+    assert triangles
+    assert (triangles[0].leg_ab, triangles[0].leg_bc, triangles[0].leg_ac) == (
+        "SOL/USD",
+        "SOL/BTC",
+        "BTC/USD",
+    )
 
 
 def test_triangles_for_missing_venue_uses_fallback(monkeypatch) -> None:
