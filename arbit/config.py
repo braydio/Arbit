@@ -14,7 +14,9 @@ from typing import Annotated, Any, List
 validator = None
 field_validator = None
 try:  # Prefer Pydantic v2 validator helper when available
-    from pydantic import field_validator as _pydantic_field_validator  # type: ignore[attr-defined]
+    from pydantic import (
+        field_validator as _pydantic_field_validator,  # type: ignore[attr-defined]
+    )
 except Exception:  # pragma: no cover - dependency optional across versions
     _pydantic_field_validator = None
 else:  # pragma: no cover - decorator only used when available
@@ -22,7 +24,9 @@ else:  # pragma: no cover - decorator only used when available
 
 if field_validator is None:  # Fallback to Pydantic v1 validator helper
     try:
-        from pydantic import validator as _pydantic_validator  # type: ignore[attr-defined]
+        from pydantic import (
+            validator as _pydantic_validator,  # type: ignore[attr-defined]
+        )
     except Exception:  # pragma: no cover - dependency optional across versions
         _pydantic_validator = None
     else:  # pragma: no cover - decorator only used when available
