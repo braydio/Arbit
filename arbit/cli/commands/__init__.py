@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import config, fitness, keys, live, markets, notify, yield_commands
+from . import config, fitness, keys, live, markets, notify, promo, yield_commands
 
 __all__ = [
     "config",
@@ -11,5 +11,6 @@ __all__ = [
     "live",
     "markets",
     "notify",
+    "promo",
     "yield_commands",
 ]

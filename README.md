@@ -146,6 +146,22 @@ Key safeguards:
 - Sells the asset back to the quote currency by default to keep exposure flat (use `--hold` to keep it).
 - Requires both `--execute` **and** `DRY_RUN=false` to place real orders.
 
+Need an automated helper for Kraken's ZIG promotions? The main CLI now ships a `promo`
+command that accumulates ZIG up to a target balance and, when executed, waits until the
+configured UTC timestamp to unwind the position automatically:
+
+```bash
+# Preview the workflow (no orders placed)
+python -m arbit.cli promo --check-interval 60
+
+# Execute the workflow once you're ready
+export DRY_RUN=false
+python -m arbit.cli promo --execute --sell-at 2024-10-06T00:01:00+00:00
+```
+
+The command keeps running until the scheduled liquidation time so that the sell leg can
+fire automatically once the promotion window opens.
+
 ## Installation
 
 **Requirements:** Python 3.10+ recommended

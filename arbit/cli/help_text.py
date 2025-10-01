@@ -197,6 +197,23 @@ VERBOSE_COMMAND_HELP: dict[str, str] = {
             Better yield available for USDC: foo 5.10% >= current 4.50% + 0.50%
         """
     ),
+    "promo": dedent(
+        """\
+        promo
+          Purpose:
+            Accumulate ZIG on Kraken up to a promotion target and schedule a timed liquidation.
+          Key flags:
+            --execute            Place live orders when DRY_RUN=false (default: dry run).
+            --target FLOAT       Target ZIG balance to maintain (default: 2500).
+            --quote TEXT         Quote currency for ZIG trades (default: USD).
+            --sell-at TEXT       UTC timestamp for liquidation (ISO 8601 format).
+            --check-interval INT Seconds between wake-ups while waiting to sell.
+          Usage tips:
+            - Starts in dry-run mode; rerun with --execute and DRY_RUN=false to trade for real.
+            - Adjust --sell-at for rehearsal runs before the actual promotion deadline.
+            - Keep the process running to allow the scheduled sell leg to execute automatically.
+        """
+    ),
 }
 
 __all__ = ["VERBOSE_GLOBAL_OVERVIEW", "VERBOSE_COMMAND_HELP"]
