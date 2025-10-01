@@ -41,6 +41,7 @@ from .commands.keys import keys_check
 from .commands.live import live
 from .commands.markets import markets_limits
 from .commands.notify import notify_test
+from .commands.promo import promo
 from .commands.yield_commands import yield_collect, yield_watch, yield_withdraw
 from .core import CLIApp, TyperOption, app, log
 from .help_text import VERBOSE_COMMAND_HELP, VERBOSE_GLOBAL_OVERVIEW
@@ -96,6 +97,7 @@ __all__ = [
     "markets_limits",
     "notify_discord",
     "notify_test",
+    "promo",
     "settings",
     "start_metrics_server",
     "stream_triangles",
