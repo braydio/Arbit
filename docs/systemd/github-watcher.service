@@ -1,0 +1,29 @@
+# systemd unit file for the Arbit GitHub watcher.
+#
+# Copy to either:
+#   - /etc/systemd/system/github-watcher.service (system-wide)
+#   - ~/.config/systemd/user/github-watcher.service (per-user)
+# and adjust WorkingDirectory/ExecStart paths for your installation.
+# When using the user-level unit, enable lingering ("loginctl enable-linger") if
+# you want the service to run when you are not logged in.
+
+[Unit]
+Description=Arbit GitHub Repository Watcher
+Documentation=https://github.com/braydio/Arbit
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/arbit
+# Optional environment file that can contain GITHUB_TOKEN and other overrides.
+EnvironmentFile=-/etc/arbit/github-watcher.env
+ExecStart=/usr/bin/env python3 /opt/arbit/scripts/watch_github.py --workdir /opt/arbit
+Restart=on-failure
+RestartSec=5s
+# Uncomment to send logs to a dedicated file instead of the journal.
+#StandardOutput=append:/var/log/github-watcher.log
+#StandardError=append:/var/log/github-watcher.log
+
+[Install]
+WantedBy=multi-user.target

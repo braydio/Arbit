@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -226,6 +227,18 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Poll once instead of running continuously",
     )
     parser.add_argument(
+        "-d",
+        "--daemon",
+        action="store_true",
+        help="Run in the background (POSIX only).",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        default=None,
+        help="Optional log file path (recommended when using --daemon)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         help="Logging level (DEBUG, INFO, WARNING, ...)",
@@ -233,12 +246,71 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _daemonize(log_file: Optional[Path]) -> None:
+    """Detach the current process and continue execution in the background.
+
+    Args:
+        log_file: Optional path that should receive redirected stdout and stderr.
+
+    Raises:
+        GitHubWatcherError: If daemonisation is unsupported or fails.
+    """
+
+    if os.name != "posix":  # pragma: no cover - platform dependent
+        msg = "Daemon mode is only supported on POSIX systems."
+        raise GitHubWatcherError(msg)
+
+    try:
+        pid = os.fork()
+    except OSError as exc:  # pragma: no cover - fork failure is unlikely
+        msg = "Failed to fork the daemon process (stage 1)."
+        raise GitHubWatcherError(msg) from exc
+    if pid > 0:
+        raise SystemExit(0)
+
+    os.setsid()
+
+    try:
+        pid = os.fork()
+    except OSError as exc:  # pragma: no cover - fork failure is unlikely
+        msg = "Failed to fork the daemon process (stage 2)."
+        raise GitHubWatcherError(msg) from exc
+    if pid > 0:
+        os._exit(0)
+
+    os.chdir("/")
+    os.umask(0)
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    with open(os.devnull, "rb", 0) as read_null:
+        os.dup2(read_null.fileno(), 0)
+
+    if log_file is not None:
+        log_path = log_file.expanduser().resolve()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "ab", 0) as log_handle:
+            os.dup2(log_handle.fileno(), 1)
+            os.dup2(log_handle.fileno(), 2)
+    else:
+        with open(os.devnull, "ab", 0) as write_null:
+            os.dup2(write_null.fileno(), 1)
+            os.dup2(write_null.fileno(), 2)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     """Entry point for the GitHub watcher CLI."""
     args = _parse_args(argv)
+    log_file = args.log_file.expanduser().resolve() if args.log_file else None
+    handlers = None
+    if log_file is not None:
+        handlers = [logging.FileHandler(str(log_file))]
+
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=handlers,
     )
 
     token = os.getenv(args.token_env) if args.token_env else None
@@ -255,6 +327,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     except GitHubWatcherError as exc:
         LOGGER.error("Invalid watcher configuration: %s", exc)
         return 1
+
+    if args.daemon:
+        try:
+            _daemonize(log_file)
+        except GitHubWatcherError as exc:
+            LOGGER.error("Failed to start daemon: %s", exc)
+            return 1
 
     try:
         if args.run_once:
