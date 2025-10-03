@@ -85,3 +85,76 @@ def test_run_once_triggers_pull(
     run_mock.assert_called_once_with(
         ["git", "-C", str(repo_dir), "pull", "--ff-only"], check=True
     )
+
+
+def test_daemonize_requires_posix(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_daemonize should raise on non-POSIX platforms."""
+
+    monkeypatch.setattr(github_watcher.os, "name", "nt", raising=False)
+
+    with pytest.raises(github_watcher.GitHubWatcherError):
+        github_watcher._daemonize(None)
+
+
+def test_main_daemon_runs_once(monkeypatch: pytest.MonkeyPatch, repo_dir: Path) -> None:
+    """main should daemonise and then execute run_once when requested."""
+
+    daemon_mock = mock.Mock()
+    monkeypatch.setattr(github_watcher, "_daemonize", daemon_mock)
+    monkeypatch.setattr(github_watcher.logging, "basicConfig", mock.Mock())
+
+    watcher = mock.Mock()
+    watcher.run_once = mock.Mock()
+    watcher.run = mock.Mock()
+    monkeypatch.setattr(
+        github_watcher, "GitHubWatcher", mock.Mock(return_value=watcher)
+    )
+
+    exit_code = github_watcher.main(
+        [
+            "--repo",
+            "owner/name",
+            "--workdir",
+            str(repo_dir),
+            "--daemon",
+            "--run-once",
+        ]
+    )
+
+    assert exit_code == 0
+    daemon_mock.assert_called_once_with(None)
+    watcher.run_once.assert_called_once()
+    watcher.run.assert_not_called()
+
+
+def test_main_daemon_failure(monkeypatch: pytest.MonkeyPatch, repo_dir: Path) -> None:
+    """main should report daemonisation errors and exit with failure."""
+
+    daemon_error = github_watcher.GitHubWatcherError("boom")
+    monkeypatch.setattr(
+        github_watcher,
+        "_daemonize",
+        mock.Mock(side_effect=daemon_error),
+    )
+    monkeypatch.setattr(github_watcher.logging, "basicConfig", mock.Mock())
+
+    watcher = mock.Mock()
+    watcher.run_once = mock.Mock()
+    watcher.run = mock.Mock()
+    monkeypatch.setattr(
+        github_watcher, "GitHubWatcher", mock.Mock(return_value=watcher)
+    )
+
+    exit_code = github_watcher.main(
+        [
+            "--repo",
+            "owner/name",
+            "--workdir",
+            str(repo_dir),
+            "--daemon",
+            "--run-once",
+        ]
+    )
+
+    assert exit_code == 1
+    watcher.run_once.assert_not_called()
