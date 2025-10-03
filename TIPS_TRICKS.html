@@ -4,6 +4,7 @@
 <head>
 
 
+
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tips &amp; Tricks for Safe Testing and Tuning</title>
@@ -95,6 +96,7 @@
       border-radius: 8px;
     }
   </style>
+
 
 
 </head>
@@ -250,6 +252,13 @@ Below are the Strategy settings and how to think about each. Defaults are chosen
 <li>Recommendations:</li>
 <li>Typical taker fee ≈ 10 bps per leg → fees are already netted in; set threshold to add buffer for slippage and latency.</li>
 <li>Start <code>15–30 bps</code> (0.15–0.30%). For very volatile markets, use <code>30–50 bps</code>.</li>
+<li>If you configure <code>FEE_OVERRIDES</code> to reflect discounted or zero taker fees,</li>
+</ul>
+<p>
+    revisit the threshold immediately—zero-fee tiers can support much smaller
+    guards (e.g., <code>5–10 bps</code>).
+</p>
+<ul>
 <li>Revisit after you have empirical skip/realized PnL data.</li>
 </ul>
 <h3 id="max-slippage-bps">`MAX_SLIPPAGE_BPS`</h3>
