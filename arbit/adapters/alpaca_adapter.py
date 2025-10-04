@@ -233,8 +233,54 @@ class AlpacaAdapter(ExchangeAdapter):
                 **ws_kwargs,
             )
             self._stream = stream
-            stream.subscribe_orderbooks(_handler, *sub_syms)
-            run_task = asyncio.create_task(stream._run_forever())  # type: ignore[attr-defined]
+
+            # Subscribe using the most compatible method available across alpaca-py versions.
+            subscribed = False
+            try:
+                # Older signatures accept a handler as the first argument.
+                stream.subscribe_orderbooks(_handler, *sub_syms)  # type: ignore[misc]
+                subscribed = True
+            except TypeError:
+                # Newer alpaca-py requires setting a handler via set_handlers(...) and
+                # subscribing with symbols only.
+                try:
+                    stream.subscribe_orderbooks(*sub_syms)  # type: ignore[misc]
+                    # Try the common handler key names used by alpaca-py releases.
+                    if hasattr(stream, "set_handlers") and callable(stream.set_handlers):
+                        try:
+                            # Prefer the explicit on_orderbook keyword when available.
+                            stream.set_handlers(on_orderbook=_handler)  # type: ignore[call-arg]
+                        except TypeError:
+                            # Fallback: some versions accept 'orderbook' instead.
+                            stream.set_handlers(orderbook=_handler)  # type: ignore[call-arg]
+                    subscribed = True
+                except Exception:
+                    # As a last resort, try the original path again to surface a useful error below.
+                    try:
+                        stream.subscribe_orderbooks(_handler, *sub_syms)  # type: ignore[misc]
+                        subscribed = True
+                    except Exception:
+                        subscribed = False
+
+            # Choose the appropriate run coroutine across versions.
+            async def _run_stream() -> None:
+                # Prefer public run() if present; fall back to private _run_forever().
+                runner = getattr(stream, "run", None)
+                if callable(runner):
+                    res = runner()
+                    if inspect.isawaitable(res):
+                        await res
+                        return
+                runner = getattr(stream, "_run_forever", None)
+                if callable(runner):
+                    res = runner()
+                    if inspect.isawaitable(res):
+                        await res
+                        return
+                # If no runnable coroutine exists, yield nothing and exit.
+                raise RuntimeError("alpaca CryptoDataStream lacks run coroutine")
+
+            run_task = asyncio.create_task(_run_stream())
             get_task = asyncio.create_task(queue.get())
             try:
                 while True:
