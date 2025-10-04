@@ -246,7 +246,9 @@ class AlpacaAdapter(ExchangeAdapter):
                 try:
                     stream.subscribe_orderbooks(*sub_syms)  # type: ignore[misc]
                     # Try the common handler key names used by alpaca-py releases.
-                    if hasattr(stream, "set_handlers") and callable(stream.set_handlers):
+                    if hasattr(stream, "set_handlers") and callable(
+                        stream.set_handlers
+                    ):
                         try:
                             # Prefer the explicit on_orderbook keyword when available.
                             stream.set_handlers(on_orderbook=_handler)  # type: ignore[call-arg]
