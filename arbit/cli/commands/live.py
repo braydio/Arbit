@@ -81,9 +81,7 @@ def live(
                         await _live_run_for_venue(venue_list[0], **run_kwargs)
                     else:
                         tasks = [
-                            asyncio.create_task(
-                                _live_run_for_venue(v, **run_kwargs)
-                            )
+                            asyncio.create_task(_live_run_for_venue(v, **run_kwargs))
                             for v in venue_list
                         ]
                         await asyncio.gather(*tasks)
@@ -94,9 +92,7 @@ def live(
                     await _live_run_for_venue(venue_list[0], **run_kwargs)
                 else:
                     tasks = [
-                        asyncio.create_task(
-                            _live_run_for_venue(v, **run_kwargs)
-                        )
+                        asyncio.create_task(_live_run_for_venue(v, **run_kwargs))
                         for v in venue_list
                     ]
                     await asyncio.gather(*tasks)
