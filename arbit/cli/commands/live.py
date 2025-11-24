@@ -31,9 +31,23 @@ def live(
         "--attempt-notify/--no-attempt-notify",
         help="Send per-attempt Discord alerts (noisy). Overrides env.",
     ),
+    continuous: bool = TyperOption(
+        False,
+        "--continuous",
+        help="Run continuously until stopped (Ctrl+C)",
+    ),
+    interval: int = TyperOption(
+        30,
+        "--interval",
+        help="Seconds to wait between scans when running continuously.",
+    ),
     help_verbose: bool = False,
 ) -> None:
-    """Continuously scan for profitable triangles and execute trades across venues."""
+    """Scan for profitable triangles and execute trades across venues.
+
+    The command can be configured to loop continuously with a configurable
+    interval between scans when ``--continuous`` is supplied.
+    """
 
     if help_verbose:
         app.print_verbose_help_for("live")
@@ -60,27 +74,30 @@ def live(
         pass
 
     async def _run_for_all() -> None:
-        if len(venue_list) == 1:
-            await _live_run_for_venue(venue_list[0], **run_kwargs)
-            return
-
-        tasks = [
-            asyncio.create_task(
-                _live_run_for_venue(
-                    venue_name,
-                    **run_kwargs,
-                )
-            )
-            for venue_name in venue_list
-        ]
         try:
-            await asyncio.gather(*tasks)
-        except asyncio.CancelledError:  # pragma: no cover - ctrl+c handling
-            for task in tasks:
-                task.cancel()
-        except KeyboardInterrupt:  # pragma: no cover
-            for task in tasks:
-                task.cancel()
+            if continuous:
+                while True:
+                    if len(venue_list) == 1:
+                        await _live_run_for_venue(venue_list[0], **run_kwargs)
+                    else:
+                        tasks = [
+                            asyncio.create_task(_live_run_for_venue(v, **run_kwargs))
+                            for v in venue_list
+                        ]
+                        await asyncio.gather(*tasks)
+
+                    await asyncio.sleep(interval)
+            else:
+                if len(venue_list) == 1:
+                    await _live_run_for_venue(venue_list[0], **run_kwargs)
+                else:
+                    tasks = [
+                        asyncio.create_task(_live_run_for_venue(v, **run_kwargs))
+                        for v in venue_list
+                    ]
+                    await asyncio.gather(*tasks)
+        except KeyboardInterrupt:
+            print("Stopping live monitor...")
 
     try:
         asyncio.run(_run_for_all())
